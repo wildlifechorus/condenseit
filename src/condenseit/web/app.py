@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
+import secrets
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import markdown
 from fastapi import FastAPI, Query, Request
@@ -17,6 +19,7 @@ from fastapi.responses import (
     Response,
 )
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 
 from condenseit.config import load_config
 from condenseit.learning.preference_engine import PreferenceEngine
@@ -109,6 +112,107 @@ def create_app(config_path: str | None = None) -> FastAPI:
     app = FastAPI(title="CondenseIt", docs_url="/docs")
     app.state.job_manager = job_manager
     templates.env.globals["digest_job"] = job_manager.snapshot
+
+    # ------------------------------------------------------------------
+    # Session-cookie auth
+    #
+    # Set DIGEST_PWA_AUTH_PASSWORD in .env to protect all /api/* routes.
+    # Set DIGEST_PWA_SESSION_SECRET to a fixed random hex string so that
+    # sessions survive service restarts (generate with: openssl rand -hex 32).
+    # ------------------------------------------------------------------
+    _auth_password = os.environ.get("DIGEST_PWA_AUTH_PASSWORD", "").strip()
+    _session_secret = os.environ.get("DIGEST_PWA_SESSION_SECRET", "").strip()
+
+    if _auth_password and not _session_secret:
+        logging.warning(
+            "DIGEST_PWA_SESSION_SECRET is not set; a temporary random key "
+            "will be used. All sessions will be invalidated on every service "
+            "restart. Set DIGEST_PWA_SESSION_SECRET=<openssl rand -hex 32> "
+            "in .env to persist sessions across restarts."
+        )
+        _session_secret = secrets.token_hex(32)
+
+    # /api/auth/* endpoints are always registered so the frontend can
+    # probe auth state regardless of whether a password is configured.
+
+    @app.get("/api/auth/check", response_model=None)
+    async def api_auth_check(request: Request) -> JSONResponse:
+        """Return 200 when authenticated (or when no password is configured)."""
+        if not _auth_password:
+            return JSONResponse({"authenticated": True})
+        session: dict[str, Any] = getattr(request, "session", {})
+        if session.get("authenticated"):
+            return JSONResponse({"authenticated": True})
+        return JSONResponse({"authenticated": False}, status_code=401)
+
+    @app.post("/api/auth/login", response_model=None)
+    async def api_auth_login(
+        request: Request,
+        body: dict[str, Any],
+    ) -> JSONResponse:
+        """Validate password and issue a signed session cookie."""
+        if not _auth_password:
+            # Auth not configured: always succeed so the frontend can proceed.
+            return JSONResponse({"ok": True})
+        pw = str(body.get("password", "")).strip()
+        if not pw or not secrets.compare_digest(pw, _auth_password):
+            return JSONResponse({"error": "Invalid password"}, status_code=401)
+        request.session["authenticated"] = True
+        return JSONResponse({"ok": True})
+
+    @app.post("/api/auth/logout", response_model=None)
+    async def api_auth_logout(request: Request) -> JSONResponse:
+        """Clear the session cookie."""
+        session: dict[str, Any] = getattr(request, "session", {})
+        session.clear()
+        return JSONResponse({"ok": True})
+
+    # HTTP auth guard: blocks all /api/* except /api/auth/* when a password is
+    # configured.  Must be registered BEFORE app.add_middleware(SessionMiddleware)
+    # so it becomes the inner layer and only executes after the session cookie has
+    # already been parsed.
+    #
+    # Two valid auth methods:
+    #   1. Session cookie (set by POST /api/auth/login — browser / PWA flow).
+    #   2. Bearer token in Authorization header (CLI import tools).
+    @app.middleware("http")
+    async def _auth_guard(
+        request: Request,
+        call_next: Callable,
+    ) -> Response:
+        path = request.url.path
+        if (
+            _auth_password
+            and path.startswith("/api/")
+            and not path.startswith("/api/auth/")
+        ):
+            # Accept a matching Bearer token so CLI tools can still reach the
+            # export endpoints without a browser session.
+            auth_header = request.headers.get("Authorization", "")
+            bearer_ok = auth_header.startswith("Bearer ") and secrets.compare_digest(
+                auth_header[len("Bearer "):].strip(),
+                _auth_password,
+            )
+            session: dict[str, Any] = getattr(request, "session", {})
+            if not bearer_ok and not session.get("authenticated"):
+                return JSONResponse(
+                    {"detail": "Not authenticated"},
+                    status_code=401,
+                )
+        return await call_next(request)
+
+    # SessionMiddleware must be added AFTER the auth guard so it becomes the
+    # outermost layer and parses the signed cookie before the guard runs.
+    if _session_secret:
+        app.add_middleware(
+            SessionMiddleware,
+            secret_key=_session_secret,
+            # 90 days: iOS stores the cookie across PWA restarts.
+            max_age=7_776_000,
+            # Require HTTPS for the Secure cookie flag in production.
+            https_only=True,
+            same_site="lax",
+        )
 
     # ------------------------------------------------------------------
     # Static assets (legacy CSS/JS for Jinja2 pages)

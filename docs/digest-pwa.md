@@ -79,6 +79,56 @@ that filename (same basename as your domain) or adjust the script.
 
 The deploy script prefers `.venv/bin/condenseit` when present (see script body).
 
+## PWA authentication
+
+By default the PWA is accessible to anyone who knows the URL. To add a
+password-protected login screen (recommended for a public server):
+
+1. Generate a session secret on your laptop:
+
+   ```bash
+   openssl rand -hex 32
+   ```
+
+2. Add to `.env` on both your laptop **and** the VPS (`~/condenseit/.env`):
+
+   ```bash
+   DIGEST_PWA_AUTH_PASSWORD=your-passphrase-here
+   DIGEST_PWA_SESSION_SECRET=<paste openssl output>
+   ```
+
+3. Make the systemd service on the VPS load that file. Add
+   `EnvironmentFile=/root/condenseit/.env` to the `[Service]` section of
+   `/etc/systemd/system/condenseit-web.service`, then:
+
+   ```bash
+   sudo systemctl daemon-reload && sudo systemctl restart condenseit-web
+   ```
+
+4. Remove the old `auth_basic` and `auth_basic_user_file` lines from the live
+   nginx vhost and apply the consolidated `/api/` proxy block from
+   `scripts/nginx/digest.example.com.conf`. Reload nginx.
+
+On first visit the PWA shows a sign-in screen. A signed session cookie is
+issued (90-day lifetime) and stored in the iOS/Android cookie jar, so the
+phone does not ask again on subsequent opens.
+
+### CLI imports with auth enabled
+
+The local pipeline fetches ratings and read state from the VPS before each
+`condenseit run`. It authenticates using a Bearer token instead of a session
+cookie. Add to your local `.env`:
+
+```bash
+CONDENSEIT_RATINGS_IMPORT_URL=https://digest.example.com/api/ratings/export
+CONDENSEIT_RATINGS_IMPORT_BEARER_TOKEN=<same as DIGEST_PWA_AUTH_PASSWORD>
+CONDENSEIT_READ_IMPORT_URL=https://digest.example.com/api/read/export
+CONDENSEIT_READ_IMPORT_BEARER_TOKEN=<same as DIGEST_PWA_AUTH_PASSWORD>
+```
+
+The deploy script (`deploy-digest-pwa.sh`) automatically authenticates using
+`DIGEST_PWA_AUTH_PASSWORD` for the post-deploy smoke check.
+
 ## PWA article ratings (remote phone, local pipeline)
 
 Ratings use the **same article URL strings** as the SQLite `ratings` table and

@@ -125,6 +125,9 @@ ssh -o BatchMode=yes -o ConnectTimeout=8 "$SSH_HOST" true 2>/dev/null \
   || die "Cannot SSH to '$SSH_HOST'. Set DIGEST_PWA_SSH_HOST or vps.host in config.yaml, and check ~/.ssh/config."
 
 auth_url() {
+  # Kept for backwards compatibility only.  New deployments use session-cookie
+  # auth via DIGEST_PWA_AUTH_PASSWORD; basic auth URL embedding is no longer
+  # needed.  Remove this helper once all imports switch to bearer tokens.
   local url="$1"
   local user="${DIGEST_PWA_BASIC_AUTH_USER:-}"
   local pass="${DIGEST_PWA_BASIC_AUTH_PASS:-}"
@@ -184,8 +187,8 @@ ensure_read_api_proxy() {
     return 0
   fi
 
-  if ssh "$SSH_HOST" "sudo grep -q 'location /api/read' '$nginx_conf_path' 2>/dev/null"; then
-    info "nginx already proxies /api/read."
+  if ssh "$SSH_HOST" "sudo grep -qE 'location /api/read|location /api/' '$nginx_conf_path' 2>/dev/null"; then
+    info "nginx already proxies /api/read (or /api/ covers it)."
     return 0
   fi
 
@@ -337,16 +340,31 @@ if [[ "$VPS_WITH_SERVICE" == "1" ]]; then
 fi
 
 info "Smoke check..."
-# Build a smoke URL that includes basic auth credentials when configured so the
-# check doesn't spuriously 401 on password-protected deployments.
-SMOKE_URL="$LIVE_URL/"
+# When DIGEST_PWA_AUTH_PASSWORD is set, authenticate via the session-cookie
+# API before probing the live URL, so the check doesn't spuriously 401.
+_SMOKE_COOKIE_JAR="$(mktemp /tmp/condenseit_smoke_cookies_XXXXXX.txt)"
+_AUTH_PW="${DIGEST_PWA_AUTH_PASSWORD:-}"
 _AUTH_USER="${DIGEST_PWA_BASIC_AUTH_USER:-}"
 _AUTH_PASS="${DIGEST_PWA_BASIC_AUTH_PASS:-}"
-if [[ -n "$_AUTH_USER" && -n "$_AUTH_PASS" ]]; then
-  # Inject credentials into the URL: https://user:pass@host/path
+
+if [[ -n "$_AUTH_PW" ]]; then
+  # Session-cookie auth: POST password, store the session cookie.
+  curl -sS -c "$_SMOKE_COOKIE_JAR" \
+    -X POST "${LIVE_URL}/api/auth/login" \
+    -H "Content-Type: application/json" \
+    -d "{\"password\":\"${_AUTH_PW}\"}" \
+    -o /dev/null \
+    || warn "Smoke login request failed; auth check may return 401."
+fi
+
+SMOKE_URL="${LIVE_URL}/"
+if [[ -z "$_AUTH_PW" && -n "$_AUTH_USER" && -n "$_AUTH_PASS" ]]; then
+  # Legacy: inject basic-auth credentials into the URL for old deployments.
   SMOKE_URL="${LIVE_URL/https:\/\//https://${_AUTH_USER}:${_AUTH_PASS}@}/"
 fi
-code=$(curl -sL -o /dev/null -w '%{http_code}' "$SMOKE_URL" || echo "000")
+
+code=$(curl -sL -b "$_SMOKE_COOKIE_JAR" -o /dev/null -w '%{http_code}' "$SMOKE_URL" || echo "000")
+rm -f "$_SMOKE_COOKIE_JAR"
 if [[ "$code" == "200" ]]; then
   info "HTTP $code for $LIVE_URL"
 else

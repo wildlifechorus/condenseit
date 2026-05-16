@@ -17,7 +17,7 @@ async function request<T>(
   path: string,
   body?: unknown,
 ): Promise<T> {
-  const init: RequestInit = { method };
+  const init: RequestInit = { method, credentials: 'include' };
   if (body != null) {
     if (body instanceof FormData) {
       init.body = body;
@@ -28,6 +28,11 @@ async function request<T>(
   }
   const res = await fetch(path, init);
   if (!res.ok) {
+    // Notify the app shell so it can show the login page when the session
+    // cookie expires or is cleared mid-session.
+    if (res.status === 401) {
+      window.dispatchEvent(new CustomEvent('auth:expired'));
+    }
     const text = await res.text().catch(() => res.statusText);
     throw new Error(`${method} ${path} failed (${res.status}): ${text}`);
   }
