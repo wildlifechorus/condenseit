@@ -80,12 +80,22 @@ export function DigestCard({
   return (
     <article
       class={[
-        'flex flex-col gap-2 bg-white dark:bg-slate-900 rounded-xl p-4 shadow-sm transition-shadow',
+        'relative flex flex-col gap-2 bg-white dark:bg-slate-900 rounded-xl p-4 pl-5 transition-shadow overflow-hidden',
         isRead
-          ? 'border border-slate-100 dark:border-slate-800 opacity-55 hover:opacity-80'
-          : 'border border-slate-200 dark:border-slate-700 hover:shadow-md',
+          ? 'border border-slate-100 dark:border-slate-800 shadow-sm opacity-55 hover:opacity-80'
+          : 'border border-slate-200 dark:border-slate-700 shadow hover:shadow-md',
       ].join(' ')}
     >
+      {/* Left accent strip acts as a clear visual start-of-card marker */}
+      <div
+        class={[
+          'absolute inset-y-0 left-0 w-1',
+          isRead
+            ? 'bg-teal-200 dark:bg-teal-800'
+            : 'bg-teal-400 dark:bg-teal-500',
+        ].join(' ')}
+      />
+
       <div class="flex items-center gap-2 flex-wrap">
         <Badge variant={kindVariant(item.kind)}>{item.kind}</Badge>
         {item.category && (

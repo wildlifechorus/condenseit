@@ -2,10 +2,12 @@
 	docker-up docker-down docker-run docker-dry-run \
 	run-with-ollama run-with-ollama-pwa-deploy run-without-ollama native-setup \
 	seed-next-pwa-deploy-sources \
-	native-serve digest-pwa digest-pwa-deploy digest-pwa-bootstrap \
+	native-serve digest-pwa digest-pwa-serve digest-pwa-deploy digest-pwa-bootstrap \
 	schedule-install schedule-uninstall schedule-status teardown logs-clean
 
 PYTHON ?= $(shell if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi)
+CONDENSEIT ?= $(shell if [ -x .venv/bin/condenseit ]; then echo .venv/bin/condenseit; else echo condenseit; fi)
+PWA_PORT ?= 8898
 
 install:
 	pip install -e .
@@ -14,13 +16,13 @@ dev:
 	pip install -e ".[dev]"
 
 run:
-	condenseit run
+	$(CONDENSEIT) run
 
 dry-run:
-	condenseit run --dry-run
+	$(CONDENSEIT) run --dry-run
 
 serve:
-	condenseit serve --port 8899
+	$(CONDENSEIT) serve --port 8899
 
 # Docker UI + native digest (see ./scripts/docker-ui-digest.sh ui | restart)
 docker-ui-digest:
@@ -59,7 +61,10 @@ docker-dry-run:
 	./scripts/docker-dry-run.sh
 
 digest-pwa:
-	condenseit pwa-build
+	$(CONDENSEIT) pwa-build
+
+digest-pwa-serve: digest-pwa
+	$(PYTHON) -m http.server $(PWA_PORT) --directory data/pwa-dist
 
 digest-pwa-deploy:
 	./scripts/deploy-digest-pwa.sh

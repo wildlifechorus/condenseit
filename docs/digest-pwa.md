@@ -14,6 +14,15 @@ condenseit pwa-build
 Output directory defaults to `data/pwa-dist/` (override with `digest_pwa.output_dir`
 in `config.yaml` or `condenseit pwa-build -o /tmp/out`).
 
+Serve the built PWA locally:
+
+```bash
+make digest-pwa-serve
+```
+
+Open [http://localhost:8898](http://localhost:8898). Override the port with
+`PWA_PORT=8897 make digest-pwa-serve` when needed.
+
 Set `vps.digest_url` to your public URL so `index.html` gets a correct `<link
 rel="canonical">` (for example `https://digest.example.com`).
 

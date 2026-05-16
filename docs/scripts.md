@@ -115,7 +115,8 @@ for example:
   then `pwa-build` and rsync to your VPS; see [digest-pwa.md](digest-pwa.md))
 - `make docker-up`, `make docker-down`, `make docker-run`, `make docker-dry-run`
 - `make native-setup`, `make native-serve`, `make docker-ui-digest`
-- `make digest-pwa-deploy`, `make digest-pwa-bootstrap`
+- `make digest-pwa`, `make digest-pwa-serve`, `make digest-pwa-deploy`,
+  `make digest-pwa-bootstrap`
 
 Exact commands are in [Makefile](../Makefile).
 

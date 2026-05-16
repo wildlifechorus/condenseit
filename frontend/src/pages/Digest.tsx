@@ -11,7 +11,7 @@ import {
 } from '../lib/pwa-data';
 import type { DigestDetail, DigestItem } from '../lib/types';
 import { DigestCard } from '../components/DigestCard';
-import { PwaRatingsToolbar } from '../components/PwaRatings';
+import { PwaRatingsToolbar, PwaReadToolbar } from '../components/PwaRatings';
 import { PreferencesCard } from '../components/PreferencesCard';
 import { FilterPanel } from '../components/FilterPanel';
 import { EmptyState } from '../components/EmptyState';
@@ -33,12 +33,13 @@ const HEADING_TAGS = new Set(['H1', 'H2', 'H3', 'H4', 'H5', 'H6']);
  * whose text includes a link to the article URL.  The function finds those
  * anchors, walks up to the enclosing heading, then hides that heading and
  * every following sibling until the next heading at the same or higher level.
+ * Also hides any injected `.ci-prose-sep` separator that precedes the heading.
  */
 function applyReadFilterToProse(
   prose: HTMLElement,
   readUrls: Set<string>,
 ): void {
-  // Reset previously hidden nodes first.
+  // Reset previously hidden nodes first (includes injected separators).
   prose
     .querySelectorAll<HTMLElement>('[data-ci-read-hidden]')
     .forEach((el) => {
@@ -65,7 +66,15 @@ function applyReadFilterToProse(
     }
 
     const level = parseInt(heading.tagName[1], 10);
-    const toHide: Element[] = [heading];
+    const toHide: Element[] = [];
+
+    // Include the injected separator div that sits just before this heading.
+    const prev = heading.previousElementSibling;
+    if (prev instanceof HTMLElement && prev.classList.contains('ci-prose-sep')) {
+      toHide.push(prev);
+    }
+
+    toHide.push(heading);
     let sib = heading.nextElementSibling;
     while (sib) {
       if (HEADING_TAGS.has(sib.tagName)) {
@@ -80,6 +89,95 @@ function applyReadFilterToProse(
       (el as HTMLElement).style.display = 'none';
       (el as HTMLElement).setAttribute('data-ci-read-hidden', '1');
     }
+  }
+}
+
+/** Attribute added to all elements injected by buildProseControls. */
+const PROSE_CTRL_ATTR = 'data-ci-prose-ctrl';
+
+/**
+ * Inject per-article visual separators and interactive controls (star rating
+ * and mark-read toggle) into the rendered prose HTML.
+ *
+ * Designed to run immediately before applyReadFilterToProse so that injected
+ * elements are present before the read-hide pass runs.
+ * Re-runs safely: previously injected elements are removed first.
+ */
+function buildProseControls(
+  prose: HTMLElement,
+  readUrls: Set<string>,
+  ratings: Record<string, number>,
+  onMarkRead: (url: string) => void,
+  onRate: (url: string, rating: number) => void,
+): void {
+  // Remove elements from a previous run.
+  prose
+    .querySelectorAll(`[${PROSE_CTRL_ATTR}]`)
+    .forEach((el) => el.remove());
+
+  // Target headings that contain a direct anchor (article-level headings).
+  const headings = prose.querySelectorAll<HTMLElement>(
+    'h1,h2,h3,h4,h5,h6',
+  );
+
+  for (const heading of headings) {
+    const anchor = heading.querySelector<HTMLAnchorElement>('a[href]');
+    if (!anchor) continue;
+    const url = anchor.getAttribute('href') ?? anchor.href;
+    if (!url || url.startsWith('#')) continue;
+
+    const isRead = readUrls.has(url);
+    const currentRating = ratings[url] ?? 0;
+
+    // --- Separator injected BEFORE the heading ---
+    const sep = document.createElement('div');
+    sep.setAttribute(PROSE_CTRL_ATTR, '1');
+    sep.className = 'ci-prose-sep';
+    heading.parentElement?.insertBefore(sep, heading);
+
+    // --- Control row injected AFTER the heading ---
+    const ctrl = document.createElement('div');
+    ctrl.setAttribute(PROSE_CTRL_ATTR, '1');
+    ctrl.className = 'ci-prose-ctrl';
+
+    // Star buttons (1-5)
+    const starsDiv = document.createElement('div');
+    starsDiv.className = 'ci-prose-stars';
+    for (let star = 1; star <= 5; star++) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.title = `Rate ${star} star${star !== 1 ? 's' : ''}`;
+      btn.className = `ci-star-btn${star <= currentRating ? ' active' : ''}`;
+      btn.textContent = star <= currentRating ? '★' : '☆';
+      const s = star;
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onRate(url, s);
+      });
+      starsDiv.appendChild(btn);
+    }
+    ctrl.appendChild(starsDiv);
+
+    // Mark read / unread button
+    const readBtn = document.createElement('button');
+    readBtn.type = 'button';
+    readBtn.className = `ci-read-btn${isRead ? ' is-read' : ''}`;
+    readBtn.innerHTML =
+      `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" ` +
+      `stroke="currentColor" stroke-width="2.5" stroke-linecap="round" ` +
+      `stroke-linejoin="round">` +
+      `<path d="M4.5 12.75l6 6 9-13.5"/></svg>` +
+      (isRead ? 'Read' : 'Mark read');
+    readBtn.title = isRead ? 'Mark as unread' : 'Mark as read';
+    readBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      onMarkRead(url);
+    });
+    ctrl.appendChild(readBtn);
+
+    heading.parentElement?.insertBefore(ctrl, heading.nextSibling);
   }
 }
 
@@ -136,13 +234,17 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
   const proseRef = useRef<HTMLElement | null>(null);
 
   /**
-   * Re-apply the read filter to the prose section whenever the set of read
-   * URLs changes or the prose panel is opened/closed.
+   * Rebuild per-article prose controls (separator + stars + read toggle) then
+   * apply the read-hide filter.  Must run in this order so injected elements
+   * are present when applyReadFilterToProse walks siblings.
+   * Fires whenever the prose panel opens or any interactive state changes.
    */
   useEffect(() => {
     if (!showProse || !proseRef.current) return;
-    applyReadFilterToProse(proseRef.current, readUrls);
-  }, [showProse, readUrls]);
+    const prose = proseRef.current;
+    buildProseControls(prose, readUrls, ratings, handleMarkRead, handleRateAndSave);
+    applyReadFilterToProse(prose, readUrls);
+  }, [showProse, readUrls, ratings, handleMarkRead, handleRateAndSave]);
 
   useEffect(() => {
     setLoading(true);
@@ -223,6 +325,21 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
 
   /** PWA handler passed to DigestCard: saves to localStorage directly. */
   const pwaRate = IS_PWA ? handleRate : undefined;
+
+  /**
+   * Used by the prose controls: updates state (and localStorage in PWA mode)
+   * AND submits to the server in hosted mode.
+   * Mirrors what DigestCard does internally for card-level ratings.
+   */
+  const handleRateAndSave = useCallback(
+    (url: string, rating: number) => {
+      handleRate(url, rating);
+      if (!IS_PWA) {
+        api.submitRating(url, rating).catch(() => undefined);
+      }
+    },
+    [handleRate],
+  );
 
   /**
    * Toggle the read state for a URL.
@@ -374,7 +491,7 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
                 : 'No items match these filters.'}
             </div>
           ) : (
-            <div class="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div class="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
               {visibleItems.map((item) => (
                 <DigestCard
                   key={item.url}
@@ -428,6 +545,11 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
           digestId={meta.id ?? 0}
           ratedCount={ratedCount}
         />
+      )}
+
+      {/* PWA: download toolbar appears once any item is marked as read */}
+      {IS_PWA && (
+        <PwaReadToolbar readUrls={readUrls} />
       )}
 
       {/* Normal mode: collapsible preferences card */}

@@ -72,6 +72,23 @@ export function writePwaRead(urls: Set<string>): void {
   window.localStorage.setItem(PWA_READ_LS_KEY, JSON.stringify(store));
 }
 
+/**
+ * Serialise the current set of read URLs to a JSON string that
+ * ``condenseit read-import`` (and ``parse_read_payload``) can consume.
+ * Shape: ``{"urls": [...], "exported_at": "...", "source": "condenseit-pwa"}``
+ */
+export function exportPwaRead(urls: Set<string>): string {
+  return JSON.stringify(
+    {
+      urls: Array.from(urls).sort(),
+      exported_at: new Date().toISOString(),
+      source: 'condenseit-pwa',
+    },
+    null,
+    2,
+  );
+}
+
 export function exportPwaRatings(
   store: PwaRatingsStore,
   digestId: number,
