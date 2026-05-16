@@ -9,7 +9,6 @@ from datetime import UTC, datetime
 from typing import Any
 
 from condenseit.services.digest_runner import execute_digest
-from condenseit.services.post_run_format import format_post_run_lines
 
 logger = logging.getLogger(__name__)
 
@@ -119,12 +118,6 @@ class DigestJobManager:
             stats = result["stats"]
             articles = stats.get("articles_count", 0)
             slim_stats = {k: v for k, v in stats.items() if k != "digest_items"}
-            raw_post = result.get("post")
-            post_display = "\n".join(
-                format_post_run_lines(
-                    raw_post if isinstance(raw_post, dict) else None,
-                ),
-            )
             digest_id = result.get("digest_id")
             with self._lock:
                 self._snapshot = DigestJobSnapshot(
@@ -137,7 +130,6 @@ class DigestJobManager:
                     finished_at=_now_iso(),
                     stats=slim_stats,
                     post=result.get("post"),
-                    post_display=post_display,
                     digest_id=digest_id,
                 )
         except Exception as exc:

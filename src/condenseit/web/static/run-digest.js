@@ -15,7 +15,7 @@
     banner.dataset.state = job.state;
     messageEl.textContent = job.message || '';
     if (postEl) {
-      const lines = job.post_display || '';
+      const lines = job.state === 'failed' ? job.post_display || '' : '';
       postEl.textContent = lines;
       postEl.classList.toggle('is-hidden', !lines);
     }

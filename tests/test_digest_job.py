@@ -46,4 +46,4 @@ def test_job_manager_completes() -> None:
         assert snap["state"] == "completed"
         assert snap["digest_id"] == 42
         assert "post_display" in snap
-        assert "Post-run: no details returned." in snap["post_display"]
+        assert snap["post_display"] == ""

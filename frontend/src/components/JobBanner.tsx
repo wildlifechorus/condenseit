@@ -97,7 +97,7 @@ export function JobBanner() {
             >
               {job.value.message}
             </span>
-            {job.value.post_display && (
+            {state === 'failed' && job.value.post_display && (
               <pre class="mt-1 text-xs text-slate-500 dark:text-slate-400 whitespace-pre-wrap break-words">
                 {job.value.post_display}
               </pre>
