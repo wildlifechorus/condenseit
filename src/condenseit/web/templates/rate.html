@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <h1>Rate articles</h1>
+  <p class="page-lead">
+    Stars train ranking. The list is built from items in your recent digests
+    (newest first), then older runs, up to 50 links. If you have no digest
+    metadata yet, it falls back to recently collected articles.
+  </p>
+</header>
+
+{% if thanks %}
+<div class="flash">Thanks, rating saved.</div>
+{% endif %}
+
+{% if articles %}
+<ul class="rate-list">
+  {% for art in articles %}
+  <li class="rate-card">
+    <div class="rate-card-header">
+      <div>
+        <span class="badge rate-category">{{ art.category }}</span>
+        <br>
+        <a href="{{ art.url }}" class="rate-title" target="_blank" rel="noopener">
+          {{ art.title }}
+        </a>
+      </div>
+      <a href="{{ art.url }}" class="btn btn-ghost btn-sm" target="_blank" rel="noopener">
+        Open ↗
+      </a>
+    </div>
+    <form method="post" action="/rate" class="stars">
+      <input type="hidden" name="url" value="{{ art.url }}">
+      <span class="stars-label">Rate</span>
+      {% for n in range(1, 6) %}
+      <button type="submit" name="rating" value="{{ n }}"
+        class="star-btn{% if art.rating == n %} is-selected{% endif %}"
+        title="{{ n }} star{% if n > 1 %}s{% endif %}">
+        {{ '★' * n }}
+      </button>
+      {% endfor %}
+    </form>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<div class="card empty-state">
+  <h2>Nothing to rate yet</h2>
+  <p>Run a digest first, or open Admin if your old digests lack saved item lists.</p>
+  <a href="/" class="btn">Back to digest</a>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} | CondenseIt</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="site-header">
+    <a href="/" class="brand">
+      <span class="brand-mark">C</span>
+      <span>CondenseIt</span>
+    </a>
+    <div class="header-actions">
+      <button type="button" id="run-digest-btn" class="btn btn-sm"
+        {% if digest_job().state == 'running' %}disabled{% endif %}>
+        {% if digest_job().state == 'running' %}Running…{% else %}Run digest{% endif %}
+      </button>
+      <a href="/admin/" class="btn btn-sm">Admin</a>
+    </div>
+  </header>
+
+  <div id="digest-job-banner" class="job-banner{% if digest_job().state not in ('running', 'completed', 'failed') %} is-hidden{% endif %}"
+    data-state="{{ digest_job().state }}">
+    <div class="job-banner-main">
+      <span id="digest-job-message">{{ digest_job().message }}</span>
+      <div id="digest-job-post" class="job-post-summary is-hidden"></div>
+    </div>
+    <span id="digest-job-actions">
+      {% if digest_job().state in ('completed', 'failed') %}
+      <button type="button" id="digest-job-dismiss" class="btn btn-ghost btn-sm">Dismiss</button>
+      {% if digest_job().state == 'completed' and digest_job().digest_id %}
+      <a href="/?id={{ digest_job().digest_id }}" class="btn btn-sm">View digest</a>
+      {% endif %}
+      {% endif %}
+    </span>
+  </div>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <nav class="nav-section">
+        <div class="nav-label">Read</div>
+        <a href="/" class="nav-link{% if active == 'digest' %} is-active{% endif %}">
+          Latest digest
+        </a>
+        {% if digests %}
+        <ul class="history-list">
+          {% for d in digests[:8] %}
+          <li class="history-item">
+            <a href="/?id={{ d.id }}"
+              class="history-link{% if selected_id == d.id %} is-active{% endif %}">
+              #{{ d.id }} · {{ d.created_at[:10] }}
+            </a>
+          </li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </nav>
+
+      <nav class="nav-section">
+        <div class="nav-label">Configure</div>
+        <a href="/admin/" class="nav-link{% if active == 'admin' %} is-active{% endif %}">
+          Overview
+        </a>
+        <a href="/admin/sources"
+          class="nav-link{% if active == 'sources' %} is-active{% endif %}">
+          Sources
+        </a>
+        <a href="/admin/llm"
+          class="nav-link{% if active == 'llm' %} is-active{% endif %}">
+          LLM
+        </a>
+        <a href="/admin/keys"
+          class="nav-link{% if active == 'keys' %} is-active{% endif %}">
+          API keys
+        </a>
+        <a href="/admin/advisor"
+          class="nav-link{% if active == 'advisor' %} is-active{% endif %}">
+          Model advisor
+        </a>
+      </nav>
+    </aside>
+
+    <main class="content">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <script src="/static/run-digest.js" defer></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

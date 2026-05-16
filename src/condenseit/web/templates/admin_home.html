@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <h1>Admin</h1>
+  <p class="page-lead">Sources, models, and API keys for your digest pipeline.</p>
+</header>
+
+<div class="stat-grid">
+  <div class="stat">
+    <div class="stat-value">{{ source_count }}</div>
+    <div class="stat-label">Sources</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value">{{ config.llm.provider }}</div>
+    <div class="stat-label">LLM provider</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value">{{ config.model }}</div>
+    <div class="stat-label">Model</div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Quick links</h2>
+  <p>
+    <a href="/admin/sources" class="btn">Manage sources</a>
+    <a href="/admin/llm" class="btn btn-secondary">LLM settings</a>
+    <a href="/admin/advisor" class="btn btn-secondary">Model advisor</a>
+  </p>
+  {% if latest %}
+  <p class="digest-meta" style="margin-top:1rem">
+    Last digest #{{ latest.id }} at {{ latest.created_at[:19] }}
+  </p>
+  {% endif %}
+</div>
+{% endblock %}

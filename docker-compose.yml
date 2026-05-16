@@ -1,0 +1,18 @@
+# Web UI only. Ollama and digest runs stay on the host (Metal GPU).
+# Shared ./data volume so native `condenseit run` appears in the UI.
+services:
+  app:
+    build: .
+    ports:
+      - "8899:8899"
+    environment:
+      CONDENSEIT_CONFIG: /app/config.yaml
+      CONDENSEIT_DATA_DIR: /app/data
+      CONDENSEIT_FRONTEND_DIST: /app/frontend/dist
+      OLLAMA_HOST: http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./data:/app/data
+    command: ["condenseit", "serve", "--host", "0.0.0.0", "--port", "8899"]

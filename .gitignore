@@ -1,0 +1,57 @@
+# Environment variables (templates with no secrets may be un-ignored below)
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pytype/
+build/
+dist/
+*.egg-info/
+
+# Node / frontend build artifacts
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Test / coverage (if you add pytest-cov later)
+.coverage
+.coverage.*
+htmlcov/
+
+# App data and local databases
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Local app config (copy from config.example.yaml; see README)
+config.yaml
+config.local.yaml
+*.local.yaml
+
+# Personal fixtures / seeds (add paths you use locally)
+seeds/local/
+**/personal-seeds/
+
+# Logs
+*.log
+logs/
+
+# OS / editor
+.DS_Store
+.idea/
+*.swp
+*.swo
+*~
+
+# Cursor
+.cursor/
+.cursorignore

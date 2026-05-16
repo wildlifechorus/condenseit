@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <h1>LLM configuration</h1>
+  <p class="page-lead">Local Ollama on the host, or OpenRouter in the cloud.</p>
+</header>
+
+{% if msg %}
+<div class="flash">{{ msg }}</div>
+{% endif %}
+
+<form method="post" action="/admin/llm" class="card form-grid">
+  <label>Provider
+    <select name="provider">
+      <option value="ollama" {% if provider == 'ollama' %}selected{% endif %}>
+        Ollama (local, Metal GPU)
+      </option>
+      <option value="openrouter" {% if provider == 'openrouter' %}selected{% endif %}>
+        OpenRouter
+      </option>
+      <option value="fallback" {% if provider == 'fallback' %}selected{% endif %}>
+        Fallback (local then cloud)
+      </option>
+    </select>
+  </label>
+  <label>Model / Ollama tag
+    <input name="model" value="{{ model }}" required>
+  </label>
+  <label>OpenRouter model
+    <input name="openrouter_model" value="{{ or_model }}" placeholder="anthropic/claude-…">
+  </label>
+  <label class="checkbox-row" style="grid-column: 1 / -1">
+    <input type="checkbox" name="openrouter_pick_cheapest" value="on"
+      {% if openrouter_pick_cheapest %}checked{% endif %}>
+    Prefer cheapest OpenRouter model (catalog prompt price, re-checked hourly)
+  </label>
+  <p class="hint" style="grid-column: 1 / -1">
+    Ollama host: <code>{{ ollama_host }}</code> (not in Docker; runs on your Mac)
+  </p>
+  <button type="submit" class="btn">Save settings</button>
+</form>
+
+<div class="card" style="margin-top:1.5rem">
+  <h2>Ollama models on host</h2>
+  <p class="hint">Pull can take several minutes for large models.</p>
+  <div id="ollama-admin-msg"></div>
+  <form class="form-grid" style="margin-top:0.75rem"
+    hx-post="/admin/llm/ollama/pull" hx-target="#ollama-admin-msg" hx-swap="innerHTML"
+    hx-timeout="600000">
+    <label>Pull model tag
+      <input name="pull_model" placeholder="llama3.2:3b" required>
+    </label>
+    <button type="submit" class="btn">Pull</button>
+  </form>
+  <form class="form-grid" style="margin-top:1rem"
+    hx-post="/admin/llm/ollama/delete" hx-target="#ollama-admin-msg" hx-swap="innerHTML">
+    <label>Delete local model
+      <select name="delete_model" required>
+        <option value="">Select…</option>
+        {% for m in ollama_models %}
+        <option value="{{ m }}">{{ m }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="btn btn-secondary">Delete</button>
+  </form>
+</div>
+{% endblock %}

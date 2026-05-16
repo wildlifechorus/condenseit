@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd agent: com.condenseit.scheduled-digest
+  Runs the CondenseIt digest + PWA deploy at 06:00 and 21:00 every day.
+
+  Install:
+    cp launchd/com.condenseit.scheduled-digest.plist \
+       ~/Library/LaunchAgents/com.condenseit.scheduled-digest.plist
+    # Edit WorkingDirectory below if the project path differs from the default.
+    launchctl load -w ~/Library/LaunchAgents/com.condenseit.scheduled-digest.plist
+
+  Uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.condenseit.scheduled-digest.plist
+    rm ~/Library/LaunchAgents/com.condenseit.scheduled-digest.plist
+
+  Check status:
+    launchctl list com.condenseit.scheduled-digest
+
+  Force a manual run now:
+    launchctl start com.condenseit.scheduled-digest
+
+  Logs:  ~/Library/Logs/condenseit-digest.log
+         ~/Library/Logs/condenseit-digest-launchd.log  (stdout/stderr capture)
+-->
+<plist version="1.0">
+<dict>
+
+  <key>Label</key>
+  <string>com.condenseit.scheduled-digest</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-l</string>
+    <!-- EDIT: replace with the absolute path to your project -->
+    <string>/CHANGE/ME/path/to/condenseit/scripts/scheduled-digest.sh</string>
+  </array>
+
+  <!-- EDIT: replace with the absolute path to your project -->
+  <key>WorkingDirectory</key>
+  <string>/CHANGE/ME/path/to/condenseit</string>
+
+  <!-- Run at 06:00 and 21:00 every day -->
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict>
+      <key>Hour</key>   <integer>6</integer>
+      <key>Minute</key> <integer>0</integer>
+    </dict>
+    <dict>
+      <key>Hour</key>   <integer>21</integer>
+      <key>Minute</key> <integer>0</integer>
+    </dict>
+  </array>
+
+  <!-- Capture launchd-level stdout/stderr separately from the script's own log -->
+  <key>StandardOutPath</key>
+  <string>/tmp/condenseit-digest-launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/condenseit-digest-launchd.log</string>
+
+  <!-- Do NOT auto-restart on failure; wait for the next scheduled time -->
+  <key>KeepAlive</key>
+  <false/>
+
+  <!-- Use a login shell so Homebrew PATH (/opt/homebrew/bin) is available -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
+</dict>
+</plist>

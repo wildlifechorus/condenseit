@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <h1>Sources</h1>
+  <p class="page-lead">RSS feeds, YouTube channels, and website change monitors.</p>
+</header>
+
+<div class="card form-grid cols-2" style="margin-bottom:1rem">
+  <h2 style="grid-column: 1 / -1">OPML</h2>
+  <form method="post" action="/admin/sources/import-opml" enctype="multipart/form-data"
+    hx-post="/admin/sources/import-opml" hx-encoding="multipart/form-data"
+    hx-target="#sources-table-wrap" hx-swap="innerHTML">
+    <label>Import OPML
+      <input type="file" name="file" accept=".opml,.xml,text/xml" required>
+    </label>
+    <button type="submit" class="btn">Import</button>
+  </form>
+  <p style="align-self:end">
+    <a href="/admin/sources/export.opml" class="btn btn-secondary">Export OPML</a>
+  </p>
+</div>
+
+<form method="post" action="/admin/sources" class="card form-grid cols-2"
+  hx-post="/admin/sources" hx-target="#sources-table-wrap" hx-swap="innerHTML">
+  <h2 style="grid-column: 1 / -1">Add source</h2>
+  <label>Type
+    <select name="source_type">
+      <option value="rss">RSS</option>
+      <option value="youtube">YouTube</option>
+      <option value="website">Website watch</option>
+    </select>
+  </label>
+  <label>Name <input name="name" required></label>
+  <label>URL <input name="url" required placeholder="https://…"></label>
+  <label>Category <input name="category" value="General"></label>
+  <label>Priority <input name="priority" type="number" value="2" min="1" max="5"></label>
+  <label style="grid-column: 1 / -1">YouTube channel ID (if YouTube)
+    <input name="channel_id" placeholder="UC…">
+  </label>
+  <button type="submit" class="btn">Add source</button>
+</form>
+
+<div class="table-wrap" style="margin-top:1.5rem" id="sources-table-wrap">
+  {% include "partials/sources_table_inner.html" %}
+</div>
+{% endblock %}

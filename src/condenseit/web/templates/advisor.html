@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <h1>Model advisor</h1>
+  <p class="page-lead">Recommends an Ollama model based on your hardware and installed tags.</p>
+</header>
+
+{% if weekly_recommendation %}
+<div class="card" style="margin-bottom:1.5rem">
+  <h2>Weekly snapshot (last digest run)</h2>
+  <p class="text-muted">Stored automatically at most once every 7 days after a digest.</p>
+  <p><strong>Recommended:</strong> {{ weekly_recommendation.recommended_model }}</p>
+  <p class="text-muted">{{ weekly_recommendation.reason }}</p>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="stat-grid" style="margin-bottom:1rem">
+    <div class="stat">
+      <div class="stat-value">{{ recommendation.hardware.ram_gb }} GB</div>
+      <div class="stat-label">RAM</div>
+    </div>
+    <div class="stat">
+      <div class="stat-value" style="font-size:0.95rem">
+        {{ recommendation.hardware.gpu_hint }}
+      </div>
+      <div class="stat-label">GPU</div>
+    </div>
+  </div>
+  <p><strong>Current:</strong> {{ recommendation.current_model }}</p>
+  <p><strong>Recommended:</strong> {{ recommendation.recommended_model }}</p>
+  <p class="text-muted">{{ recommendation.reason }}</p>
+  <form method="post" action="/admin/advisor/apply" style="margin-top:1rem">
+    <input type="hidden" name="recommended_model"
+      value="{{ recommendation.recommended_model }}">
+    <button type="submit" class="btn">Apply recommendation</button>
+  </form>
+</div>
+
+<div class="card" style="margin-top:1.5rem">
+  <h2>Installed Ollama models</h2>
+  {% if recommendation.installed_models %}
+  <ul class="model-list">
+    {% for m in recommendation.installed_models %}
+    <li><code>{{ m }}</code></li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="text-muted">No models found. Run <code>ollama pull llama3.2:3b</code> on the host.</p>
+  {% endif %}
+</div>
+
+{% if benchmark_history %}
+<div class="card" style="margin-top:1.5rem">
+  <h2>Recent benchmarks</h2>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Model</th>
+          <th>Seconds</th>
+          <th>Tok/s</th>
+          <th>When</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in benchmark_history %}
+        <tr>
+          <td><code>{{ b.model }}</code></td>
+          <td>{{ b.elapsed_s }}</td>
+          <td>{{ b.tokens_per_sec }}</td>
+          <td class="text-muted">{{ b.run_at[:19] }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

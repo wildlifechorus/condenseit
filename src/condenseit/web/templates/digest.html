@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <h1>Digest</h1>
+  {% if meta %}
+  <p class="page-lead">
+    {{ meta.created_at[:19] }} · {{ meta.articles_count }} articles
+    · {{ meta.model }} · {{ meta.processing_time }}
+  </p>
+  {% else %}
+  <p class="page-lead">Your latest summarized feed collection.</p>
+  {% endif %}
+</header>
+
+{% if digest_html %}
+<section class="digest-panel">
+  <div class="digest-toolbar">
+    <span class="digest-meta">Markdown links open the full article or video.</span>
+    <a href="/?id={{ selected_id }}&raw=1" class="btn btn-ghost btn-sm">View source</a>
+  </div>
+  {% if digest_items %}
+  <div id="digest-browse-root" class="digest-browse">
+    <h2 class="digest-browse-title">Browse items</h2>
+    <div class="digest-filters" role="search" aria-label="Filter digest items">
+      <div class="digest-filters-row">
+        <label class="digest-filter-field digest-filter-field--grow" for="digest-filter-search">
+          <span class="digest-filter-label">Search</span>
+          <input type="search" id="digest-filter-search" name="digest-filter-search"
+            autocomplete="off" placeholder="Title, summary, source…"
+            aria-describedby="digest-filter-count">
+        </label>
+        <label class="digest-filter-field" for="digest-filter-category">
+          <span class="digest-filter-label">Category</span>
+          <select id="digest-filter-category" name="digest-filter-category">
+            <option value="">All categories</option>
+          </select>
+        </label>
+        <label class="digest-filter-field" for="digest-filter-source">
+          <span class="digest-filter-label">Source</span>
+          <select id="digest-filter-source" name="digest-filter-source">
+            <option value="">All sources</option>
+          </select>
+        </label>
+        <label class="digest-filter-field" for="digest-filter-kind">
+          <span class="digest-filter-label">Type</span>
+          <select id="digest-filter-kind" name="digest-filter-kind">
+            <option value="">All types</option>
+            <option value="article">Article</option>
+            <option value="video">Video</option>
+            <option value="watch">Website watch</option>
+          </select>
+        </label>
+      </div>
+      <div class="digest-filters-row">
+        <label class="digest-filter-field" for="digest-filter-date-from">
+          <span class="digest-filter-label">Published from</span>
+          <input type="date" id="digest-filter-date-from" name="digest-filter-date-from">
+        </label>
+        <label class="digest-filter-field" for="digest-filter-date-to">
+          <span class="digest-filter-label">Published through</span>
+          <input type="date" id="digest-filter-date-to" name="digest-filter-date-to">
+        </label>
+        <div class="digest-filter-actions">
+          <button type="button" id="digest-filter-reset" class="btn btn-ghost btn-sm">
+            Reset filters
+          </button>
+        </div>
+      </div>
+    </div>
+    <p id="digest-filter-count" class="digest-filter-count" aria-live="polite"></p>
+    <ul id="digest-item-list" class="digest-item-list" aria-label="Filtered digest items"></ul>
+    <div id="digest-filter-empty" class="digest-filter-empty is-hidden" role="status">
+      No items match these filters. Try clearing search or widening dates.
+    </div>
+    <script type="application/json" id="condenseit-digest-items-data">{{ digest_items | tojson }}</script>
+  </div>
+  <details class="digest-prose-details">
+    <summary>Show full formatted digest</summary>
+    <article class="prose digest-body digest-body--framed">{{ digest_html | safe }}</article>
+  </details>
+  {% else %}
+  <article class="prose digest-body">{{ digest_html | safe }}</article>
+  {% endif %}
+</section>
+{% else %}
+<div class="card empty-state">
+  <h2>No digest yet</h2>
+  <p>Click <strong>Run digest</strong> in the header to generate one now.</p>
+  <p class="text-muted">Ollama runs on your Mac (Metal). The Docker UI uses
+    <code>host.docker.internal</code> to reach it.</p>
+  <p style="margin-top:1rem">
+    <a href="/admin/sources" class="btn">Configure sources</a>
+  </p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if digest_items %}
+<script src="/static/digest-filter.js" defer></script>
+{% endif %}
+{% endblock %}

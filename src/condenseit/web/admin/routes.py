@@ -1,0 +1,517 @@
+"""Admin panel routes - Jinja2 HTML pages and JSON API endpoints."""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+from urllib.parse import quote
+
+from fastapi import APIRouter, File, Form, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
+
+from condenseit.advisor.model_advisor import ModelAdvisor
+from condenseit.config import load_config
+from condenseit.services.ollama_client import (
+    ollama_delete,
+    ollama_list_tags,
+    ollama_pull,
+)
+from condenseit.settings_overlay import apply_db_settings
+from condenseit.store.database import ContentStore
+from condenseit.store.opml import build_opml, parse_opml_outlines
+from condenseit.store.secure_keys import SecureKeyStore
+from condenseit.store.sources import SourceRegistry
+from condenseit.web.templating import page_context, templates
+
+
+def _is_htmx(request: Request) -> bool:
+    return request.headers.get("HX-Request", "").lower() == "true"
+
+
+def create_admin_router(
+    config_path: str | None,
+    store: ContentStore | None = None,
+) -> APIRouter:
+    router = APIRouter()
+    config = load_config(config_path)
+    store = store or ContentStore()
+    sources = SourceRegistry(store)
+    sources.seed_from_config(config)
+    keys = SecureKeyStore(store)
+
+    def _digests() -> list[dict]:
+        return store.list_digests(limit=12)
+
+    def _merged():
+        return apply_db_settings(load_config(config_path), store)
+
+    def _sources_table_response(request: Request) -> HTMLResponse:
+        return templates.TemplateResponse(
+            request,
+            "partials/sources_table_inner.html",
+            page_context(
+                request,
+                "Sources",
+                "sources",
+                digests=_digests(),
+                sources=sources.list_all(),
+            ),
+        )
+
+    # ==================================================================
+    # JSON API routes  (/api/...)
+    # ==================================================================
+
+    # --- Sources -------------------------------------------------------
+
+    @router.get("/api/sources", response_model=None)
+    async def api_list_sources() -> JSONResponse:
+        return JSONResponse([dict(s) for s in sources.list_all()])
+
+    @router.post("/api/sources", response_model=None)
+    async def api_add_source(request: Request) -> JSONResponse:
+        ct = request.headers.get("content-type", "")
+        if "multipart/form-data" in ct or "application/x-www-form-urlencoded" in ct:
+            form = await request.form()
+            source_type = str(form.get("source_type", "rss"))
+            name = str(form.get("name", ""))
+            url = str(form.get("url", ""))
+            category = str(form.get("category", "General"))
+            priority = int(form.get("priority", 2))
+            channel_id = str(form.get("channel_id", ""))
+        else:
+            body = await request.json()
+            source_type = str(body.get("source_type", "rss"))
+            name = str(body.get("name", ""))
+            url = str(body.get("url", ""))
+            category = str(body.get("category", "General"))
+            priority = int(body.get("priority", 2))
+            channel_id = str(body.get("channel_id", ""))
+
+        extra: dict[str, str] = {}
+        feed_url = url
+        if source_type == "youtube" and channel_id:
+            extra = {"channel_id": channel_id, "handle": name}
+            feed_url = (
+                f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+            )
+        sources.add(source_type, name, category, priority, feed_url, extra=extra)
+        return JSONResponse({"ok": True})
+
+    @router.delete("/api/sources/{source_id}", response_model=None)
+    async def api_delete_source(source_id: int) -> JSONResponse:
+        sources.delete(source_id)
+        return JSONResponse({"ok": True})
+
+    @router.post("/api/sources/import-opml", response_model=None)
+    async def api_import_opml(file: UploadFile = File(...)) -> JSONResponse:
+        raw = await file.read()
+        text = raw.decode("utf-8", errors="replace")
+        try:
+            outline_rows = parse_opml_outlines(text)
+        except Exception:
+            return JSONResponse({"error": "Invalid OPML file."}, status_code=400)
+        existing = {r["url"] for r in sources.list_all()}
+        added = 0
+        for row in outline_rows:
+            xml_url = row["xmlUrl"]
+            if xml_url in existing:
+                continue
+            title = row.get("title") or xml_url
+            sources.add("rss", title[:240], "Imported", 2, xml_url)
+            existing.add(xml_url)
+            added += 1
+        return JSONResponse({"added": added})
+
+    @router.get("/api/sources/export.opml", response_class=PlainTextResponse)
+    async def api_export_opml() -> PlainTextResponse:
+        body = build_opml(sources.list_all())
+        return PlainTextResponse(
+            body,
+            media_type="application/xml; charset=utf-8",
+            headers={
+                "Content-Disposition": 'attachment; filename="condenseit-sources.opml"',
+            },
+        )
+
+    # --- LLM config ----------------------------------------------------
+
+    @router.get("/api/config/llm", response_model=None)
+    async def api_get_llm() -> JSONResponse:
+        merged = _merged()
+        model = store.get_setting("model", merged.model)
+        provider = store.get_setting("llm_provider", merged.llm.provider)
+        try:
+            ollama_models = ollama_list_tags(merged.llm.ollama_host)
+        except Exception:
+            ollama_models = []
+        return JSONResponse(
+            {
+                "provider": provider,
+                "model": model,
+                "openrouter_model": merged.llm.openrouter_model,
+                "openrouter_pick_cheapest": merged.llm.openrouter_pick_cheapest,
+                "ollama_host": merged.llm.ollama_host,
+                "ollama_models": ollama_models,
+            }
+        )
+
+    @router.put("/api/config/llm", response_model=None)
+    async def api_save_llm(body: dict[str, Any]) -> JSONResponse:
+        if "provider" in body:
+            store.set_setting("llm_provider", str(body["provider"]))
+        if "model" in body:
+            store.set_setting("model", str(body["model"]))
+        if "openrouter_model" in body and body["openrouter_model"]:
+            store.set_setting("openrouter_model", str(body["openrouter_model"]))
+        if "openrouter_pick_cheapest" in body:
+            store.set_setting(
+                "openrouter_pick_cheapest",
+                "1" if body["openrouter_pick_cheapest"] else "0",
+            )
+        return JSONResponse({"ok": True})
+
+    @router.post("/api/config/llm/ollama/pull", response_model=None)
+    async def api_ollama_pull(body: dict[str, Any]) -> JSONResponse:
+        merged = _merged()
+        model = str(body.get("model", "")).strip()
+        if not model:
+            return JSONResponse({"error": "model required"}, status_code=422)
+        try:
+            ollama_pull(merged.llm.ollama_host, model)
+            return JSONResponse({"message": f"Pulled {model}."})
+        except Exception as exc:
+            return JSONResponse({"message": f"Pull failed: {exc}"}, status_code=500)
+
+    @router.post("/api/config/llm/ollama/delete", response_model=None)
+    async def api_ollama_delete(body: dict[str, Any]) -> JSONResponse:
+        merged = _merged()
+        model = str(body.get("model", "")).strip()
+        if not model:
+            return JSONResponse({"error": "model required"}, status_code=422)
+        try:
+            ollama_delete(merged.llm.ollama_host, model)
+            return JSONResponse({"message": f"Deleted {model}."})
+        except Exception as exc:
+            return JSONResponse({"message": f"Delete failed: {exc}"}, status_code=500)
+
+    # --- API keys ------------------------------------------------------
+
+    @router.get("/api/config/keys", response_model=None)
+    async def api_list_keys() -> JSONResponse:
+        return JSONResponse(
+            [{"service": k["service"], "key_preview": k["key_preview"]} for k in keys.list_keys()]
+        )
+
+    @router.post("/api/config/keys", response_model=None)
+    async def api_save_key(body: dict[str, Any]) -> JSONResponse:
+        service = str(body.get("service", "")).strip()
+        key_value = str(body.get("key_value", "")).strip()
+        if not service or not key_value:
+            return JSONResponse({"error": "service and key_value required"}, status_code=422)
+        keys.store_key(service, key_value)
+        return JSONResponse({"ok": True})
+
+    @router.delete("/api/config/keys/{service}", response_model=None)
+    async def api_delete_key(service: str) -> JSONResponse:
+        keys.delete_key(service)
+        return JSONResponse({"ok": True})
+
+    # --- Model advisor -------------------------------------------------
+
+    @router.get("/api/admin/advisor", response_model=None)
+    async def api_advisor() -> JSONResponse:
+        merged = _merged()
+        advisor = ModelAdvisor(store, merged.llm.ollama_host)
+        current = store.get_setting("model", merged.model)
+        rec = advisor.recommend(current)
+        weekly_raw = store.get_setting("advisor_weekly_recommendation", "")
+        weekly: dict[str, Any] | None = None
+        if weekly_raw:
+            try:
+                weekly = json.loads(weekly_raw)
+            except json.JSONDecodeError:
+                weekly = None
+        bench_rows: list[dict[str, Any]] = []
+        if "benchmarks" in store.db.table_names():
+            bench_rows = [
+                dict(r)
+                for r in store.db.query(
+                    "SELECT * FROM benchmarks ORDER BY id DESC LIMIT 10",
+                )
+            ]
+        return JSONResponse(
+            {
+                "recommendation": rec,
+                "weekly": weekly,
+                "benchmarks": bench_rows,
+            }
+        )
+
+    @router.post("/api/admin/advisor/apply", response_model=None)
+    async def api_advisor_apply(body: dict[str, Any]) -> JSONResponse:
+        model = str(body.get("recommended_model", "")).strip()
+        if not model:
+            return JSONResponse({"error": "recommended_model required"}, status_code=422)
+        store.set_setting("model", model)
+        return JSONResponse({"ok": True})
+
+    # ==================================================================
+    # Legacy Jinja2 HTML routes (/admin/...)
+    # ==================================================================
+
+    @router.get("/admin/", response_class=HTMLResponse)
+    async def admin_home(request: Request) -> HTMLResponse:
+        latest = store.latest_digest()
+        return templates.TemplateResponse(
+            request,
+            "admin_home.html",
+            page_context(
+                request,
+                "Admin",
+                "admin",
+                digests=_digests(),
+                config=config,
+                source_count=len(sources.list_all()),
+                latest=latest,
+            ),
+        )
+
+    @router.get("/admin/sources", response_class=HTMLResponse)
+    async def sources_list(request: Request) -> HTMLResponse:
+        if _is_htmx(request):
+            return _sources_table_response(request)
+        return templates.TemplateResponse(
+            request,
+            "sources.html",
+            page_context(
+                request,
+                "Sources",
+                "sources",
+                digests=_digests(),
+                sources=sources.list_all(),
+            ),
+        )
+
+    @router.get("/admin/sources/table", response_class=HTMLResponse)
+    async def sources_table(request: Request) -> HTMLResponse:
+        return _sources_table_response(request)
+
+    @router.post("/admin/sources", response_model=None)
+    async def sources_add(
+        request: Request,
+        source_type: str = Form(...),
+        name: str = Form(...),
+        url: str = Form(...),
+        category: str = Form("General"),
+        priority: int = Form(2),
+        channel_id: str = Form(""),
+    ) -> HTMLResponse | RedirectResponse:
+        extra: dict[str, str] = {}
+        feed_url = url
+        if source_type == "youtube" and channel_id:
+            extra = {"channel_id": channel_id, "handle": name}
+            feed_url = (
+                f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+            )
+        sources.add(source_type, name, category, priority, feed_url, extra=extra)
+        if _is_htmx(request):
+            return _sources_table_response(request)
+        return RedirectResponse("/admin/sources", status_code=303)
+
+    @router.post("/admin/sources/{source_id}/delete", response_model=None)
+    async def sources_delete(
+        request: Request,
+        source_id: int,
+    ) -> HTMLResponse | RedirectResponse:
+        sources.delete(source_id)
+        if _is_htmx(request):
+            return _sources_table_response(request)
+        return RedirectResponse("/admin/sources", status_code=303)
+
+    @router.post("/admin/sources/import-opml", response_model=None)
+    async def sources_import_opml(
+        request: Request,
+        file: UploadFile = File(...),
+    ) -> HTMLResponse | RedirectResponse:
+        raw = await file.read()
+        text = raw.decode("utf-8", errors="replace")
+        try:
+            outline_rows = parse_opml_outlines(text)
+        except Exception:
+            if _is_htmx(request):
+                return HTMLResponse(
+                    '<p class="flash flash-warn">Invalid OPML file.</p>',
+                    status_code=400,
+                )
+            return RedirectResponse("/admin/sources?imported=0&err=1", status_code=303)
+        existing = {r["url"] for r in sources.list_all()}
+        added = 0
+        for row in outline_rows:
+            xml_url = row["xmlUrl"]
+            if xml_url in existing:
+                continue
+            title = row.get("title") or xml_url
+            sources.add("rss", title[:240], "Imported", 2, xml_url)
+            existing.add(xml_url)
+            added += 1
+        if _is_htmx(request):
+            return _sources_table_response(request)
+        return RedirectResponse(
+            f"/admin/sources?imported={added}",
+            status_code=303,
+        )
+
+    @router.get("/admin/sources/export.opml", response_class=PlainTextResponse)
+    async def sources_export_opml() -> PlainTextResponse:
+        body = build_opml(sources.list_all())
+        return PlainTextResponse(
+            body,
+            media_type="application/xml; charset=utf-8",
+            headers={
+                "Content-Disposition": 'attachment; filename="condenseit-sources.opml"',
+            },
+        )
+
+    @router.get("/admin/llm", response_class=HTMLResponse)
+    async def llm_config(request: Request) -> HTMLResponse:
+        merged = _merged()
+        model = store.get_setting("model", merged.model)
+        provider = store.get_setting("llm_provider", merged.llm.provider)
+        try:
+            ollama_models = ollama_list_tags(merged.llm.ollama_host)
+        except Exception:
+            ollama_models = []
+        return templates.TemplateResponse(
+            request,
+            "llm_config.html",
+            page_context(
+                request,
+                "LLM",
+                "llm",
+                digests=_digests(),
+                model=model,
+                provider=provider,
+                ollama_host=merged.llm.ollama_host,
+                or_model=merged.llm.openrouter_model,
+                openrouter_pick_cheapest=merged.llm.openrouter_pick_cheapest,
+                ollama_models=ollama_models,
+                msg=request.query_params.get("msg", ""),
+            ),
+        )
+
+    @router.post("/admin/llm")
+    async def llm_save(
+        provider: str = Form(...),
+        model: str = Form(...),
+        openrouter_model: str = Form(""),
+        openrouter_pick_cheapest: str = Form(""),
+    ) -> RedirectResponse:
+        store.set_setting("llm_provider", provider)
+        store.set_setting("model", model)
+        if openrouter_model:
+            store.set_setting("openrouter_model", openrouter_model)
+        store.set_setting(
+            "openrouter_pick_cheapest",
+            "1" if openrouter_pick_cheapest == "on" else "0",
+        )
+        return RedirectResponse("/admin/llm", status_code=303)
+
+    @router.post("/admin/llm/ollama/pull", response_model=None)
+    async def llm_ollama_pull(
+        request: Request,
+        pull_model: str = Form(...),
+    ) -> HTMLResponse | RedirectResponse:
+        merged = _merged()
+        try:
+            ollama_pull(merged.llm.ollama_host, pull_model)
+            msg = f"Pulled {pull_model}."
+        except Exception as exc:
+            msg = f"Pull failed: {exc}"
+        if _is_htmx(request):
+            return HTMLResponse(f'<p class="flash">{msg}</p>')
+        return RedirectResponse(f"/admin/llm?msg={quote(msg[:500])}", status_code=303)
+
+    @router.post("/admin/llm/ollama/delete", response_model=None)
+    async def llm_ollama_delete(
+        request: Request,
+        delete_model: str = Form(...),
+    ) -> HTMLResponse | RedirectResponse:
+        merged = _merged()
+        try:
+            ollama_delete(merged.llm.ollama_host, delete_model)
+            msg = f"Deleted {delete_model}."
+        except Exception as exc:
+            msg = f"Delete failed: {exc}"
+        if _is_htmx(request):
+            return HTMLResponse(f'<p class="flash flash-warn">{msg}</p>')
+        return RedirectResponse(f"/admin/llm?msg={quote(msg[:500])}", status_code=303)
+
+    @router.get("/admin/keys", response_class=HTMLResponse)
+    async def keys_page(request: Request) -> HTMLResponse:
+        return templates.TemplateResponse(
+            request,
+            "keys.html",
+            page_context(
+                request,
+                "API Keys",
+                "keys",
+                digests=_digests(),
+                keys=keys.list_keys(),
+            ),
+        )
+
+    @router.post("/admin/keys")
+    async def keys_save(
+        service: str = Form(...),
+        key_value: str = Form(...),
+    ) -> RedirectResponse:
+        keys.store_key(service, key_value)
+        return RedirectResponse("/admin/keys", status_code=303)
+
+    @router.post("/admin/keys/{service}/delete")
+    async def keys_delete(service: str) -> RedirectResponse:
+        keys.delete_key(service)
+        return RedirectResponse("/admin/keys", status_code=303)
+
+    @router.get("/admin/advisor", response_class=HTMLResponse)
+    async def advisor_page(request: Request) -> HTMLResponse:
+        merged = _merged()
+        advisor = ModelAdvisor(store, merged.llm.ollama_host)
+        current = store.get_setting("model", merged.model)
+        rec = advisor.recommend(current)
+        weekly_raw = store.get_setting("advisor_weekly_recommendation", "")
+        weekly: dict[str, Any] | None = None
+        if weekly_raw:
+            try:
+                weekly = json.loads(weekly_raw)
+            except json.JSONDecodeError:
+                weekly = None
+        bench_rows: list[dict[str, Any]] = []
+        if "benchmarks" in store.db.table_names():
+            bench_rows = [
+                dict(r)
+                for r in store.db.query(
+                    "SELECT * FROM benchmarks ORDER BY id DESC LIMIT 10",
+                )
+            ]
+        return templates.TemplateResponse(
+            request,
+            "advisor.html",
+            page_context(
+                request,
+                "Model Advisor",
+                "advisor",
+                digests=_digests(),
+                recommendation=rec,
+                weekly_recommendation=weekly,
+                benchmark_history=bench_rows,
+            ),
+        )
+
+    @router.post("/admin/advisor/apply")
+    async def advisor_apply(recommended_model: str = Form(...)) -> RedirectResponse:
+        store.set_setting("model", recommended_model)
+        return RedirectResponse("/admin/advisor", status_code=303)
+
+    return router

@@ -1,0 +1,49 @@
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Type</th>
+      <th>Name</th>
+      <th>URL</th>
+      <th>Category</th>
+      <th>Health</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for s in sources %}
+    <tr>
+      <td><span class="badge">{{ s.type }}</span></td>
+      <td>{{ s.name }}</td>
+      <td class="text-muted" style="max-width:12rem;overflow:hidden;text-overflow:ellipsis">
+        {{ s.url }}
+      </td>
+      <td>{{ s.category }}</td>
+      <td class="text-muted" style="font-size:0.8rem">
+        {% if s.get('last_status') %}
+          <span class="badge {% if s.get('last_status') == 'ok' %}badge-ok{% else %}badge-err{% endif %}">
+            {{ s.get('last_status') }}
+          </span>
+          {% set cnt = s.get('last_item_count') %}
+          {% if cnt is not none and cnt >= 0 %}
+            <br>{{ cnt }} items
+          {% endif %}
+          {% if s.get('last_checked_at') %}
+            <br><span title="{{ s.get('last_error') or '' }}">{{ s.get('last_checked_at')[:16] }}</span>
+          {% endif %}
+        {% else %}
+          —
+        {% endif %}
+      </td>
+      <td>
+        <form method="post" action="/admin/sources/{{ s.id }}/delete"
+          hx-post="/admin/sources/{{ s.id }}/delete"
+          hx-target="#sources-table-wrap" hx-swap="innerHTML">
+          <button type="submit" class="btn btn-secondary btn-sm">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="text-muted">No sources yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>

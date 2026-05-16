@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <h1>API keys</h1>
+  <p class="page-lead">Encrypted at rest in SQLite. Used for Resend email and OpenRouter.</p>
+</header>
+
+<form method="post" action="/admin/keys" class="card form-grid">
+  <h2>Add or update key</h2>
+  <label>Service
+    <select name="service">
+      <option value="resend">Resend</option>
+      <option value="openrouter">OpenRouter</option>
+    </select>
+  </label>
+  <label>API key <input name="key_value" type="password" required autocomplete="off"></label>
+  <button type="submit" class="btn">Save key</button>
+</form>
+
+<div class="table-wrap">
+  <table class="data-table">
+    <thead>
+      <tr><th>Service</th><th>Preview</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for k in keys %}
+      <tr>
+        <td>{{ k.service }}</td>
+        <td><code>{{ k.key_preview }}</code></td>
+        <td>
+          <form method="post" action="/admin/keys/{{ k.service }}/delete">
+            <button type="submit" class="btn btn-secondary btn-sm">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="text-muted">No keys stored yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
