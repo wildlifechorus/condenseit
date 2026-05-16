@@ -16,6 +16,10 @@ interface DigestCardProps {
   isRead?: boolean;
   /** Opens the detail panel for this item. */
   onSelect?: (item: DigestItem) => void;
+  /** Called when the user clicks "Read Later" to toggle save state. */
+  onReadLater?: (item: DigestItem) => void;
+  /** Whether this item is currently saved to read later. */
+  isReadLater?: boolean;
 }
 
 function formatDate(iso?: string): string {
@@ -42,6 +46,8 @@ export function DigestCard({
   onMarkRead,
   isRead = false,
   onSelect,
+  onReadLater,
+  isReadLater = false,
 }: DigestCardProps) {
   const summary = cleanSummary(item.summary);
   const metaParts: string[] = [];
@@ -55,6 +61,7 @@ export function DigestCard({
   );
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [readLaterFlash, setReadLaterFlash] = useState(false);
 
   /**
    * Sync local star display whenever the parent updates item.rating
@@ -170,35 +177,75 @@ export function DigestCard({
             )}
           </div>
 
-          {onMarkRead && (
-            <button
-              type="button"
-              onClick={() => onMarkRead(item.url)}
-              title={isRead ? 'Mark as unread' : 'Mark as read'}
-              class={[
-                'flex items-center gap-1 text-xs px-2 py-1 rounded-md border',
-                'transition-colors shrink-0',
-                isRead
-                  ? 'border-teal-200 dark:border-teal-800 text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/20'
-                  : 'border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:border-teal-300 hover:text-teal-600 dark:hover:text-teal-400',
-              ].join(' ')}
-            >
-              <svg
-                class="w-3 h-3"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="2.5"
+          <div class="flex items-center gap-1.5 shrink-0">
+            {onReadLater && (
+              <button
+                type="button"
+                onClick={() => {
+                  onReadLater(item);
+                  if (!isReadLater) {
+                    setReadLaterFlash(true);
+                    setTimeout(() => setReadLaterFlash(false), 2000);
+                  }
+                }}
+                title={isReadLater ? 'Remove from Read Later' : 'Save to Read Later'}
+                class={[
+                  'flex items-center gap-1 text-xs px-2 py-1 rounded-md border',
+                  'transition-colors',
+                  isReadLater
+                    ? 'border-amber-200 dark:border-amber-800 text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20'
+                    : readLaterFlash
+                      ? 'border-amber-300 text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20'
+                      : 'border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:border-amber-300 hover:text-amber-600 dark:hover:text-amber-400',
+                ].join(' ')}
               >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M4.5 12.75l6 6 9-13.5"
-                />
-              </svg>
-              {isRead ? 'Read' : 'Mark read'}
-            </button>
-          )}
+                <svg
+                  class="w-3 h-3"
+                  fill={isReadLater ? 'currentColor' : 'none'}
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z"
+                  />
+                </svg>
+                {isReadLater ? 'Saved' : 'Read later'}
+              </button>
+            )}
+
+            {onMarkRead && (
+              <button
+                type="button"
+                onClick={() => onMarkRead(item.url)}
+                title={isRead ? 'Mark as unread' : 'Mark as read'}
+                class={[
+                  'flex items-center gap-1 text-xs px-2 py-1 rounded-md border',
+                  'transition-colors',
+                  isRead
+                    ? 'border-teal-200 dark:border-teal-800 text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/20'
+                    : 'border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:border-teal-300 hover:text-teal-600 dark:hover:text-teal-400',
+                ].join(' ')}
+              >
+                <svg
+                  class="w-3 h-3"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M4.5 12.75l6 6 9-13.5"
+                  />
+                </svg>
+                {isRead ? 'Read' : 'Mark read'}
+              </button>
+            )}
+          </div>
         </div>
       )}
     </article>

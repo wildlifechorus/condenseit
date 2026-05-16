@@ -517,6 +517,45 @@ def create_app(config_path: str | None = None) -> FastAPI:
             store.mark_article_unread(url)
         return JSONResponse({"ok": True})
 
+    # --- Read Later ----------------------------------------------------
+
+    @app.get("/api/read-later", response_model=None)
+    async def api_get_read_later() -> JSONResponse:
+        """Return all items saved for later, newest first."""
+        items = store.list_read_later()
+        # Attach current ratings so the UI can show stars.
+        items = _attach_ratings(store, items)
+        return JSONResponse({"items": items})
+
+    @app.post("/api/read-later", response_model=None)
+    async def api_save_read_later(body: dict[str, Any]) -> JSONResponse:
+        """Save a digest item to the read-later list.
+
+        The client sends the full DigestItem payload so we can store it
+        without needing to look it up from a digest (which may not exist
+        in archived digests or after a new run overwrites the latest).
+        """
+        url = str(body.get("url", "")).strip()
+        if not url:
+            return JSONResponse({"error": "Missing url"}, status_code=422)
+        store.save_read_later(body)
+        return JSONResponse({"ok": True})
+
+    @app.delete("/api/read-later", response_model=None)
+    async def api_remove_read_later(body: dict[str, Any]) -> JSONResponse:
+        """Remove a URL from the read-later list (mark as done / read)."""
+        url = str(body.get("url", "")).strip()
+        if not url:
+            return JSONResponse({"error": "Missing url"}, status_code=422)
+        store.remove_read_later(url)
+        return JSONResponse({"ok": True})
+
+    @app.get("/api/read-later/urls", response_model=None)
+    async def api_get_read_later_urls() -> JSONResponse:
+        """Return only the set of URLs saved for later (lightweight check)."""
+        urls = sorted(store.get_read_later_urls())
+        return JSONResponse({"urls": urls})
+
     # --- Preference profile --------------------------------------------
 
     @app.get("/api/preferences/profile", response_model=None)

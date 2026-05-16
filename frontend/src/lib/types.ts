@@ -192,6 +192,16 @@ export interface PasswordInfo {
   using_default: boolean;
 }
 
+// ---------- Read Later ---------------------------------------------------
+
+/**
+ * A digest item that the user has saved to the read-later list.
+ * Mirrors DigestItem plus a `saved_at` timestamp set when it was bookmarked.
+ */
+export interface ReadLaterItem extends DigestItem {
+  saved_at: string;
+}
+
 // ---------- Run logs -----------------------------------------------------
 
 export interface RunLogSummary {

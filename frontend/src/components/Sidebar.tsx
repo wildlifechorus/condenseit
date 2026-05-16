@@ -15,7 +15,10 @@ interface NavSection {
 const SECTIONS: NavSection[] = [
   {
     label: 'Read',
-    links: [{ href: '/', label: 'Latest digest', exact: true }],
+    links: [
+      { href: '/', label: 'Latest digest', exact: true },
+      { href: '/read-later', label: 'Read Later' },
+    ],
   },
   {
     label: 'Configure',

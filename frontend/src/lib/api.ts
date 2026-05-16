@@ -5,11 +5,13 @@ import type {
   DigestConfig,
   DigestDetail,
   DigestEntry,
+  DigestItem,
   Job,
   LlmConfig,
   PasswordInfo,
   PreferenceProfile,
   RatingArticle,
+  ReadLaterItem,
   RunLog,
   RunLogSummary,
   ScheduleConfig,
@@ -151,4 +153,14 @@ export const api = {
   listLogs: () => request<RunLogSummary[]>('GET', '/api/logs'),
   getLog: (id: number) => request<RunLog | null>('GET', `/api/logs/${id}`),
   getLatestLog: () => request<RunLog | null>('GET', '/api/logs/latest'),
+
+  // Read Later
+  getReadLaterItems: () =>
+    request<{ items: ReadLaterItem[] }>('GET', '/api/read-later'),
+  getReadLaterUrls: () =>
+    request<{ urls: string[] }>('GET', '/api/read-later/urls'),
+  saveReadLater: (item: DigestItem) =>
+    request<void>('POST', '/api/read-later', item),
+  removeReadLater: (url: string) =>
+    request<void>('DELETE', '/api/read-later', { url }),
 };

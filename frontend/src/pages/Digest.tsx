@@ -37,6 +37,9 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
   /** When true (default) read items are hidden from the grid. */
   const [hideRead, setHideRead] = useState(true);
 
+  /** URLs the user has saved to read later. */
+  const [readLaterUrls, setReadLaterUrls] = useState<Set<string>>(new Set());
+
   /** Item currently open in the detail panel, or null when closed. */
   const [selectedItem, setSelectedItem] = useState<DigestItem | null>(null);
 
@@ -69,6 +72,12 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
           .getReadUrls()
           .then(({ urls }) => setReadUrls(new Set(urls)))
           .catch(() => {});
+
+        // Fetch read-later URLs from server.
+        api
+          .getReadLaterUrls()
+          .then(({ urls }) => setReadLaterUrls(new Set(urls)))
+          .catch(() => {});
       })
       .catch((e: unknown) => {
         setError(e instanceof Error ? e.message : 'Failed to load digest.');
@@ -96,6 +105,26 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
         next.delete(url);
       }
       api.markRead(url, nowRead).catch(() => undefined);
+      return next;
+    });
+  }, []);
+
+  /**
+   * Toggle the read-later state for an item.
+   * When saving, the full item payload is sent so the backend can persist it
+   * without needing to look it up from a digest row.
+   */
+  const handleReadLater = useCallback((item: DigestItem) => {
+    const url = item.url;
+    setReadLaterUrls((prev) => {
+      const next = new Set(prev);
+      if (next.has(url)) {
+        next.delete(url);
+        api.removeReadLater(url).catch(() => undefined);
+      } else {
+        next.add(url);
+        api.saveReadLater(item).catch(() => undefined);
+      }
       return next;
     });
   }, []);
@@ -214,6 +243,8 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
                     onMarkRead={handleMarkRead}
                     isRead={readUrls.has(item.url)}
                     onSelect={setSelectedItem}
+                    onReadLater={handleReadLater}
+                    isReadLater={readLaterUrls.has(item.url)}
                   />
                 );
               })}
@@ -234,6 +265,8 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
           onClose={() => setSelectedItem(null)}
           onRate={handleRate}
           onMarkRead={handleMarkRead}
+          onReadLater={handleReadLater}
+          isReadLater={readLaterUrls.has(selectedItem.url)}
         />
       )}
     </div>

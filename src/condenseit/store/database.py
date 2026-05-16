@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
@@ -130,6 +131,22 @@ class ContentStore:
                     "created_at": str,
                 },
                 pk="id",
+            )
+        if "read_later" not in self.db.table_names():
+            self.db["read_later"].create(
+                {
+                    "url": str,
+                    "title": str,
+                    "summary": str,
+                    "tldr": str,
+                    "key_takeaways": str,
+                    "source": str,
+                    "category": str,
+                    "kind": str,
+                    "published_at": str,
+                    "saved_at": str,
+                },
+                pk="url",
             )
 
     def get_setting(self, key: str, default: str = "") -> str:
@@ -334,6 +351,64 @@ class ContentStore:
             for row in self.db["read_articles"].rows
             if row.get("title")
         }
+
+    def save_read_later(self, item: dict[str, Any]) -> None:
+        """Persist a digest item to the read-later list.
+
+        ``key_takeaways`` is stored as a JSON array string so it survives a
+        round-trip through SQLite without a schema change.
+        """
+        key_takeaways = item.get("key_takeaways") or []
+        if isinstance(key_takeaways, list):
+            key_takeaways = json.dumps(key_takeaways)
+        self.db["read_later"].upsert(
+            {
+                "url": str(item.get("url", "")).strip(),
+                "title": str(item.get("title", "")),
+                "summary": str(item.get("summary", "")),
+                "tldr": str(item.get("tldr", "") or ""),
+                "key_takeaways": str(key_takeaways),
+                "source": str(item.get("source", "")),
+                "category": str(item.get("category", "")),
+                "kind": str(item.get("kind", "article")),
+                "published_at": str(item.get("published_at", "") or ""),
+                "saved_at": datetime.now(UTC).isoformat(),
+            },
+            pk="url",
+        )
+
+    def remove_read_later(self, url: str) -> None:
+        """Remove a URL from the read-later list."""
+        try:
+            self.db["read_later"].delete(url)
+        except NotFoundError:
+            pass
+
+    def get_read_later_urls(self) -> set[str]:
+        """Return the set of all URLs currently saved for later."""
+        if "read_later" not in self.db.table_names():
+            return set()
+        return {str(row["url"]) for row in self.db["read_later"].rows}
+
+    def list_read_later(self) -> list[dict[str, Any]]:
+        """Return all read-later items ordered newest-saved first.
+
+        ``key_takeaways`` is deserialized back to a list before returning.
+        """
+        if "read_later" not in self.db.table_names():
+            return []
+        rows = list(
+            self.db.query(
+                "SELECT * FROM read_later ORDER BY saved_at DESC",
+            )
+        )
+        for row in rows:
+            raw_kt = row.get("key_takeaways") or "[]"
+            try:
+                row["key_takeaways"] = json.loads(raw_kt)
+            except (json.JSONDecodeError, TypeError):
+                row["key_takeaways"] = []
+        return rows
 
     def save_run_log(self, digest_id: int | None, log_text: str) -> int:
         """Persist the captured log from a digest run."""
