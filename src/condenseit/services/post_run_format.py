@@ -19,7 +19,7 @@ def line_for_deploy(step: Mapping[str, Any]) -> str:
             "VPS deploy: not run (vps.enabled is false in config; set true when ready)"
         )
     if status == "missing_host":
-        return "VPS deploy: not run (vps.host is empty; set user@host for rsync target)"
+        return "VPS deploy: not configured (set DIGEST_PWA_SSH_HOST to enable rsync)"
     if status == "skipped":
         return f"VPS deploy: not run ({step.get('reason', 'skipped')})"
     return f"VPS deploy: {status}"

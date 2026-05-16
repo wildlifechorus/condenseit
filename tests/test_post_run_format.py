@@ -19,7 +19,7 @@ def test_format_post_run_lines_missing_host() -> None:
         },
     )
     assert len(lines) == 1
-    assert "vps.host is empty" in lines[0]
+    assert "DIGEST_PWA_SSH_HOST" in lines[0]
 
 
 def test_format_post_run_lines_deploy_ok() -> None:
