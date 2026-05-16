@@ -105,9 +105,22 @@ class ContentStore:
                 {
                     "url": str,
                     "read_at": str,
+                    "title": str,
                 },
                 pk="url",
             )
+        else:
+            # Migration: add title column to existing read_articles tables.
+            existing_cols = {
+                row[1]
+                for row in self.db.execute(
+                    "PRAGMA table_info(read_articles)"
+                ).fetchall()
+            }
+            if "title" not in existing_cols:
+                self.db.execute(
+                    "ALTER TABLE read_articles ADD COLUMN title TEXT"
+                )
         if "digest_run_logs" not in self.db.table_names():
             self.db["digest_run_logs"].create(
                 {
@@ -146,6 +159,13 @@ class ContentStore:
             return True
         except NotFoundError:
             return False
+
+    def get_article(self, url: str) -> dict[str, Any] | None:
+        """Return the stored article row for ``url``, or ``None`` if not found."""
+        try:
+            return dict(self.db["articles"].get(url))
+        except NotFoundError:
+            return None
 
     def save_article(self, article: dict[str, Any]) -> None:
         self.db["articles"].upsert(article, pk="url")
@@ -272,15 +292,20 @@ class ContentStore:
             pk="url",
         )
 
-    def mark_article_read(self, url: str) -> None:
-        """Record that the user has read the article at ``url``."""
-        self.db["read_articles"].upsert(
-            {
-                "url": url,
-                "read_at": datetime.now(UTC).isoformat(),
-            },
-            pk="url",
-        )
+    def mark_article_read(self, url: str, title: str | None = None) -> None:
+        """Record that the user has read the article at ``url``.
+
+        ``title`` is stored so the pipeline can also exclude re-appeared
+        articles that share the same title but arrive with a different URL
+        (e.g. Google News opaque redirect URLs that rotate between fetches).
+        """
+        row: dict[str, Any] = {
+            "url": url,
+            "read_at": datetime.now(UTC).isoformat(),
+        }
+        if title:
+            row["title"] = title.strip()
+        self.db["read_articles"].upsert(row, pk="url")
 
     def mark_article_unread(self, url: str) -> None:
         """Remove ``url`` from the read set so it can appear in future digests."""
@@ -294,6 +319,21 @@ class ContentStore:
         if "read_articles" not in self.db.table_names():
             return set()
         return {str(row["url"]) for row in self.db["read_articles"].rows}
+
+    def get_read_titles(self) -> set[str]:
+        """Return lowercased titles of all articles the user has marked as read.
+
+        Only rows that have a non-empty ``title`` are included. Used by the
+        pipeline to exclude re-appeared articles that share the same title but
+        arrive under a different URL (e.g. rotating Google News redirect URLs).
+        """
+        if "read_articles" not in self.db.table_names():
+            return set()
+        return {
+            str(row["title"]).lower().strip()
+            for row in self.db["read_articles"].rows
+            if row.get("title")
+        }
 
     def save_run_log(self, digest_id: int | None, log_text: str) -> int:
         """Persist the captured log from a digest run."""

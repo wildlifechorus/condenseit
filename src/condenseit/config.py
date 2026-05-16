@@ -120,6 +120,9 @@ class AppConfig(BaseModel):
     max_article_age_hours: int = Field(default=36, ge=0)
     # ISO 639-1 language codes; empty list means accept all languages.
     preferred_languages: list[str] = Field(default_factory=list)
+    # Case-insensitive substrings; articles whose title or description contains
+    # any of these phrases are dropped before ranking. Empty list = no filter.
+    exclude_keywords: list[str] = Field(default_factory=list)
     # LLM summarization tuning.
     max_key_takeaways: int = Field(default=5, ge=1, le=10)
     max_summary_paragraphs: int = Field(default=5, ge=1, le=10)

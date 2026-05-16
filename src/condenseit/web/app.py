@@ -510,7 +510,9 @@ def create_app(config_path: str | None = None) -> FastAPI:
         if not url:
             return JSONResponse({"error": "Missing url"}, status_code=422)
         if is_read:
-            store.mark_article_read(url)
+            article = store.get_article(url)
+            title = str(article["title"]).strip() if article and article.get("title") else None
+            store.mark_article_read(url, title=title)
         else:
             store.mark_article_unread(url)
         return JSONResponse({"ok": True})

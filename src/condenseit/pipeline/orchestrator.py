@@ -181,6 +181,7 @@ class DigestPipeline:
         articles = self._filter_by_age(articles)
         articles = self._filter_read(articles)
         articles = self._filter_by_language(articles)
+        articles = self._filter_by_excluded_keywords(articles)
 
         keywords = self.config.relevance.initial_keywords
         ranked = self.preferences.rank_articles(
@@ -315,11 +316,28 @@ class DigestPipeline:
     def _filter_read(
         self, articles: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
-        """Exclude articles the user has already marked as read."""
+        """Exclude articles the user has already marked as read.
+
+        Matching is done by both URL (exact) and title (case-insensitive).
+        The title fallback catches articles that re-appear under a different
+        URL, such as Google News opaque redirect URLs that rotate on each RSS
+        fetch, or publishers that duplicate content at multiple URL paths.
+        """
         read_urls = self.store.get_read_urls()
-        if not read_urls:
+        read_titles = self.store.get_read_titles()
+        if not read_urls and not read_titles:
             return articles
-        kept = [a for a in articles if a.get("url") not in read_urls]
+
+        def _is_read(a: dict[str, Any]) -> bool:
+            if a.get("url") in read_urls:
+                return True
+            if read_titles:
+                title = str(a.get("title", "")).lower().strip()
+                if title and title in read_titles:
+                    return True
+            return False
+
+        kept = [a for a in articles if not _is_read(a)]
         dropped = len(articles) - len(kept)
         if dropped:
             logger.info(
@@ -377,6 +395,50 @@ class DigestPipeline:
                 "Language filter (%s): dropped %d article(s), %d remaining",
                 ", ".join(preferred),
                 dropped,
+                len(kept),
+            )
+        return kept
+
+    def _filter_by_excluded_keywords(
+        self, articles: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Drop articles whose title or description contains an excluded phrase.
+
+        Each entry in ``config.exclude_keywords`` is treated as a
+        case-insensitive substring match against the article title and the
+        first 500 characters of its description/content field.  An empty
+        list disables the filter entirely.
+        """
+        raw_phrases = self.config.exclude_keywords
+        if not raw_phrases:
+            return articles
+
+        # Normalise once so we do cheap lower() comparisons in the loop.
+        phrases = [p.lower() for p in raw_phrases if p.strip()]
+        if not phrases:
+            return articles
+
+        kept: list[dict[str, Any]] = []
+        dropped = 0
+
+        for art in articles:
+            title = str(art.get('title') or '').lower()
+            description = str(art.get('description') or art.get('content') or '')[
+                :500
+            ].lower()
+            combined = title + ' ' + description
+
+            if any(phrase in combined for phrase in phrases):
+                dropped += 1
+            else:
+                kept.append(art)
+
+        if dropped:
+            logger.info(
+                'Keyword exclusion filter: dropped %d article(s) matching'
+                ' %r, %d remaining',
+                dropped,
+                raw_phrases,
                 len(kept),
             )
         return kept
