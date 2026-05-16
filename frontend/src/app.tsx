@@ -91,10 +91,10 @@ export function App() {
           <Route path="/admin/logs">
             <LogsPage />
           </Route>
-          <Route path="/admin/settings">
+          <Route path="/admin/digest-settings">
             <SettingsPage />
           </Route>
-          <Route path="/admin/preferences">
+          <Route path="/admin/profile">
             <PreferencesPage />
           </Route>
           <Route path="/admin/security">
