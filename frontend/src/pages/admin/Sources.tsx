@@ -40,6 +40,7 @@ export function SourcesPage() {
   const [flash, setFlash] = useState<string | null>(null);
   const [addFormOpen, setAddFormOpen] = useState(false);
   const [sourceType, setSourceType] = useState('rss');
+  const [gnewsQuery, setGnewsQuery] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<string | null>(
     null,
@@ -76,6 +77,7 @@ export function SourcesPage() {
       await api.addSource(data);
       form.reset();
       setSourceType('rss');
+      setGnewsQuery('');
       setAddFormOpen(false);
       load();
       showFlash('Source added.');
@@ -204,7 +206,7 @@ export function SourcesPage() {
         </div>
       </div>
       <p class="text-sm text-slate-500 dark:text-slate-400 -mt-3">
-        RSS feeds, YouTube channels, and website change monitors.
+        RSS, YouTube, website monitors, Google News searches, Hacker News, Reddit, and GitHub Releases.
       </p>
 
       {flash && (
@@ -221,6 +223,7 @@ export function SourcesPage() {
             onSubmit={handleAdd}
             class="grid grid-cols-1 sm:grid-cols-2 gap-3"
           >
+            {/* --- Type selector --- */}
             <Field label="Type">
               <select
                 name="source_type"
@@ -235,32 +238,222 @@ export function SourcesPage() {
                 <option value="rss">RSS</option>
                 <option value="youtube">YouTube</option>
                 <option value="website">Website watch</option>
+                <option value="google_news">Google News search</option>
+                <option value="hackernews">Hacker News</option>
+                <option value="reddit">Reddit</option>
+                <option value="github_releases">GitHub Releases</option>
               </select>
             </Field>
+
+            {/* --- Name (always shown) --- */}
             <Field label="Name">
               <input name="name" required class={inputCls} />
             </Field>
-            <Field label="URL" className="sm:col-span-2">
-              <input
-                name="url"
-                required
-                placeholder={
-                  sourceType === 'youtube'
-                    ? 'https://www.youtube.com/@channel'
+
+            {/* --- URL (RSS / YouTube / Website only) --- */}
+            {(sourceType === 'rss' ||
+              sourceType === 'youtube' ||
+              sourceType === 'website') && (
+              <Field label="URL" className="sm:col-span-2">
+                <input
+                  name="url"
+                  required
+                  placeholder={
+                    sourceType === 'youtube'
+                      ? 'https://www.youtube.com/@channel'
+                      : sourceType === 'website'
+                        ? 'https://example.com/page-to-watch'
+                        : 'https://example.com/feed.xml'
+                  }
+                  class={inputCls}
+                />
+                <span class="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                  {sourceType === 'youtube'
+                    ? 'Channel page URL or RSS feed URL'
                     : sourceType === 'website'
-                      ? 'https://example.com/page-to-watch'
-                      : 'https://example.com/feed.xml'
-                }
-                class={inputCls}
-              />
-              <span class="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                {sourceType === 'youtube'
-                  ? 'Channel page URL or RSS feed URL'
-                  : sourceType === 'website'
-                    ? 'Page URL to monitor for changes'
-                    : 'Direct RSS/Atom feed URL'}
-              </span>
-            </Field>
+                      ? 'Page URL to monitor for changes'
+                      : 'Direct RSS/Atom feed URL'}
+                </span>
+              </Field>
+            )}
+
+            {/* --- YouTube channel ID --- */}
+            {sourceType === 'youtube' && (
+              <Field
+                label="YouTube channel ID"
+                className="sm:col-span-2"
+              >
+                <input
+                  name="channel_id"
+                  placeholder="UC..."
+                  class={inputCls}
+                />
+                <span class="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                  Found in the channel's About page or URL
+                </span>
+              </Field>
+            )}
+
+            {/* --- Google News search query --- */}
+            {sourceType === 'google_news' && (
+              <>
+                <Field label="Search query" className="sm:col-span-2">
+                  <input
+                    name="query"
+                    required
+                    placeholder='site:reuters.com when:1d  /  "AI" intitle:release'
+                    value={gnewsQuery}
+                    onInput={(e) =>
+                      setGnewsQuery(
+                        (e.target as HTMLInputElement).value,
+                      )
+                    }
+                    class={inputCls}
+                  />
+                  <span class="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                    Supports{' '}
+                    <code class="font-mono">site:</code>,{' '}
+                    <code class="font-mono">when:</code>,{' '}
+                    <code class="font-mono">intitle:</code>,{' '}
+                    <code class="font-mono">source:</code> operators
+                  </span>
+                </Field>
+                {gnewsQuery && (
+                  <p class="sm:col-span-2 text-xs font-mono text-slate-400 dark:text-slate-500 break-all">
+                    {`https://news.google.com/rss/search?q=${encodeURIComponent(gnewsQuery)}&hl=en-US&gl=US&ceid=US:en`}
+                  </p>
+                )}
+                <Field label="Language">
+                  <input
+                    name="language"
+                    defaultValue="en"
+                    placeholder="en"
+                    class={inputCls}
+                  />
+                </Field>
+                <Field label="Country">
+                  <input
+                    name="country"
+                    defaultValue="US"
+                    placeholder="US"
+                    class={inputCls}
+                  />
+                </Field>
+              </>
+            )}
+
+            {/* --- Hacker News --- */}
+            {sourceType === 'hackernews' && (
+              <>
+                <Field label="Feed">
+                  <select name="hn_feed" class={inputCls} defaultValue="top">
+                    <option value="top">Top stories</option>
+                    <option value="best">Best stories</option>
+                    <option value="new">New stories</option>
+                    <option value="ask">Ask HN</option>
+                    <option value="show">Show HN</option>
+                  </select>
+                </Field>
+                <Field label="Min score">
+                  <input
+                    name="hn_min_score"
+                    type="number"
+                    defaultValue="50"
+                    min="0"
+                    class={inputCls}
+                  />
+                  <span class="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                    Skip stories below this score
+                  </span>
+                </Field>
+                <Field label="Max items">
+                  <input
+                    name="hn_max_items"
+                    type="number"
+                    defaultValue="20"
+                    min="1"
+                    max="100"
+                    class={inputCls}
+                  />
+                </Field>
+              </>
+            )}
+
+            {/* --- Reddit --- */}
+            {sourceType === 'reddit' && (
+              <>
+                <Field label="Subreddit" className="sm:col-span-2">
+                  <input
+                    name="subreddit"
+                    required
+                    placeholder="netsec"
+                    class={inputCls}
+                  />
+                  <span class="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                    Name only, without{' '}
+                    <code class="font-mono">r/</code>
+                  </span>
+                </Field>
+                <Field label="Sort">
+                  <select name="reddit_sort" class={inputCls} defaultValue="hot">
+                    <option value="hot">Hot</option>
+                    <option value="new">New</option>
+                    <option value="top">Top</option>
+                    <option value="rising">Rising</option>
+                  </select>
+                </Field>
+                <Field label="Time filter (for Top)">
+                  <select
+                    name="reddit_time_filter"
+                    class={inputCls}
+                    defaultValue="day"
+                  >
+                    <option value="hour">Past hour</option>
+                    <option value="day">Past 24 h</option>
+                    <option value="week">Past week</option>
+                    <option value="month">Past month</option>
+                    <option value="year">Past year</option>
+                    <option value="all">All time</option>
+                  </select>
+                </Field>
+                <Field label="Min score">
+                  <input
+                    name="reddit_min_score"
+                    type="number"
+                    defaultValue="10"
+                    min="0"
+                    class={inputCls}
+                  />
+                </Field>
+                <Field label="Max items">
+                  <input
+                    name="reddit_max_items"
+                    type="number"
+                    defaultValue="20"
+                    min="1"
+                    max="100"
+                    class={inputCls}
+                  />
+                </Field>
+              </>
+            )}
+
+            {/* --- GitHub Releases --- */}
+            {sourceType === 'github_releases' && (
+              <Field label="Repository" className="sm:col-span-2">
+                <input
+                  name="github_repo"
+                  required
+                  placeholder="astral-sh/uv"
+                  class={inputCls}
+                />
+                <span class="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                  Format: <code class="font-mono">owner/repo</code>
+                </span>
+              </Field>
+            )}
+
+            {/* --- Category & priority (always shown) --- */}
             <Field label="Category">
               <input
                 name="category"
@@ -281,21 +474,7 @@ export function SourcesPage() {
                 <option value="5">5 - Lowest</option>
               </select>
             </Field>
-            {sourceType === 'youtube' && (
-              <Field
-                label="YouTube channel ID"
-                className="sm:col-span-2"
-              >
-                <input
-                  name="channel_id"
-                  placeholder="UC..."
-                  class={inputCls}
-                />
-                <span class="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                  Found in the channel's About page or URL
-                </span>
-              </Field>
-            )}
+
             <div class="sm:col-span-2">
               <Button type="submit" loading={addLoading}>
                 Add source
@@ -403,7 +582,7 @@ export function SourcesPage() {
       {sources.length === 0 ? (
         <EmptyState
           title="No sources yet"
-          description="Add your first RSS feed, YouTube channel, or website above."
+          description="Add your first source - RSS, YouTube, Google News search, Hacker News, Reddit, or GitHub Releases."
           action={
             <Button onClick={() => setAddFormOpen(true)}>
               Add source

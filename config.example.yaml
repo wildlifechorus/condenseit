@@ -43,6 +43,30 @@ youtube_channels: []
 
 watch_urls: []
 
+# ---------------------------------------------------------------------------
+# The source types below (google_news, hackernews, reddit, github_releases)
+# are managed entirely through Admin > Sources in the web UI. They are not
+# configurable via config.yaml; the entries here are for reference only.
+#
+# Google News search - no API key required.
+# Supports operators: site:, when:, intitle:, source:, inurl:
+# Example queries:
+#   "site:reuters.com when:1d"
+#   "CVE intitle:critical when:7d"
+#   "\"supply chain\" site:bleepingcomputer.com"
+#
+# Hacker News - no API key required.
+# Feeds: top, best, new, ask, show
+# Configure min_score and max_items via the UI.
+#
+# Reddit - no API key required.
+# Any public subreddit, e.g. netsec, machinelearning, programming
+# Supports hot/new/top/rising with time filter and min score.
+#
+# GitHub Releases - no API key required.
+# Enter the repo as owner/repo, e.g. astral-sh/uv or ollama/ollama
+# ---------------------------------------------------------------------------
+
 relevance:
   # Minimum ratings before preference learning activates.
   min_ratings_for_learning: 5

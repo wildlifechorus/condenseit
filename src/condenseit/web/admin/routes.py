@@ -7,7 +7,7 @@ import os
 import re
 import secrets
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, quote_plus
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import (
@@ -33,9 +33,79 @@ from condenseit.web.templating import page_context, templates
 
 _TIME_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 
+_GNEWS_BASE = "https://news.google.com/rss/search"
+_HN_BASE = "https://hacker-news.firebaseio.com/v0"
+
 
 def _is_htmx(request: Request) -> bool:
     return request.headers.get("HX-Request", "").lower() == "true"
+
+
+def _build_source_extra(
+    source_type: str,
+    url: str,
+    channel_id: str,
+    name: str,
+    *,
+    query: str = "",
+    language: str = "en",
+    country: str = "US",
+    hn_feed: str = "top",
+    hn_max_items: int = 20,
+    hn_min_score: int = 50,
+    subreddit: str = "",
+    reddit_sort: str = "hot",
+    reddit_time_filter: str = "day",
+    reddit_max_items: int = 20,
+    reddit_min_score: int = 10,
+    github_repo: str = "",
+) -> tuple[dict[str, Any], str]:
+    """Return ``(extra_json_dict, feed_url)`` for the given source type."""
+    extra: dict[str, Any] = {}
+    feed_url = url
+
+    if source_type == "youtube" and channel_id:
+        extra = {"channel_id": channel_id, "handle": name}
+        feed_url = (
+            f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+        )
+
+    elif source_type == "google_news":
+        lang = (language or "en").lower()
+        ctry = (country or "US").upper()
+        extra = {"query": query, "language": lang, "country": ctry}
+        feed_url = (
+            f"{_GNEWS_BASE}?q={quote_plus(query)}"
+            f"&hl={lang}-{ctry}&gl={ctry}&ceid={ctry}:{lang}"
+        )
+
+    elif source_type == "hackernews":
+        valid_feeds = {"top", "best", "new", "ask", "show"}
+        feed = hn_feed if hn_feed in valid_feeds else "top"
+        extra = {
+            "feed": feed,
+            "max_items": hn_max_items,
+            "min_score": hn_min_score,
+        }
+        feed_url = f"{_HN_BASE}/{feed}stories.json"
+
+    elif source_type == "reddit":
+        sub = (subreddit or "").strip().lstrip("r/").lstrip("/")
+        extra = {
+            "subreddit": sub,
+            "sort": reddit_sort or "hot",
+            "time_filter": reddit_time_filter or "day",
+            "max_items": reddit_max_items,
+            "min_score": reddit_min_score,
+        }
+        feed_url = f"https://www.reddit.com/r/{sub}/"
+
+    elif source_type == "github_releases":
+        repo = (github_repo or "").strip().strip("/")
+        extra = {"repo": repo}
+        feed_url = f"https://github.com/{repo}/releases.atom"
+
+    return extra, feed_url
 
 
 def create_admin_router(
@@ -84,12 +154,34 @@ def create_admin_router(
         ct = request.headers.get("content-type", "")
         if "multipart/form-data" in ct or "application/x-www-form-urlencoded" in ct:
             form = await request.form()
-            source_type = str(form.get("source_type", "rss"))
-            name = str(form.get("name", ""))
-            url = str(form.get("url", ""))
-            category = str(form.get("category", "General"))
-            priority = int(form.get("priority", 2))
-            channel_id = str(form.get("channel_id", ""))
+
+            def _fstr(key: str, default: str = "") -> str:
+                return str(form.get(key, default))
+
+            def _fint(key: str, default: int = 0) -> int:
+                try:
+                    return int(form.get(key, default))  # type: ignore[arg-type]
+                except (TypeError, ValueError):
+                    return default
+
+            source_type = _fstr("source_type", "rss")
+            name = _fstr("name")
+            url = _fstr("url")
+            category = _fstr("category", "General")
+            priority = _fint("priority", 2)
+            channel_id = _fstr("channel_id")
+            query = _fstr("query")
+            language = _fstr("language", "en")
+            country = _fstr("country", "US")
+            hn_feed = _fstr("hn_feed", "top")
+            hn_max_items = _fint("hn_max_items", 20)
+            hn_min_score = _fint("hn_min_score", 50)
+            subreddit = _fstr("subreddit")
+            reddit_sort = _fstr("reddit_sort", "hot")
+            reddit_time_filter = _fstr("reddit_time_filter", "day")
+            reddit_max_items = _fint("reddit_max_items", 20)
+            reddit_min_score = _fint("reddit_min_score", 10)
+            github_repo = _fstr("github_repo")
         else:
             body = await request.json()
             source_type = str(body.get("source_type", "rss"))
@@ -98,14 +190,37 @@ def create_admin_router(
             category = str(body.get("category", "General"))
             priority = int(body.get("priority", 2))
             channel_id = str(body.get("channel_id", ""))
+            query = str(body.get("query", ""))
+            language = str(body.get("language", "en"))
+            country = str(body.get("country", "US"))
+            hn_feed = str(body.get("hn_feed", "top"))
+            hn_max_items = int(body.get("hn_max_items", 20))
+            hn_min_score = int(body.get("hn_min_score", 50))
+            subreddit = str(body.get("subreddit", ""))
+            reddit_sort = str(body.get("reddit_sort", "hot"))
+            reddit_time_filter = str(body.get("reddit_time_filter", "day"))
+            reddit_max_items = int(body.get("reddit_max_items", 20))
+            reddit_min_score = int(body.get("reddit_min_score", 10))
+            github_repo = str(body.get("github_repo", ""))
 
-        extra: dict[str, str] = {}
-        feed_url = url
-        if source_type == "youtube" and channel_id:
-            extra = {"channel_id": channel_id, "handle": name}
-            feed_url = (
-                f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
-            )
+        extra, feed_url = _build_source_extra(
+            source_type,
+            url,
+            channel_id,
+            name,
+            query=query,
+            language=language,
+            country=country,
+            hn_feed=hn_feed,
+            hn_max_items=hn_max_items,
+            hn_min_score=hn_min_score,
+            subreddit=subreddit,
+            reddit_sort=reddit_sort,
+            reddit_time_filter=reddit_time_filter,
+            reddit_max_items=reddit_max_items,
+            reddit_min_score=reddit_min_score,
+            github_repo=github_repo,
+        )
         sources.add(source_type, name, category, priority, feed_url, extra=extra)
         return JSONResponse({"ok": True})
 
@@ -482,18 +597,41 @@ def create_admin_router(
         request: Request,
         source_type: str = Form(...),
         name: str = Form(...),
-        url: str = Form(...),
+        url: str = Form(""),
         category: str = Form("General"),
         priority: int = Form(2),
         channel_id: str = Form(""),
+        query: str = Form(""),
+        language: str = Form("en"),
+        country: str = Form("US"),
+        hn_feed: str = Form("top"),
+        hn_max_items: int = Form(20),
+        hn_min_score: int = Form(50),
+        subreddit: str = Form(""),
+        reddit_sort: str = Form("hot"),
+        reddit_time_filter: str = Form("day"),
+        reddit_max_items: int = Form(20),
+        reddit_min_score: int = Form(10),
+        github_repo: str = Form(""),
     ) -> HTMLResponse | RedirectResponse:
-        extra: dict[str, str] = {}
-        feed_url = url
-        if source_type == "youtube" and channel_id:
-            extra = {"channel_id": channel_id, "handle": name}
-            feed_url = (
-                f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
-            )
+        extra, feed_url = _build_source_extra(
+            source_type,
+            url,
+            channel_id,
+            name,
+            query=query,
+            language=language,
+            country=country,
+            hn_feed=hn_feed,
+            hn_max_items=hn_max_items,
+            hn_min_score=hn_min_score,
+            subreddit=subreddit,
+            reddit_sort=reddit_sort,
+            reddit_time_filter=reddit_time_filter,
+            reddit_max_items=reddit_max_items,
+            reddit_min_score=reddit_min_score,
+            github_repo=github_repo,
+        )
         sources.add(source_type, name, category, priority, feed_url, extra=extra)
         if _is_htmx(request):
             return _sources_table_response(request)

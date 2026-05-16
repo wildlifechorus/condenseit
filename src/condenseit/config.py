@@ -30,6 +30,50 @@ class WatchUrlConfig(BaseModel):
     change_threshold: float = 0.05
 
 
+class GoogleNewsSearchConfig(BaseModel):
+    """A Google News RSS search feed defined by a query string.
+
+    Operators like ``site:``, ``when:``, ``intitle:``, and ``source:`` are
+    all supported by Google News RSS and can be included in ``query``.
+    """
+
+    query: str
+    language: str = "en"
+    country: str = "US"
+    category: str = "General"
+    priority: int = 2
+
+
+class HackerNewsConfig(BaseModel):
+    """A Hacker News feed fetched via the public Firebase JSON API."""
+
+    feed: str = "top"
+    max_items: int = Field(default=20, ge=1, le=100)
+    min_score: int = Field(default=50, ge=0)
+    category: str = "General"
+    priority: int = 2
+
+
+class RedditConfig(BaseModel):
+    """A subreddit feed fetched via the public Reddit JSON API."""
+
+    subreddit: str
+    sort: str = "hot"
+    time_filter: str = "day"
+    max_items: int = Field(default=20, ge=1, le=100)
+    min_score: int = Field(default=10, ge=0)
+    category: str = "General"
+    priority: int = 2
+
+
+class GitHubReleasesConfig(BaseModel):
+    """GitHub releases tracked via the public Atom feed for a repository."""
+
+    repo: str
+    category: str = "General"
+    priority: int = 2
+
+
 class RelevanceConfig(BaseModel):
     initial_keywords: dict[str, list[str]] = Field(
         default_factory=lambda: {"high": [], "medium": []},

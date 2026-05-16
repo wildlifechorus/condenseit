@@ -10,6 +10,99 @@
   the app does not fall back to legacy Jinja pages when the package is installed
   under `site-packages`.
 
+## Sources
+
+All sources are managed from **Admin > Sources** in the web UI. Changes take effect
+on the next digest run with no restart needed. The following source types are supported.
+
+### RSS / Atom
+
+Any public RSS or Atom feed URL. Most news sites, blogs, and podcasts publish one.
+
+```yaml
+feeds:
+  - url: "https://www.example.com/rss"
+    category: "General News"
+    priority: 2
+```
+
+### YouTube
+
+Collects transcripts (or RSS descriptions as fallback) from the most recent videos
+of a channel. Requires the channel's `channel_id` (found on the channel's About page).
+
+```yaml
+youtube_channels:
+  - handle: "@example"
+    channel_id: "UCxxxxxxxxxxxxxxxxxxxxxxxxx"
+    category: "Tech"
+```
+
+### Website watch
+
+Fetches a page on every digest run and reports meaningful content changes. Useful for
+pages that do not publish a feed (changelogs, status pages, release notes pages).
+
+```yaml
+watch_urls:
+  - url: "https://example.com/changelog"
+    category: "Developer News"
+    selector: null        # CSS selector (not yet used by the fetcher)
+    change_threshold: 0.05  # fraction of lines that must change to trigger
+```
+
+### Google News search
+
+Queries the Google News public RSS search endpoint. Supports all standard Google
+search operators: `site:`, `when:`, `intitle:`, `source:`, `inurl:`, etc. No API
+key is required.
+
+Example queries:
+
+| Query | What it returns |
+|-------|----------------|
+| `site:reuters.com when:1d` | Reuters articles published in the last 24 hours |
+| `CVE intitle:critical when:7d` | Critical CVE headlines from the past week |
+| `"supply chain" site:bleepingcomputer.com` | Supply-chain articles on Bleeping Computer |
+
+Add via **Admin > Sources**, select type **Google News search**, and enter the query
+string. The RSS URL is constructed and previewed automatically.
+
+### Hacker News
+
+Fetches stories from the [official HN Firebase JSON API](https://hacker-news.firebaseio.com/v0/).
+No authentication required.
+
+Options (configurable in the add-source form):
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| Feed | `top` | `top`, `best`, `new`, `ask`, or `show` |
+| Min score | `50` | Skip stories below this upvote count |
+| Max items | `20` | Maximum stories per digest run |
+
+### Reddit
+
+Fetches posts from any public subreddit via Reddit's public `.json` endpoint.
+No API key is required.
+
+Options:
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| Subreddit | (required) | Name without `r/`, e.g. `netsec` |
+| Sort | `hot` | `hot`, `new`, `top`, or `rising` |
+| Time filter | `day` | For `top` sort: `hour`, `day`, `week`, `month`, `year`, `all` |
+| Min score | `10` | Skip posts below this upvote count |
+| Max items | `20` | Maximum posts per digest run |
+
+### GitHub Releases
+
+Tracks new releases for any public GitHub repository via its public Atom feed
+(`https://github.com/{owner}/{repo}/releases.atom`). No authentication required.
+
+Enter the repository in `owner/repo` format, e.g. `astral-sh/uv` or `ollama/ollama`.
+
 ## LLM
 
 - `llm.provider`: `ollama`, `openrouter`, or `fallback` (local then cloud).

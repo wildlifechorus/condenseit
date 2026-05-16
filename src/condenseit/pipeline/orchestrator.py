@@ -12,6 +12,10 @@ from typing import Any
 
 import markdown
 
+from condenseit.collectors.github_releases import GitHubReleasesCollector
+from condenseit.collectors.google_news import GoogleNewsCollector
+from condenseit.collectors.hackernews import HackerNewsCollector
+from condenseit.collectors.reddit import RedditCollector
 from condenseit.collectors.rss import RSSCollector
 from condenseit.collectors.website import check_website_changes_with_health
 from condenseit.collectors.youtube import YouTubeCollector
@@ -57,6 +61,10 @@ class DigestPipeline:
         feeds = self.sources.feeds_for_config() or self.config.feeds
         youtube = self.sources.youtube_for_config() or self.config.youtube_channels
         watch = self.sources.watch_for_config() or self.config.watch_urls
+        gnews = self.sources.google_news_for_config()
+        hackernews = self.sources.hackernews_for_config()
+        reddit = self.sources.reddit_for_config()
+        github_releases = self.sources.github_releases_for_config()
 
         rss = RSSCollector(feeds)
         articles: list[dict[str, Any]] = []
@@ -88,6 +96,62 @@ class DigestPipeline:
                 error=err,
                 item_count=nbytes,
             )
+
+        if gnews:
+            gnews_articles, gnews_health = GoogleNewsCollector(
+                gnews,
+            ).collect_all_with_health()
+            for item in gnews_articles:
+                articles.append(item)
+            for url, err, count in gnews_health:
+                self.sources.record_health(
+                    url,
+                    status="ok" if err is None else "error",
+                    error=err,
+                    item_count=count,
+                )
+
+        if hackernews:
+            hn_articles, hn_health = HackerNewsCollector(
+                hackernews,
+            ).collect_all_with_health()
+            for item in hn_articles:
+                articles.append(item)
+            for url, err, count in hn_health:
+                self.sources.record_health(
+                    url,
+                    status="ok" if err is None else "error",
+                    error=err,
+                    item_count=count,
+                )
+
+        if reddit:
+            reddit_articles, reddit_health = RedditCollector(
+                reddit,
+            ).collect_all_with_health()
+            for item in reddit_articles:
+                articles.append(item)
+            for url, err, count in reddit_health:
+                self.sources.record_health(
+                    url,
+                    status="ok" if err is None else "error",
+                    error=err,
+                    item_count=count,
+                )
+
+        if github_releases:
+            gh_articles, gh_health = GitHubReleasesCollector(
+                github_releases,
+            ).collect_all_with_health()
+            for item in gh_articles:
+                articles.append(item)
+            for url, err, count in gh_health:
+                self.sources.record_health(
+                    url,
+                    status="ok" if err is None else "error",
+                    error=err,
+                    item_count=count,
+                )
 
         for v in videos:
             articles.append(v.to_dict())

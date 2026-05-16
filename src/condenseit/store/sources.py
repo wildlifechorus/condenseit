@@ -1,4 +1,4 @@
-"""Source registry (RSS, YouTube, website) in SQLite."""
+"""Source registry (RSS, YouTube, website, and extended types) in SQLite."""
 
 from __future__ import annotations
 
@@ -9,6 +9,10 @@ from typing import Any
 from condenseit.config import (
     AppConfig,
     FeedConfig,
+    GitHubReleasesConfig,
+    GoogleNewsSearchConfig,
+    HackerNewsConfig,
+    RedditConfig,
     WatchUrlConfig,
     YouTubeChannelConfig,
 )
@@ -195,6 +199,74 @@ class SourceRegistry:
                     category=r["category"],
                     selector=extra.get("selector"),
                     change_threshold=float(extra.get("change_threshold", 0.05)),
+                ),
+            )
+        return out
+
+    def google_news_for_config(self) -> list[GoogleNewsSearchConfig]:
+        out: list[GoogleNewsSearchConfig] = []
+        for r in self.list_enabled():
+            if r["type"] != "google_news":
+                continue
+            extra = json.loads(r.get("extra_json") or "{}")
+            out.append(
+                GoogleNewsSearchConfig(
+                    query=extra.get("query", ""),
+                    language=extra.get("language", "en"),
+                    country=extra.get("country", "US"),
+                    category=r["category"],
+                    priority=int(r["priority"]),
+                ),
+            )
+        return out
+
+    def hackernews_for_config(self) -> list[HackerNewsConfig]:
+        out: list[HackerNewsConfig] = []
+        for r in self.list_enabled():
+            if r["type"] != "hackernews":
+                continue
+            extra = json.loads(r.get("extra_json") or "{}")
+            out.append(
+                HackerNewsConfig(
+                    feed=extra.get("feed", "top"),
+                    max_items=int(extra.get("max_items", 20)),
+                    min_score=int(extra.get("min_score", 50)),
+                    category=r["category"],
+                    priority=int(r["priority"]),
+                ),
+            )
+        return out
+
+    def reddit_for_config(self) -> list[RedditConfig]:
+        out: list[RedditConfig] = []
+        for r in self.list_enabled():
+            if r["type"] != "reddit":
+                continue
+            extra = json.loads(r.get("extra_json") or "{}")
+            out.append(
+                RedditConfig(
+                    subreddit=extra.get("subreddit", r["name"]),
+                    sort=extra.get("sort", "hot"),
+                    time_filter=extra.get("time_filter", "day"),
+                    max_items=int(extra.get("max_items", 20)),
+                    min_score=int(extra.get("min_score", 10)),
+                    category=r["category"],
+                    priority=int(r["priority"]),
+                ),
+            )
+        return out
+
+    def github_releases_for_config(self) -> list[GitHubReleasesConfig]:
+        out: list[GitHubReleasesConfig] = []
+        for r in self.list_enabled():
+            if r["type"] != "github_releases":
+                continue
+            extra = json.loads(r.get("extra_json") or "{}")
+            out.append(
+                GitHubReleasesConfig(
+                    repo=extra.get("repo", ""),
+                    category=r["category"],
+                    priority=int(r["priority"]),
                 ),
             )
         return out

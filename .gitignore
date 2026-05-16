@@ -38,6 +38,7 @@ config.local.yaml
 *.local.yaml
 
 # Personal fixtures / seeds (add paths you use locally)
+scripts/local/
 seeds/local/
 **/personal-seeds/
 

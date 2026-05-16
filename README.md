@@ -1,8 +1,9 @@
 # CondenseIt
 
-> Self-hosted AI news digest. Collect RSS feeds, YouTube channels, and website
-> diffs, summarize with a local LLM (Ollama) or OpenRouter, learn your
-> preferences via star ratings, and read a daily digest in the browser.
+> Self-hosted AI news digest. Collect RSS feeds, YouTube channels, website
+> diffs, Google News searches, Hacker News, Reddit, and GitHub Releases,
+> summarize with a local LLM (Ollama) or OpenRouter, learn your preferences
+> via star ratings, and read a daily digest in the browser.
 
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License MIT](https://img.shields.io/badge/license-MIT-green)
@@ -24,17 +25,28 @@ Both modes use the same unified web UI: digest reader and admin panel.
 
 ## What it does
 
-CondenseIt pulls from the sources you configure (RSS feeds, YouTube
-transcripts, watched URLs), scores and summarizes each article with a local or
-cloud LLM, ranks articles by your learned preferences (star ratings feed a
-TF-IDF cosine preference engine), and produces a daily digest you can read in
-the browser.
+CondenseIt pulls from the sources you configure, scores and summarizes each
+article with a local or cloud LLM, ranks articles by your learned preferences
+(star ratings feed a TF-IDF cosine preference engine), and produces a daily
+digest you can read in the browser.
+
+**Supported source types** (all configured from Admin > Sources, no API keys needed):
+
+| Type | What it collects |
+|------|-----------------|
+| **RSS / Atom** | Any RSS or Atom feed URL |
+| **YouTube** | Transcripts from channel videos via the public channel RSS feed |
+| **Website watch** | Detects meaningful changes on any web page |
+| **Google News search** | Google News RSS search with operator support (`site:`, `when:`, `intitle:`, `source:`) |
+| **Hacker News** | Top/best/new/ask/show stories via the public Firebase JSON API |
+| **Reddit** | Posts from any public subreddit (hot/new/top/rising, configurable score threshold) |
+| **GitHub Releases** | Release notes from any public repository's Atom feed |
 
 ### Admin panel
 
 | Page | What it does |
 |------|-------------|
-| **Sources** | Add/remove RSS feeds, YouTube channels, and watched URLs; import/export OPML |
+| **Sources** | Add/remove all source types; import/export OPML for RSS feeds |
 | **Schedule** | Set the daily run times; shows next scheduled run |
 | **Settings** | Digest limits (max articles, category balance), language filter |
 | **Preferences** | Read-only view of what the ranking engine has learned from your ratings |
@@ -154,9 +166,11 @@ Detailed setup guides:
 Key `config.yaml` sections:
 
 - `llm` - provider (`ollama` / `openrouter` / `fallback`), model, budget limits
-- `feeds` / `youtube_channels` / `watch_urls` - sources to collect
+- `feeds` / `youtube_channels` / `watch_urls` - legacy YAML-seeded sources (still supported)
 - `schedule.times` - default daily run times (overridden by Admin > Schedule)
 - `vps` - SSH target for `scripts/deploy.sh`
+
+All sources (including the new types) are managed from **Admin > Sources** in the web UI and stored in SQLite. The YAML keys above act as initial seeds that are imported once on first run.
 
 Settings also editable live in the admin panel (stored in SQLite, no restart needed):
 
