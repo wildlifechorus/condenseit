@@ -6,6 +6,8 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 import feedparser
 import httpx
@@ -44,10 +46,11 @@ class CollectedArticle:
 class RSSCollector:
     def __init__(self, feeds: list[FeedConfig]) -> None:
         self.feeds = feeds
+        self.fetch_headers = digest_fetch_headers()
         self.client = httpx.Client(
             timeout=30.0,
             follow_redirects=True,
-            headers=digest_fetch_headers(),
+            headers=self.fetch_headers,
         )
 
     def collect_feed_results(
@@ -71,9 +74,7 @@ class RSSCollector:
         return articles
 
     def _collect_feed(self, feed: FeedConfig) -> list[CollectedArticle]:
-        response = self.client.get(feed.url)
-        response.raise_for_status()
-        parsed = feedparser.parse(response.text)
+        parsed = feedparser.parse(self._fetch_feed_text(feed.url))
         source_title = parsed.feed.get("title", feed.url)
         items: list[CollectedArticle] = []
 
@@ -98,6 +99,31 @@ class RSSCollector:
                 ),
             )
         return items
+
+    def _fetch_feed_text(self, url: str) -> str:
+        response = self.client.get(url)
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 403:
+                raise
+            return self._fetch_feed_text_with_urllib(url, exc)
+        return response.text
+
+    def _fetch_feed_text_with_urllib(
+        self,
+        url: str,
+        original_exc: httpx.HTTPStatusError,
+    ) -> str:
+        logger.info("RSS feed %s returned 403 via httpx; retrying with urllib", url)
+        request = Request(url, headers=self.fetch_headers)
+        try:
+            with urlopen(request, timeout=30.0) as response:
+                body = response.read()
+                encoding = response.headers.get_content_charset() or "utf-8"
+        except (OSError, URLError) as exc:
+            raise original_exc from exc
+        return body.decode(encoding, errors="replace")
 
     def _extract_content(self, url: str, entry: feedparser.FeedParserDict) -> str:
         try:
