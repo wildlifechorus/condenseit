@@ -27,7 +27,6 @@ export interface DigestMeta {
 
 export interface DigestDetail {
   meta: DigestMeta;
-  html: string;
   items: DigestItem[];
 }
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'preact/hooks';
+import { useState, useEffect, useCallback } from 'preact/hooks';
 import { useSearch } from 'wouter';
 import { api } from '../lib/api';
 import {
@@ -23,164 +23,6 @@ type RatingsMap = Record<string, number>;
 
 const IS_PWA = import.meta.env.MODE === 'pwa';
 
-const HEADING_TAGS = new Set(['H1', 'H2', 'H3', 'H4', 'H5', 'H6']);
-
-/**
- * Hide or reveal sections in the formatted prose view that correspond to
- * articles the user has marked as read.
- *
- * Each article in the rendered markdown is expected to start with a heading
- * whose text includes a link to the article URL.  The function finds those
- * anchors, walks up to the enclosing heading, then hides that heading and
- * every following sibling until the next heading at the same or higher level.
- * Also hides any injected `.ci-prose-sep` separator that precedes the heading.
- */
-function applyReadFilterToProse(
-  prose: HTMLElement,
-  readUrls: Set<string>,
-): void {
-  // Reset previously hidden nodes first (includes injected separators).
-  prose
-    .querySelectorAll<HTMLElement>('[data-ci-read-hidden]')
-    .forEach((el) => {
-      el.style.display = '';
-      el.removeAttribute('data-ci-read-hidden');
-    });
-
-  if (readUrls.size === 0) return;
-
-  const anchors = prose.querySelectorAll<HTMLAnchorElement>('a[href]');
-  for (const a of anchors) {
-    // Try the raw attribute first, then the browser-resolved absolute URL.
-    const rawHref = a.getAttribute('href') ?? '';
-    if (!readUrls.has(rawHref) && !readUrls.has(a.href)) continue;
-
-    // Walk up from the anchor to find the nearest heading within the prose.
-    let heading: Element | null = a.parentElement;
-    while (heading && heading !== prose) {
-      if (HEADING_TAGS.has(heading.tagName)) break;
-      heading = heading.parentElement;
-    }
-    if (!heading || !HEADING_TAGS.has(heading.tagName) || heading === prose) {
-      continue;
-    }
-
-    const level = parseInt(heading.tagName[1], 10);
-    const toHide: Element[] = [];
-
-    // Include the injected separator div that sits just before this heading.
-    const prev = heading.previousElementSibling;
-    if (prev instanceof HTMLElement && prev.classList.contains('ci-prose-sep')) {
-      toHide.push(prev);
-    }
-
-    toHide.push(heading);
-    let sib = heading.nextElementSibling;
-    while (sib) {
-      if (HEADING_TAGS.has(sib.tagName)) {
-        // Stop at a heading that is the same level or higher (smaller number).
-        if (parseInt(sib.tagName[1], 10) <= level) break;
-      }
-      toHide.push(sib);
-      sib = sib.nextElementSibling;
-    }
-
-    for (const el of toHide) {
-      (el as HTMLElement).style.display = 'none';
-      (el as HTMLElement).setAttribute('data-ci-read-hidden', '1');
-    }
-  }
-}
-
-/** Attribute added to all elements injected by buildProseControls. */
-const PROSE_CTRL_ATTR = 'data-ci-prose-ctrl';
-
-/**
- * Inject per-article visual separators and interactive controls (star rating
- * and mark-read toggle) into the rendered prose HTML.
- *
- * Designed to run immediately before applyReadFilterToProse so that injected
- * elements are present before the read-hide pass runs.
- * Re-runs safely: previously injected elements are removed first.
- */
-function buildProseControls(
-  prose: HTMLElement,
-  readUrls: Set<string>,
-  ratings: Record<string, number>,
-  onMarkRead: (url: string) => void,
-  onRate: (url: string, rating: number) => void,
-): void {
-  // Remove elements from a previous run.
-  prose
-    .querySelectorAll(`[${PROSE_CTRL_ATTR}]`)
-    .forEach((el) => el.remove());
-
-  // Target headings that contain a direct anchor (article-level headings).
-  const headings = prose.querySelectorAll<HTMLElement>(
-    'h1,h2,h3,h4,h5,h6',
-  );
-
-  for (const heading of headings) {
-    const anchor = heading.querySelector<HTMLAnchorElement>('a[href]');
-    if (!anchor) continue;
-    const url = anchor.getAttribute('href') ?? anchor.href;
-    if (!url || url.startsWith('#')) continue;
-
-    const isRead = readUrls.has(url);
-    const currentRating = ratings[url] ?? 0;
-
-    // --- Separator injected BEFORE the heading ---
-    const sep = document.createElement('div');
-    sep.setAttribute(PROSE_CTRL_ATTR, '1');
-    sep.className = 'ci-prose-sep';
-    heading.parentElement?.insertBefore(sep, heading);
-
-    // --- Control row injected AFTER the heading ---
-    const ctrl = document.createElement('div');
-    ctrl.setAttribute(PROSE_CTRL_ATTR, '1');
-    ctrl.className = 'ci-prose-ctrl';
-
-    // Star buttons (1-5)
-    const starsDiv = document.createElement('div');
-    starsDiv.className = 'ci-prose-stars';
-    for (let star = 1; star <= 5; star++) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.title = `Rate ${star} star${star !== 1 ? 's' : ''}`;
-      btn.className = `ci-star-btn${star <= currentRating ? ' active' : ''}`;
-      btn.textContent = star <= currentRating ? '★' : '☆';
-      const s = star;
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        onRate(url, s);
-      });
-      starsDiv.appendChild(btn);
-    }
-    ctrl.appendChild(starsDiv);
-
-    // Mark read / unread button
-    const readBtn = document.createElement('button');
-    readBtn.type = 'button';
-    readBtn.className = `ci-read-btn${isRead ? ' is-read' : ''}`;
-    readBtn.innerHTML =
-      `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" ` +
-      `stroke="currentColor" stroke-width="2.5" stroke-linecap="round" ` +
-      `stroke-linejoin="round">` +
-      `<path d="M4.5 12.75l6 6 9-13.5"/></svg>` +
-      (isRead ? 'Read' : 'Mark read');
-    readBtn.title = isRead ? 'Mark as unread' : 'Mark as read';
-    readBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      onMarkRead(url);
-    });
-    ctrl.appendChild(readBtn);
-
-    heading.parentElement?.insertBefore(ctrl, heading.nextSibling);
-  }
-}
-
 interface DigestPageProps {
   onDigestLoaded?: (id: number | null) => void;
 }
@@ -194,13 +36,11 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
   const search = useSearch();
   const params = new URLSearchParams(search);
   const requestedId = params.get('id') ? Number(params.get('id')) : null;
-  const showRaw = params.get('raw') === '1';
 
   const [detail, setDetail] = useState<DigestDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filtered, setFiltered] = useState<DigestItem[]>([]);
-  const [showProse, setShowProse] = useState(false);
 
   /**
    * Ratings keyed by URL.
@@ -229,22 +69,6 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
 
   /** When true (default) read items are hidden from the grid. */
   const [hideRead, setHideRead] = useState(true);
-
-  /** Ref for the prose <article> element so we can manipulate its DOM. */
-  const proseRef = useRef<HTMLElement | null>(null);
-
-  /**
-   * Rebuild per-article prose controls (separator + stars + read toggle) then
-   * apply the read-hide filter.  Must run in this order so injected elements
-   * are present when applyReadFilterToProse walks siblings.
-   * Fires whenever the prose panel opens or any interactive state changes.
-   */
-  useEffect(() => {
-    if (!showProse || !proseRef.current) return;
-    const prose = proseRef.current;
-    buildProseControls(prose, readUrls, ratings, handleMarkRead, handleRateAndSave);
-    applyReadFilterToProse(prose, readUrls);
-  }, [showProse, readUrls, ratings, handleMarkRead, handleRateAndSave]);
 
   useEffect(() => {
     setLoading(true);
@@ -327,21 +151,6 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
   const pwaRate = IS_PWA ? handleRate : undefined;
 
   /**
-   * Used by the prose controls: updates state (and localStorage in PWA mode)
-   * AND submits to the server in hosted mode.
-   * Mirrors what DigestCard does internally for card-level ratings.
-   */
-  const handleRateAndSave = useCallback(
-    (url: string, rating: number) => {
-      handleRate(url, rating);
-      if (!IS_PWA) {
-        api.submitRating(url, rating).catch(() => undefined);
-      }
-    },
-    [handleRate],
-  );
-
-  /**
    * Toggle the read state for a URL.
    * Always persists to localStorage for immediate UI feedback.
    * In non-PWA mode also calls the server so the next digest pipeline
@@ -368,14 +177,6 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
   const handleFiltered = useCallback((items: DigestItem[]) => {
     setFiltered(items);
   }, []);
-
-  if (showRaw && detail) {
-    return (
-      <pre class="text-xs font-mono text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words p-4">
-        {detail.html}
-      </pre>
-    );
-  }
 
   if (loading) {
     return (
@@ -423,7 +224,7 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
     );
   }
 
-  const { meta, html, items } = detail;
+  const { meta, items } = detail;
   const hasItems = items.length > 0;
   const ratedCount = Object.keys(ratings).length;
 
@@ -450,14 +251,6 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
             {meta.processing_time && ` · ${meta.processing_time}`}
           </p>
         </div>
-        {!IS_PWA && (
-          <a
-            href={`/?id=${meta.id}&raw=1`}
-            class="text-xs text-slate-400 dark:text-slate-500 hover:text-teal-600 dark:hover:text-teal-400 transition-colors"
-          >
-            View source
-          </a>
-        )}
       </div>
 
       {/* Card browser */}
@@ -502,38 +295,6 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
                 />
               ))}
             </div>
-          )}
-        </div>
-      )}
-
-      {/* Prose fallback (full formatted digest) */}
-      {html && (
-        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm overflow-hidden">
-          {hasItems ? (
-            <>
-              <button
-                type="button"
-                onClick={() => setShowProse((s) => !s)}
-                class="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-teal-600 dark:text-teal-400 bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              >
-                {showProse ? 'Hide' : 'Show'} full formatted digest
-                <svg class={`w-4 h-4 transition-transform ${showProse ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-              {showProse && (
-                <article
-                  ref={proseRef}
-                  class="prose px-6 py-5 max-w-none"
-                  dangerouslySetInnerHTML={{ __html: html }}
-                />
-              )}
-            </>
-          ) : (
-            <article
-              class="prose px-6 py-5 max-w-none"
-              dangerouslySetInnerHTML={{ __html: html }}
-            />
           )}
         </div>
       )}
