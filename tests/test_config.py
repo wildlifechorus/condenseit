@@ -13,6 +13,7 @@ def test_app_config_defaults() -> None:
     cfg = AppConfig()
     assert cfg.model == "llama3.2:3b"
     assert cfg.max_articles_per_digest == 50
+    assert cfg.max_article_age_hours == 36
     assert cfg.llm.provider == "openrouter"
     assert cfg.vps.enabled is True
     assert cfg.preferred_languages == []

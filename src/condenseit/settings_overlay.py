@@ -60,6 +60,15 @@ def apply_db_settings(config: AppConfig, store: ContentStore) -> AppConfig:
         except ValueError:
             pass
 
+    max_age = store.get_setting("max_article_age_hours", "")
+    if max_age:
+        try:
+            val = int(max_age)
+            if val >= 0:
+                config.max_article_age_hours = val
+        except ValueError:
+            pass
+
     # Language preferences
     langs_raw = store.get_setting("preferred_languages", "")
     if langs_raw:

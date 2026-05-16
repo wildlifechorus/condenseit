@@ -25,6 +25,8 @@ set in `config.yaml`:
 
 - `max_articles_per_digest` (default `50`): total articles per digest run.
 - `max_articles_per_category` (default `5`): cap per category when balancing.
+- `max_article_age_hours` (default `36`): exclude articles older than this many
+  hours. Set to `0` to disable the age gate.
 - `balance_digest_categories` (default `true`): reserve a slot per category before
   filling remaining slots by rank.
 - `preferred_languages`: ISO 639-1 codes (e.g. `["en", "pt"]`). Leave empty to

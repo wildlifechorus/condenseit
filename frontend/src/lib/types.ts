@@ -168,6 +168,7 @@ export interface DigestConfig {
   max_articles_per_digest: number;
   balance_digest_categories: boolean;
   max_articles_per_category: number;
+  max_article_age_hours: number;
   preferred_languages: string[];
   max_key_takeaways: number;
   max_summary_paragraphs: number;

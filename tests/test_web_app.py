@@ -155,3 +155,34 @@ def test_ratings_api_prefers_digest_items(
     titles = [r["title"] for r in items]
     assert "Digest Item Alpha" in titles
     assert "Legacy Noise Title" not in titles
+
+
+def test_digest_config_api_persists_age_cutoff(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    """The admin digest settings API exposes and saves the age filter cutoff."""
+    monkeypatch.setenv("CONDENSEIT_DATA_DIR", str(tmp_path / "data"))
+    client = TestClient(create_app())
+
+    initial = client.get("/api/config/digest", headers=_AUTH)
+    assert initial.status_code == 200
+    assert initial.json()["max_article_age_hours"] == 36
+
+    saved = client.put(
+        "/api/config/digest",
+        headers=_AUTH,
+        json={"max_article_age_hours": 72},
+    )
+    assert saved.status_code == 200
+
+    updated = client.get("/api/config/digest", headers=_AUTH)
+    assert updated.status_code == 200
+    assert updated.json()["max_article_age_hours"] == 72
+
+    invalid = client.put(
+        "/api/config/digest",
+        headers=_AUTH,
+        json={"max_article_age_hours": -1},
+    )
+    assert invalid.status_code == 422

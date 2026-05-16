@@ -235,6 +235,34 @@ export function SettingsPage() {
               />
             </Field>
 
+            <Field
+              label="Age filter cutoff"
+              hint={
+                'Exclude articles older than this many hours. Set to 0 to disable.'
+              }
+            >
+              <input
+                type="number"
+                class={INPUT}
+                min={0}
+                required
+                value={cfg.max_article_age_hours}
+                onInput={(e) =>
+                  setCfg((p) =>
+                    p
+                      ? {
+                          ...p,
+                          max_article_age_hours: parseInt(
+                            (e.target as HTMLInputElement).value,
+                            10,
+                          ) || 0,
+                        }
+                      : p,
+                  )
+                }
+              />
+            </Field>
+
             <div class="sm:col-span-2">
               <label class="flex items-start gap-2 cursor-pointer">
                 <input

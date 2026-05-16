@@ -257,6 +257,7 @@ def create_admin_router(
                 "max_articles_per_digest": merged.max_articles_per_digest,
                 "balance_digest_categories": merged.balance_digest_categories,
                 "max_articles_per_category": merged.max_articles_per_category,
+                "max_article_age_hours": merged.max_article_age_hours,
                 "preferred_languages": langs,
                 "max_key_takeaways": merged.max_key_takeaways,
                 "max_summary_paragraphs": merged.max_summary_paragraphs,
@@ -288,6 +289,21 @@ def create_admin_router(
             except (ValueError, TypeError):
                 return JSONResponse(
                     {"error": "max_articles_per_category must be 1-50"},
+                    status_code=422,
+                )
+        if "max_article_age_hours" in body:
+            try:
+                val = int(body["max_article_age_hours"])
+                if val >= 0:
+                    store.set_setting("max_article_age_hours", str(val))
+                else:
+                    return JSONResponse(
+                        {"error": "max_article_age_hours must be 0 or greater"},
+                        status_code=422,
+                    )
+            except (ValueError, TypeError):
+                return JSONResponse(
+                    {"error": "max_article_age_hours must be 0 or greater"},
                     status_code=422,
                 )
         if "preferred_languages" in body:
