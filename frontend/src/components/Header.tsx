@@ -53,7 +53,7 @@ export function Header({
         </div>
 
         {/* Right: nav + job banner */}
-        <div class="flex items-center gap-1">
+        <div class="flex items-center gap-2">
           <nav class="hidden lg:flex items-center mr-2">
             {NAV_LINKS.map(({ href, label }) => {
               const active =
@@ -77,8 +77,8 @@ export function Header({
             })}
           </nav>
 
-          <RefreshButton />
           <JobBanner />
+          <RefreshButton />
         </div>
       </header>
     </div>
@@ -90,7 +90,7 @@ function RefreshButton() {
   return (
     <button
       type="button"
-      class="lg:hidden inline-flex items-center justify-center p-1.5 rounded-md text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+      class="lg:hidden inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm transition-colors hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
       onClick={() => window.location.reload()}
       title="Refresh"
       aria-label="Refresh"
