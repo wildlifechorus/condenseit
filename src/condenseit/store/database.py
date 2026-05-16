@@ -108,6 +108,16 @@ class ContentStore:
                 },
                 pk="url",
             )
+        if "digest_run_logs" not in self.db.table_names():
+            self.db["digest_run_logs"].create(
+                {
+                    "id": int,
+                    "digest_id": int,
+                    "log_text": str,
+                    "created_at": str,
+                },
+                pk="id",
+            )
 
     def get_setting(self, key: str, default: str = "") -> str:
         if "settings" not in self.db.table_names():
@@ -284,3 +294,43 @@ class ContentStore:
         if "read_articles" not in self.db.table_names():
             return set()
         return {str(row["url"]) for row in self.db["read_articles"].rows}
+
+    def save_run_log(self, digest_id: int | None, log_text: str) -> int:
+        """Persist the captured log from a digest run."""
+        row = {
+            "digest_id": digest_id,
+            "log_text": log_text,
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+        self.db["digest_run_logs"].insert(row)
+        return int(self.db.execute("SELECT last_insert_rowid()").fetchone()[0])
+
+    def list_run_logs(self, limit: int = 20) -> list[dict[str, Any]]:
+        """Return recent run log summaries (no full text)."""
+        return list(
+            self.db.query(
+                "SELECT id, digest_id, created_at,"
+                " substr(log_text, 1, 200) AS log_preview"
+                " FROM digest_run_logs ORDER BY id DESC LIMIT ?",
+                [limit],
+            )
+        )
+
+    def get_run_log(self, log_id: int) -> dict[str, Any] | None:
+        """Return a single run log by id."""
+        rows = list(
+            self.db.query(
+                "SELECT * FROM digest_run_logs WHERE id = ?",
+                [log_id],
+            )
+        )
+        return dict(rows[0]) if rows else None
+
+    def latest_run_log(self) -> dict[str, Any] | None:
+        """Return the most recent run log."""
+        rows = list(
+            self.db.query(
+                "SELECT * FROM digest_run_logs ORDER BY id DESC LIMIT 1",
+            )
+        )
+        return dict(rows[0]) if rows else None

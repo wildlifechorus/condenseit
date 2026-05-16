@@ -14,7 +14,7 @@ export function ApiKeysPage() {
   const [saving, setSaving] = useState(false);
   const [deletingService, setDeletingService] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
-  const [service, setService] = useState('resend');
+  const [service, setService] = useState('openrouter');
   const [keyValue, setKeyValue] = useState('');
 
   useEffect(() => {
@@ -76,7 +76,7 @@ export function ApiKeysPage() {
           API keys
         </h1>
         <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          Encrypted at rest in SQLite. Used for Resend email and OpenRouter.
+          Encrypted at rest in SQLite. Used for OpenRouter and other services.
         </p>
       </div>
 
@@ -100,7 +100,6 @@ export function ApiKeysPage() {
                 setService((e.target as HTMLSelectElement).value)
               }
             >
-              <option value="resend">Resend</option>
               <option value="openrouter">OpenRouter</option>
             </select>
           </label>

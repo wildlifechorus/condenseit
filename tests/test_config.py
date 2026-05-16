@@ -13,9 +13,9 @@ def test_app_config_defaults() -> None:
     cfg = AppConfig()
     assert cfg.model == "llama3.2:3b"
     assert cfg.max_articles_per_digest == 50
-    assert cfg.llm.provider == "ollama"
-    assert cfg.email.enabled is True
+    assert cfg.llm.provider == "openrouter"
     assert cfg.vps.enabled is True
+    assert cfg.preferred_languages == []
 
 
 def test_max_articles_env_override(
@@ -47,17 +47,14 @@ def test_load_config_vps_env_overrides(
     assert cfg.vps.digest_url == "https://digest.example.com"
 
 
-def test_load_config_email_env_overrides(
-    monkeypatch: pytest.MonkeyPatch,
+def test_email_section_in_yaml_is_silently_ignored(
     tmp_path: Path,
 ) -> None:
+    """Old YAML files with an email: section should load without error."""
     cfg_yaml = tmp_path / "cfg.yaml"
     cfg_yaml.write_text(
-        'email:\n  from: "Legacy <legacy@example.com>"\n  to: "old@example.com"\n',
+        'email:\n  enabled: true\n  to: "old@example.com"\n',
         encoding="utf-8",
     )
-    monkeypatch.setenv("RESEND_FROM", "hello@sender.example")
-    monkeypatch.setenv("DIGEST_EMAIL_TO", "reader@example.com")
     cfg = load_config(cfg_yaml)
-    assert cfg.email.from_address == "hello@sender.example"
-    assert cfg.email.to == "reader@example.com"
+    assert cfg.model == "llama3.2:3b"

@@ -47,25 +47,14 @@ class OutputConfig(BaseModel):
 
 
 class LlmConfig(BaseModel):
-    provider: str = "ollama"
+    provider: str = "openrouter"
     ollama_host: str = "http://localhost:11434"
     manage_lifecycle: bool = True
     openrouter_api_key: str = ""
     openrouter_model: str = "openai/gpt-4o-mini"
     openrouter_daily_budget_usd: float = 1.0
     openrouter_monthly_budget_usd: float = 10.0
-    openrouter_pick_cheapest: bool = False
-
-
-class EmailConfig(BaseModel):
-    """When enabled, digest email runs if a Resend key is configured."""
-
-    enabled: bool = True
-    resend_api_key: str = ""
-    from_address: str = Field(default="CondenseIt <digest@example.com>", alias="from")
-    to: str = "you@example.com"
-
-    model_config = {"populate_by_name": True}
+    openrouter_pick_cheapest: bool = True
 
 
 class VpsConfig(BaseModel):
@@ -79,33 +68,25 @@ class VpsConfig(BaseModel):
     digest_url: str = ""
 
 
-class DigestPwaConfig(BaseModel):
-    """Static installable digest (output of ``condenseit pwa-build``)."""
+class SyncConfig(BaseModel):
+    """Remote sync import settings for the digest pipeline."""
 
-    output_dir: str = "data/pwa-dist"
-    # Baked into the PWA at build time: optional GET URL to merge read-only
-    # ratings JSON (same schema as export) into localStorage on load.
-    ratings_merge_url: str = ""
-    # Host-side: import ratings before each ``condenseit run`` (no secrets here;
-    # use CONDENSEIT_RATINGS_IMPORT_BEARER_TOKEN for authenticated URL fetch).
     ratings_import_path: str = ""
     ratings_import_url: str = ""
-    # Host-side: import read URLs from a remote /api/read/export endpoint before
-    # each ``condenseit run`` so the pipeline excludes remotely-read articles.
-    # Use CONDENSEIT_READ_IMPORT_URL env var or set this field.
-    # Bearer token from CONDENSEIT_READ_IMPORT_BEARER_TOKEN if auth is needed.
     read_import_url: str = ""
 
 
 class AppConfig(BaseModel):
     model: str = "llama3.2:3b"
-    # More items mean more sequential LLM calls; cap keeps config mistakes bounded.
     max_articles_per_digest: int = Field(default=50, ge=1, le=200)
     balance_digest_categories: bool = True
     max_articles_per_category: int = Field(default=5, ge=1, le=50)
-    # Articles whose published_at is older than this many hours are dropped before
-    # ranking. Set to 0 to disable the age gate entirely.
     max_article_age_hours: int = Field(default=36, ge=0)
+    # ISO 639-1 language codes; empty list means accept all languages.
+    preferred_languages: list[str] = Field(default_factory=list)
+    # LLM summarization tuning.
+    max_key_takeaways: int = Field(default=5, ge=1, le=10)
+    max_summary_paragraphs: int = Field(default=5, ge=1, le=10)
     schedule: dict[str, list[str]] = Field(
         default_factory=lambda: {"times": ["07:00", "18:00"]},
     )
@@ -115,9 +96,8 @@ class AppConfig(BaseModel):
     relevance: RelevanceConfig = Field(default_factory=RelevanceConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
     llm: LlmConfig = Field(default_factory=LlmConfig)
-    email: EmailConfig = Field(default_factory=EmailConfig)
     vps: VpsConfig = Field(default_factory=VpsConfig)
-    digest_pwa: DigestPwaConfig = Field(default_factory=DigestPwaConfig)
+    sync: SyncConfig = Field(default_factory=SyncConfig)
 
 
 _ENV_PATTERN = re.compile(r"\$\{([^}:]+)(?::-([^}]*))?\}")
@@ -185,6 +165,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
 
     expanded = _expand_dict(raw)
+    # Remove any stale email section from YAML so it doesn't cause validation errors.
+    expanded.pop("email", None)
+
     if os.environ.get("OLLAMA_HOST"):
         llm = expanded.setdefault("llm", {})
         llm["ollama_host"] = os.environ["OLLAMA_HOST"]
@@ -195,18 +178,6 @@ def load_config(path: str | Path | None = None) -> AppConfig:
             "OPENROUTER_API_KEY"
         ]
 
-    if os.environ.get("RESEND_API_KEY"):
-        email_cfg = expanded.setdefault("email", {})
-        email_cfg["resend_api_key"] = os.environ["RESEND_API_KEY"]
-
-    resend_from = os.environ.get("RESEND_FROM", "").strip()
-    if resend_from:
-        expanded.setdefault("email", {})["from"] = resend_from
-
-    digest_email_to = os.environ.get("DIGEST_EMAIL_TO", "").strip()
-    if digest_email_to:
-        expanded.setdefault("email", {})["to"] = digest_email_to
-
     cap = os.environ.get("CONDENSEIT_MAX_ARTICLES_PER_DIGEST", "").strip()
     if cap:
         try:
@@ -214,7 +185,6 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         except ValueError:
             pass
 
-    # Same names as scripts/deploy-digest-pwa.sh (rsync after ``condenseit run``).
     vps_host = os.environ.get("DIGEST_PWA_SSH_HOST", "").strip()
     if vps_host:
         expanded.setdefault("vps", {})["host"] = vps_host

@@ -62,7 +62,7 @@ export function JobBanner() {
   }
 
   const state = job.value.state;
-  const visible = state === 'running' || state === 'completed' || state === 'failed';
+  const visible = state === 'completed' || state === 'failed';
 
   const bannerColor =
     state === 'completed'

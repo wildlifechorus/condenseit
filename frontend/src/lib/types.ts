@@ -59,8 +59,11 @@ export interface LlmConfig {
   model: string;
   openrouter_model: string;
   openrouter_pick_cheapest: boolean;
+  /** Resolved cheapest model when pick_cheapest is enabled. */
+  cheapest_model_id?: string;
   ollama_host: string;
   ollama_models: string[];
+  ollama_reachable: boolean;
 }
 
 export interface ApiKey {
@@ -75,24 +78,6 @@ export interface Job {
   message: string;
   digest_id?: number;
   post_display?: string;
-}
-
-export interface AdvisorHardware {
-  ram_gb: number;
-  gpu_hint: string;
-}
-
-export interface AdvisorRecommendation {
-  hardware: AdvisorHardware;
-  current_model: string;
-  recommended_model: string;
-  reason: string;
-  installed_models: string[];
-}
-
-export interface WeeklyRecommendation {
-  recommended_model: string;
-  reason: string;
 }
 
 export interface PreferenceTerm {
@@ -122,22 +107,99 @@ export interface PreferenceProfile {
   source_preferences: PreferenceSourceScore[];
 }
 
-export interface Benchmark {
-  model: string;
-  elapsed_s: number;
-  tokens_per_sec: number;
-  run_at: string;
+// ---------- Budget -------------------------------------------------------
+
+export interface OpenRouterUsage {
+  usage_daily: number;
+  usage_weekly: number;
+  usage_monthly: number;
+  limit: number | null;
+  limit_remaining: number | null;
+  is_free_tier: boolean;
 }
 
-export interface AdminOverview {
-  source_count: number;
-  provider: string;
+export interface ModelSpend {
   model: string;
-  latest?: DigestEntry;
+  total_usd: number;
+  requests: number;
 }
 
-export interface AdvisorPageData {
-  recommendation: AdvisorRecommendation;
-  weekly: WeeklyRecommendation | null;
-  benchmarks: Benchmark[];
+export interface DigestCost {
+  digest_id: number;
+  created_at: string;
+  cost_usd: number;
+  articles: number;
+}
+
+export interface LocalBudget {
+  today_usd: number;
+  month_usd: number;
+  daily_limit_usd: number;
+  monthly_limit_usd: number;
+  /** Average LLM cost per digest run across all time. */
+  avg_cost_per_digest_usd: number;
+  by_model: ModelSpend[];
+  recent_digests: DigestCost[];
+}
+
+export interface BudgetData {
+  /** Present when provider is openrouter and API key is set. */
+  openrouter: OpenRouterUsage | null;
+  local: LocalBudget;
+}
+
+// ---------- Scheduler ----------------------------------------------------
+
+export interface SchedulerStatus {
+  enabled: boolean;
+  next_run_utc: string | null;
+  schedule_times: string[];
+}
+
+export interface ScheduleConfig {
+  times: string[];
+  enabled: boolean;
+  next_run_utc: string | null;
+}
+
+// ---------- Digest settings ----------------------------------------------
+
+export interface DigestConfig {
+  max_articles_per_digest: number;
+  balance_digest_categories: boolean;
+  max_articles_per_category: number;
+  preferred_languages: string[];
+  max_key_takeaways: number;
+  max_summary_paragraphs: number;
+}
+
+// ---------- Budget limits ------------------------------------------------
+
+export interface BudgetLimits {
+  daily_budget_usd: number;
+  monthly_budget_usd: number;
+}
+
+// ---------- Password / security ------------------------------------------
+
+export interface PasswordInfo {
+  /** 'default' | 'env' | 'db' */
+  source: string;
+  using_default: boolean;
+}
+
+// ---------- Run logs -----------------------------------------------------
+
+export interface RunLogSummary {
+  id: number;
+  digest_id: number | null;
+  created_at: string;
+  log_preview: string;
+}
+
+export interface RunLog {
+  id: number;
+  digest_id: number | null;
+  created_at: string;
+  log_text: string;
 }

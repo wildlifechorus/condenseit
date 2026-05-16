@@ -66,7 +66,7 @@ def test_apply_configured_ratings_import_path(
     monkeypatch.delenv("CONDENSEIT_RATINGS_IMPORT_PATH", raising=False)
     monkeypatch.delenv("CONDENSEIT_RATINGS_IMPORT_URL", raising=False)
     cfg = AppConfig()
-    cfg.digest_pwa.ratings_import_path = str(jf)
+    cfg.sync.ratings_import_path = str(jf)
     n = apply_configured_ratings_import(store, cfg)
     assert n == 1
 

@@ -7,31 +7,51 @@ from typing import Any
 import ollama
 
 from condenseit.digest.format import build_digest_markdown
-from condenseit.providers.base import ArticleSummary, SummarizerProvider, parse_summary_response
+from condenseit.providers.base import (
+    ArticleSummary,
+    SummarizerProvider,
+    parse_summary_response,
+)
 
-# Prompt that asks for a strict JSON response.  Tested against llama3, mistral,
-# phi3, and gemma2; most 7B+ models follow it reliably.
-_SUMMARY_PROMPT = """\
-Analyze this article and respond ONLY with a JSON object — no markdown, no \
-code fences, no extra text.
 
-Use exactly this structure:
-{{
-  "tldr": "<one sentence: what happened and why it matters>",
-  "key_takeaways": ["<takeaway 1>", "<takeaway 2>", "<takeaway 3>"],
-  "summary": "<detailed summary in 3 paragraphs: first paragraph covers what happened and the key events; second paragraph covers the implications and why it matters; third paragraph covers context, background, or conclusions>"
-}}
-
-Title: {title}
-Content: {content}
-
-JSON:"""
+def _build_summary_prompt(
+    title: str,
+    content: str,
+    max_key_takeaways: int = 5,
+    max_summary_paragraphs: int = 5,
+) -> str:
+    """Build the per-article summarization prompt with configurable output size."""
+    takeaway_placeholders = ", ".join(
+        f'"<takeaway {i + 1}>"' for i in range(max_key_takeaways)
+    )
+    para_word = "paragraph" if max_summary_paragraphs == 1 else "paragraphs"
+    return (
+        "Analyze this article and respond ONLY with a JSON object — no markdown, "
+        "no code fences, no extra text.\n\n"
+        "Use exactly this structure:\n"
+        f"{{\n"
+        f'  "tldr": "<one sentence: what happened and why it matters>",\n'
+        f'  "key_takeaways": [{takeaway_placeholders}],\n'
+        f'  "summary": "<detailed summary in {max_summary_paragraphs} {para_word}>"\n'
+        f"}}\n\n"
+        f"Title: {title}\n"
+        f"Content: {content}\n\n"
+        "JSON:"
+    )
 
 
 class OllamaSummarizer(SummarizerProvider):
-    def __init__(self, model: str, host: str = "http://localhost:11434") -> None:
+    def __init__(
+        self,
+        model: str,
+        host: str = "http://localhost:11434",
+        max_key_takeaways: int = 5,
+        max_summary_paragraphs: int = 5,
+    ) -> None:
         self.model = model
         self.client = ollama.Client(host=host)
+        self.max_key_takeaways = max_key_takeaways
+        self.max_summary_paragraphs = max_summary_paragraphs
 
     @property
     def model_name(self) -> str:
@@ -40,8 +60,12 @@ class OllamaSummarizer(SummarizerProvider):
     def summarize_article(self, article: dict[str, Any]) -> ArticleSummary:
         content = (article.get("content") or "")[:4000]
         title = article.get("title", "Untitled")
-        prompt = _SUMMARY_PROMPT.format(title=title, content=content)
-        # One request per digest item; wall time scales with max_articles_per_digest.
+        prompt = _build_summary_prompt(
+            title,
+            content,
+            self.max_key_takeaways,
+            self.max_summary_paragraphs,
+        )
         response = self.client.generate(
             model=self.model,
             prompt=prompt,

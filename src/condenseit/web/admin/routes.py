@@ -3,14 +3,22 @@
 from __future__ import annotations
 
 import json
+import os
+import re
+import secrets
 from typing import Any
 from urllib.parse import quote
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+)
 
-from condenseit.advisor.model_advisor import ModelAdvisor
 from condenseit.config import load_config
+from condenseit.providers.openrouter_models import pick_cheapest_text_model
 from condenseit.services.ollama_client import (
     ollama_delete,
     ollama_list_tags,
@@ -23,6 +31,8 @@ from condenseit.store.secure_keys import SecureKeyStore
 from condenseit.store.sources import SourceRegistry
 from condenseit.web.templating import page_context, templates
 
+_TIME_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
+
 
 def _is_htmx(request: Request) -> bool:
     return request.headers.get("HX-Request", "").lower() == "true"
@@ -31,6 +41,7 @@ def _is_htmx(request: Request) -> bool:
 def create_admin_router(
     config_path: str | None,
     store: ContentStore | None = None,
+    get_schedule_times: Any = None,
 ) -> APIRouter:
     router = APIRouter()
     config = load_config(config_path)
@@ -141,18 +152,26 @@ def create_admin_router(
         merged = _merged()
         model = store.get_setting("model", merged.model)
         provider = store.get_setting("llm_provider", merged.llm.provider)
+        ollama_reachable = False
         try:
             ollama_models = ollama_list_tags(merged.llm.ollama_host)
+            ollama_reachable = True
         except Exception:
             ollama_models = []
+        cheapest: str | None = None
+        if merged.llm.openrouter_pick_cheapest:
+            cheapest = pick_cheapest_text_model()
+
         return JSONResponse(
             {
                 "provider": provider,
                 "model": model,
                 "openrouter_model": merged.llm.openrouter_model,
                 "openrouter_pick_cheapest": merged.llm.openrouter_pick_cheapest,
+                "cheapest_model_id": cheapest,
                 "ollama_host": merged.llm.ollama_host,
                 "ollama_models": ollama_models,
+                "ollama_reachable": ollama_reachable,
             }
         )
 
@@ -200,7 +219,10 @@ def create_admin_router(
     @router.get("/api/config/keys", response_model=None)
     async def api_list_keys() -> JSONResponse:
         return JSONResponse(
-            [{"service": k["service"], "key_preview": k["key_preview"]} for k in keys.list_keys()]
+            [
+                {"service": k["service"], "key_preview": k["key_preview"]}
+                for k in keys.list_keys()
+            ]
         )
 
     @router.post("/api/config/keys", response_model=None)
@@ -208,7 +230,10 @@ def create_admin_router(
         service = str(body.get("service", "")).strip()
         key_value = str(body.get("key_value", "")).strip()
         if not service or not key_value:
-            return JSONResponse({"error": "service and key_value required"}, status_code=422)
+            return JSONResponse(
+                {"error": "service and key_value required"},
+                status_code=422,
+            )
         keys.store_key(service, key_value)
         return JSONResponse({"ok": True})
 
@@ -217,65 +242,204 @@ def create_admin_router(
         keys.delete_key(service)
         return JSONResponse({"ok": True})
 
-    # --- Model advisor -------------------------------------------------
+    # --- Digest pipeline settings -------------------------------------
 
-    @router.get("/api/admin/advisor", response_model=None)
-    async def api_advisor() -> JSONResponse:
+    @router.get("/api/config/digest", response_model=None)
+    async def api_get_digest_config() -> JSONResponse:
         merged = _merged()
-        advisor = ModelAdvisor(store, merged.llm.ollama_host)
-        current = store.get_setting("model", merged.model)
-        rec = advisor.recommend(current)
-        weekly_raw = store.get_setting("advisor_weekly_recommendation", "")
-        weekly: dict[str, Any] | None = None
-        if weekly_raw:
-            try:
-                weekly = json.loads(weekly_raw)
-            except json.JSONDecodeError:
-                weekly = None
-        bench_rows: list[dict[str, Any]] = []
-        if "benchmarks" in store.db.table_names():
-            bench_rows = [
-                dict(r)
-                for r in store.db.query(
-                    "SELECT * FROM benchmarks ORDER BY id DESC LIMIT 10",
-                )
-            ]
+        langs_raw = store.get_setting("preferred_languages", "")
+        try:
+            langs = json.loads(langs_raw) if langs_raw else merged.preferred_languages
+        except Exception:
+            langs = merged.preferred_languages
         return JSONResponse(
             {
-                "recommendation": rec,
-                "weekly": weekly,
-                "benchmarks": bench_rows,
+                "max_articles_per_digest": merged.max_articles_per_digest,
+                "balance_digest_categories": merged.balance_digest_categories,
+                "max_articles_per_category": merged.max_articles_per_category,
+                "preferred_languages": langs,
+                "max_key_takeaways": merged.max_key_takeaways,
+                "max_summary_paragraphs": merged.max_summary_paragraphs,
             }
         )
 
-    @router.post("/api/admin/advisor/apply", response_model=None)
-    async def api_advisor_apply(body: dict[str, Any]) -> JSONResponse:
-        model = str(body.get("recommended_model", "")).strip()
-        if not model:
-            return JSONResponse({"error": "recommended_model required"}, status_code=422)
-        store.set_setting("model", model)
+    @router.put("/api/config/digest", response_model=None)
+    async def api_save_digest_config(body: dict[str, Any]) -> JSONResponse:
+        if "max_articles_per_digest" in body:
+            try:
+                val = int(body["max_articles_per_digest"])
+                if 1 <= val <= 200:
+                    store.set_setting("max_articles_per_digest", str(val))
+            except (ValueError, TypeError):
+                return JSONResponse(
+                    {"error": "max_articles_per_digest must be 1-200"},
+                    status_code=422,
+                )
+        if "balance_digest_categories" in body:
+            store.set_setting(
+                "balance_digest_categories",
+                "1" if body["balance_digest_categories"] else "0",
+            )
+        if "max_articles_per_category" in body:
+            try:
+                val = int(body["max_articles_per_category"])
+                if 1 <= val <= 50:
+                    store.set_setting("max_articles_per_category", str(val))
+            except (ValueError, TypeError):
+                return JSONResponse(
+                    {"error": "max_articles_per_category must be 1-50"},
+                    status_code=422,
+                )
+        if "preferred_languages" in body:
+            langs = body["preferred_languages"]
+            if not isinstance(langs, list):
+                return JSONResponse(
+                    {"error": "preferred_languages must be a list"},
+                    status_code=422,
+                )
+            cleaned = [
+                str(language).strip().lower()
+                for language in langs
+                if str(language).strip()
+            ]
+            store.set_setting("preferred_languages", json.dumps(cleaned))
+        if "max_key_takeaways" in body:
+            try:
+                val = int(body["max_key_takeaways"])
+                if 1 <= val <= 10:
+                    store.set_setting("max_key_takeaways", str(val))
+            except (ValueError, TypeError):
+                return JSONResponse(
+                    {"error": "max_key_takeaways must be 1-10"},
+                    status_code=422,
+                )
+        if "max_summary_paragraphs" in body:
+            try:
+                val = int(body["max_summary_paragraphs"])
+                if 1 <= val <= 10:
+                    store.set_setting("max_summary_paragraphs", str(val))
+            except (ValueError, TypeError):
+                return JSONResponse(
+                    {"error": "max_summary_paragraphs must be 1-10"},
+                    status_code=422,
+                )
         return JSONResponse({"ok": True})
+
+    # --- Budget limits -------------------------------------------------
+
+    @router.get("/api/config/budget-limits", response_model=None)
+    async def api_get_budget_limits() -> JSONResponse:
+        merged = _merged()
+        return JSONResponse(
+            {
+                "daily_budget_usd": merged.llm.openrouter_daily_budget_usd,
+                "monthly_budget_usd": merged.llm.openrouter_monthly_budget_usd,
+            }
+        )
+
+    @router.put("/api/config/budget-limits", response_model=None)
+    async def api_save_budget_limits(body: dict[str, Any]) -> JSONResponse:
+        if "daily_budget_usd" in body:
+            try:
+                val = float(body["daily_budget_usd"])
+                if val < 0:
+                    raise ValueError
+                store.set_setting("openrouter_daily_budget_usd", str(val))
+            except (ValueError, TypeError):
+                return JSONResponse(
+                    {"error": "daily_budget_usd must be a non-negative number"},
+                    status_code=422,
+                )
+        if "monthly_budget_usd" in body:
+            try:
+                val = float(body["monthly_budget_usd"])
+                if val < 0:
+                    raise ValueError
+                store.set_setting("openrouter_monthly_budget_usd", str(val))
+            except (ValueError, TypeError):
+                return JSONResponse(
+                    {"error": "monthly_budget_usd must be a non-negative number"},
+                    status_code=422,
+                )
+        return JSONResponse({"ok": True})
+
+    # --- Password management -------------------------------------------
+
+    @router.get("/api/config/password-info", response_model=None)
+    async def api_password_info() -> JSONResponse:
+        """Return the current password source so the UI can show a warning."""
+        db_pw = store.get_setting("auth_password", "")
+        if db_pw:
+            source = "db"
+        else:
+            env_pw = (
+                os.environ.get("CONDENSEIT_AUTH_PASSWORD", "").strip()
+                or os.environ.get("DIGEST_PWA_AUTH_PASSWORD", "").strip()
+            )
+            source = "env" if env_pw else "default"
+        return JSONResponse({"source": source, "using_default": source == "default"})
+
+    @router.put("/api/config/password", response_model=None)
+    async def api_change_password(body: dict[str, Any]) -> JSONResponse:
+        """Change the admin password. Stores the new password in the DB."""
+        current = str(body.get("current_password", "")).strip()
+        new_pw = str(body.get("new_password", "")).strip()
+
+        if not current or not new_pw:
+            return JSONResponse(
+                {"error": "current_password and new_password are required"},
+                status_code=422,
+            )
+        if len(new_pw) < 8:
+            return JSONResponse(
+                {"error": "New password must be at least 8 characters."},
+                status_code=422,
+            )
+
+        db_pw = store.get_setting("auth_password", "")
+        env_pw = (
+            os.environ.get("CONDENSEIT_AUTH_PASSWORD", "").strip()
+            or os.environ.get("DIGEST_PWA_AUTH_PASSWORD", "").strip()
+        )
+        effective = db_pw or env_pw or "condenseit"
+
+        if not secrets.compare_digest(current, effective):
+            return JSONResponse(
+                {"error": "Current password is incorrect."},
+                status_code=401,
+            )
+
+        store.set_setting("auth_password", new_pw)
+        return JSONResponse({"ok": True})
+
+    # --- Run logs ------------------------------------------------------
+
+    @router.get("/api/logs", response_model=None)
+    async def api_list_logs() -> JSONResponse:
+        rows = store.list_run_logs(limit=30)
+        return JSONResponse([dict(r) for r in rows])
+
+    @router.get("/api/logs/latest", response_model=None)
+    async def api_latest_log() -> JSONResponse:
+        row = store.latest_run_log()
+        if not row:
+            return JSONResponse(None)
+        return JSONResponse(dict(row))
+
+    @router.get("/api/logs/{log_id}", response_model=None)
+    async def api_get_log(log_id: int) -> JSONResponse:
+        row = store.get_run_log(log_id)
+        if not row:
+            return JSONResponse(None, status_code=404)
+        return JSONResponse(dict(row))
 
     # ==================================================================
     # Legacy Jinja2 HTML routes (/admin/...)
     # ==================================================================
 
-    @router.get("/admin/", response_class=HTMLResponse)
-    async def admin_home(request: Request) -> HTMLResponse:
-        latest = store.latest_digest()
-        return templates.TemplateResponse(
-            request,
-            "admin_home.html",
-            page_context(
-                request,
-                "Admin",
-                "admin",
-                digests=_digests(),
-                config=config,
-                source_count=len(sources.list_all()),
-                latest=latest,
-            ),
-        )
+    @router.get("/admin/", response_model=None)
+    async def admin_home() -> RedirectResponse:
+        return RedirectResponse("/admin/sources", status_code=303)
 
     @router.get("/admin/sources", response_class=HTMLResponse)
     async def sources_list(request: Request) -> HTMLResponse:
@@ -473,45 +637,5 @@ def create_admin_router(
     async def keys_delete(service: str) -> RedirectResponse:
         keys.delete_key(service)
         return RedirectResponse("/admin/keys", status_code=303)
-
-    @router.get("/admin/advisor", response_class=HTMLResponse)
-    async def advisor_page(request: Request) -> HTMLResponse:
-        merged = _merged()
-        advisor = ModelAdvisor(store, merged.llm.ollama_host)
-        current = store.get_setting("model", merged.model)
-        rec = advisor.recommend(current)
-        weekly_raw = store.get_setting("advisor_weekly_recommendation", "")
-        weekly: dict[str, Any] | None = None
-        if weekly_raw:
-            try:
-                weekly = json.loads(weekly_raw)
-            except json.JSONDecodeError:
-                weekly = None
-        bench_rows: list[dict[str, Any]] = []
-        if "benchmarks" in store.db.table_names():
-            bench_rows = [
-                dict(r)
-                for r in store.db.query(
-                    "SELECT * FROM benchmarks ORDER BY id DESC LIMIT 10",
-                )
-            ]
-        return templates.TemplateResponse(
-            request,
-            "advisor.html",
-            page_context(
-                request,
-                "Model Advisor",
-                "advisor",
-                digests=_digests(),
-                recommendation=rec,
-                weekly_recommendation=weekly,
-                benchmark_history=bench_rows,
-            ),
-        )
-
-    @router.post("/admin/advisor/apply")
-    async def advisor_apply(recommended_model: str = Form(...)) -> RedirectResponse:
-        store.set_setting("model", recommended_model)
-        return RedirectResponse("/admin/advisor", status_code=303)
 
     return router

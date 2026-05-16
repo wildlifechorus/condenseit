@@ -1,20 +1,10 @@
 import { useState, useEffect, useCallback } from 'preact/hooks';
 import { useSearch } from 'wouter';
 import { api } from '../lib/api';
-import {
-  loadPwaData,
-  readPwaRatings,
-  writePwaRatings,
-  readPwaRead,
-  writePwaRead,
-  type PwaRatingsStore,
-} from '../lib/pwa-data';
 import type { DigestDetail, DigestItem } from '../lib/types';
 import { normalizeItem } from '../lib/normalize-item';
 import { DigestCard } from '../components/DigestCard';
 import { ItemDetailPanel } from '../components/ItemDetailPanel';
-import { PwaRatingsToolbar, PwaReadToolbar } from '../components/PwaRatings';
-import { PreferencesCard } from '../components/PreferencesCard';
 import { FilterPanel } from '../components/FilterPanel';
 import { EmptyState } from '../components/EmptyState';
 import { Spinner } from '../components/Spinner';
@@ -23,17 +13,11 @@ import { Button } from '../components/Button';
 /** Map of url -> current saved rating for this digest view. */
 type RatingsMap = Record<string, number>;
 
-const IS_PWA = import.meta.env.MODE === 'pwa';
-
 interface DigestPageProps {
   onDigestLoaded?: (id: number | null) => void;
 }
 
-/**
- * Digest viewer page.
- * In normal mode fetches from /api/digests; ratings POST to /api/ratings.
- * In PWA mode reads from /digest-data.json; ratings persist to localStorage.
- */
+/** Digest viewer page. Fetches from /api/digests; ratings POST to /api/ratings. */
 export function DigestPage({ onDigestLoaded }: DigestPageProps) {
   const search = useSearch();
   const params = new URLSearchParams(search);
@@ -44,30 +28,11 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [filtered, setFiltered] = useState<DigestItem[]>([]);
 
-  /**
-   * Ratings keyed by URL.
-   * In PWA mode: lazy-seeded from localStorage immediately so stars are
-   * visible as soon as the cards mount (no async wait required).
-   * In normal mode: seeded from the server response in the load effect.
-   */
-  const [ratings, setRatings] = useState<RatingsMap>(() => {
-    if (!IS_PWA) return {};
-    return readPwaRatings().byUrl;
-  });
+  /** Ratings keyed by URL, seeded from server response. */
+  const [ratings, setRatings] = useState<RatingsMap>({});
 
-  /**
-   * Full localStorage ratings store (null in normal mode).
-   * Also lazy-initialised so the export toolbar count is correct immediately.
-   */
-  const [pwaStore, setPwaStore] = useState<PwaRatingsStore | null>(() =>
-    IS_PWA ? readPwaRatings() : null,
-  );
-
-  /**
-   * URLs the user has marked as read, persisted to localStorage.
-   * Lazy-initialised so window.localStorage is only accessed in the browser.
-   */
-  const [readUrls, setReadUrls] = useState<Set<string>>(() => readPwaRead());
+  /** URLs the user has marked as read. */
+  const [readUrls, setReadUrls] = useState<Set<string>>(new Set());
 
   /** When true (default) read items are hidden from the grid. */
   const [hideRead, setHideRead] = useState(true);
@@ -79,9 +44,8 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
     setLoading(true);
     setError(null);
 
-    const load = IS_PWA
-      ? loadPwaData()
-      : requestedId !== null
+    const load =
+      requestedId !== null
         ? api.getDigest(requestedId)
         : api.getLatestDigest();
 
@@ -91,42 +55,20 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
         setFiltered(d?.items ?? []);
         onDigestLoaded?.(d?.meta.id ?? null);
 
-        if (IS_PWA) {
-          // Seed ratings from localStorage for PWA mode.
-          const store = readPwaRatings();
-          setPwaStore(store);
-          const initial: RatingsMap = {};
-          for (const item of d?.items ?? []) {
-            if (item.url && store.byUrl[item.url] != null) {
-              initial[item.url] = store.byUrl[item.url];
-            }
+        // Seed ratings from server-supplied per-item ratings.
+        const initial: RatingsMap = {};
+        for (const item of d?.items ?? []) {
+          if (item.url && item.rating != null) {
+            initial[item.url] = item.rating;
           }
-          setRatings(initial);
-        } else {
-          // Seed ratings from the server-supplied per-item ratings.
-          const initial: RatingsMap = {};
-          for (const item of d?.items ?? []) {
-            if (item.url && item.rating != null) {
-              initial[item.url] = item.rating;
-            }
-          }
-          setRatings(initial);
-
-          // Sync read URLs from the server; merge with any pre-existing
-          // localStorage entries so the UI is immediately consistent.
-          api
-            .getReadUrls()
-            .then(({ urls }) => {
-              setReadUrls((prev) => {
-                const merged = new Set([...prev, ...urls]);
-                writePwaRead(merged);
-                return merged;
-              });
-            })
-            .catch(() => {
-              // Best-effort: fall back to whatever localStorage had.
-            });
         }
+        setRatings(initial);
+
+        // Fetch read state from server.
+        api
+          .getReadUrls()
+          .then(({ urls }) => setReadUrls(new Set(urls)))
+          .catch(() => {});
       })
       .catch((e: unknown) => {
         setError(e instanceof Error ? e.message : 'Failed to load digest.');
@@ -134,32 +76,15 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
       .finally(() => setLoading(false));
   }, [requestedId]);
 
-  /** Update ratings after a card-level save. PWA path also persists to localStorage. */
-  const handleRate = useCallback(
-    (url: string, rating: number) => {
-      setRatings((prev) => ({ ...prev, [url]: rating }));
-      if (IS_PWA) {
-        setPwaStore((prev) => {
-          const next: PwaRatingsStore = {
-            v: 1,
-            byUrl: { ...(prev?.byUrl ?? {}), [url]: rating },
-          };
-          writePwaRatings(next);
-          return next;
-        });
-      }
-    },
-    [],
-  );
-
-  /** PWA handler passed to DigestCard: saves to localStorage directly. */
-  const pwaRate = IS_PWA ? handleRate : undefined;
+  /** Update ratings after a card-level save. */
+  const handleRate = useCallback((url: string, rating: number) => {
+    setRatings((prev) => ({ ...prev, [url]: rating }));
+  }, []);
 
   /**
    * Toggle the read state for a URL.
-   * Always persists to localStorage for immediate UI feedback.
-   * In non-PWA mode also calls the server so the next digest pipeline
-   * can exclude articles the user has already read.
+   * Calls the server so the next digest pipeline can exclude articles
+   * the user has already read.
    */
   const handleMarkRead = useCallback((url: string) => {
     setReadUrls((prev) => {
@@ -170,11 +95,7 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
       } else {
         next.delete(url);
       }
-      writePwaRead(next);
-      if (!IS_PWA) {
-        // Best-effort server persist; UI is already updated locally.
-        api.markRead(url, nowRead).catch(() => undefined);
-      }
+      api.markRead(url, nowRead).catch(() => undefined);
       return next;
     });
   }, []);
@@ -214,11 +135,9 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
         title="No digest yet"
         description="Click Run digest in the header to generate one, or configure your sources first."
         action={
-          !IS_PWA ? (
-            <a href="/admin/sources" class="inline-flex items-center px-4 py-2 text-sm font-semibold bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors">
-              Configure sources
-            </a>
-          ) : undefined
+          <a href="/admin/sources" class="inline-flex items-center px-4 py-2 text-sm font-semibold bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors">
+            Configure sources
+          </a>
         }
         icon={
           <svg class="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
@@ -231,12 +150,9 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
 
   const { meta, items } = detail;
   const hasItems = items.length > 0;
-  const ratedCount = Object.keys(ratings).length;
 
-  /** Items that pass the FilterPanel criteria. */
   const readCount = filtered.filter((i) => readUrls.has(i.url)).length;
 
-  /** Items shown in the grid, optionally excluding read ones. */
   const visibleItems = hideRead
     ? filtered.filter((i) => !readUrls.has(i.url))
     : filtered;
@@ -261,7 +177,13 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
       {/* Card browser */}
       {hasItems && (
         <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm overflow-hidden">
-          <FilterPanel items={items} onFiltered={handleFiltered} />
+          <FilterPanel
+            items={items}
+            onFiltered={handleFiltered}
+            readCount={readCount}
+            hideRead={hideRead}
+            onToggleHideRead={() => setHideRead((h) => !h)}
+          />
 
           <div class="px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-4 flex-wrap">
             <p class="text-xs text-slate-500 dark:text-slate-400">
@@ -269,17 +191,6 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
                 ? `${items.length} item${items.length !== 1 ? 's' : ''}`
                 : `${visibleItems.length} of ${items.length} item${items.length !== 1 ? 's' : ''}`}
             </p>
-            {readCount > 0 && (
-              <button
-                type="button"
-                onClick={() => setHideRead((h) => !h)}
-                class="text-xs text-slate-400 dark:text-slate-500 hover:text-teal-600 dark:hover:text-teal-400 transition-colors"
-              >
-                {hideRead
-                  ? `${readCount} read item${readCount !== 1 ? 's' : ''} hidden`
-                  : 'Hide read items'}
-              </button>
-            )}
           </div>
 
           {visibleItems.length === 0 ? (
@@ -299,7 +210,7 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
                   <DigestCard
                     key={item.url}
                     item={item}
-                    onRate={IS_PWA ? pwaRate : handleRate}
+                    onRate={handleRate}
                     onMarkRead={handleMarkRead}
                     isRead={readUrls.has(item.url)}
                     onSelect={setSelectedItem}
@@ -311,23 +222,6 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
         </div>
       )}
 
-      {/* PWA: download toolbar appears once any item is rated */}
-      {IS_PWA && pwaStore && (
-        <PwaRatingsToolbar
-          store={pwaStore}
-          digestId={meta.id ?? 0}
-          ratedCount={ratedCount}
-        />
-      )}
-
-      {/* PWA: download toolbar appears once any item is marked as read */}
-      {IS_PWA && (
-        <PwaReadToolbar readUrls={readUrls} />
-      )}
-
-      {/* Normal mode: collapsible preferences card */}
-      {!IS_PWA && <PreferencesCard />}
-
       {/* Item detail panel (slide-over) */}
       {selectedItem && (
         <ItemDetailPanel
@@ -338,7 +232,7 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
           isRead={readUrls.has(selectedItem.url)}
           rating={ratings[selectedItem.url] ?? selectedItem.rating}
           onClose={() => setSelectedItem(null)}
-          onRate={IS_PWA ? pwaRate : handleRate}
+          onRate={handleRate}
           onMarkRead={handleMarkRead}
         />
       )}

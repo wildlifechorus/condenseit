@@ -205,27 +205,38 @@ export function LlmConfigPage() {
             />
           </Field>
 
-          <label class="flex items-start gap-2 sm:col-span-2 cursor-pointer">
-            <input
-              type="checkbox"
-              class="mt-0.5"
-              checked={cfg.openrouter_pick_cheapest}
-              onChange={(e) =>
-                setCfg((p) =>
-                  p
-                    ? {
-                        ...p,
-                        openrouter_pick_cheapest: (e.target as HTMLInputElement)
-                          .checked,
-                      }
-                    : p,
-                )
-              }
-            />
-            <span class="text-sm text-slate-700 dark:text-slate-300">
-              Prefer cheapest OpenRouter model (re-checked hourly)
-            </span>
-          </label>
+          <div class="sm:col-span-2 space-y-1">
+            <label class="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                class="mt-0.5"
+                checked={cfg.openrouter_pick_cheapest}
+                onChange={(e) =>
+                  setCfg((p) =>
+                    p
+                      ? {
+                          ...p,
+                          openrouter_pick_cheapest: (
+                            e.target as HTMLInputElement
+                          ).checked,
+                        }
+                      : p,
+                  )
+                }
+              />
+              <span class="text-sm text-slate-700 dark:text-slate-300">
+                Prefer cheapest OpenRouter model (re-checked hourly)
+              </span>
+            </label>
+            {cfg.openrouter_pick_cheapest && cfg.cheapest_model_id && (
+              <p class="ml-6 text-xs text-slate-500 dark:text-slate-400">
+                Currently using:{' '}
+                <code class="font-mono bg-slate-100 dark:bg-slate-800 px-1 rounded">
+                  {cfg.cheapest_model_id}
+                </code>
+              </p>
+            )}
+          </div>
 
           <div class="sm:col-span-2">
             <Button type="submit" loading={saving}>
@@ -241,56 +252,67 @@ export function LlmConfigPage() {
           description="Pull can take several minutes for large models."
         />
 
-        {actionMsg && (
-          <div class="mb-3 px-3 py-2 text-sm rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-            {actionMsg}
+        {!cfg.ollama_reachable && (
+          <div class="mb-4 px-4 py-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-sm text-amber-700 dark:text-amber-300">
+            Ollama is not reachable at <code class="font-mono">{cfg.ollama_host}</code>.
+            Model management is only available when Ollama is running locally.
           </div>
         )}
 
-        <form onSubmit={handlePull} class="flex gap-2 mb-4">
-          <input
-            class={`${INPUT} flex-1`}
-            placeholder="llama3.2:3b"
-            value={pullModel}
-            onInput={(e) => setPullModel((e.target as HTMLInputElement).value)}
-            required
-          />
-          <Button type="submit" loading={pulling}>
-            Pull
-          </Button>
-        </form>
+        {cfg.ollama_reachable && (
+          <>
+            {actionMsg && (
+              <div class="mb-3 px-3 py-2 text-sm rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                {actionMsg}
+              </div>
+            )}
 
-        {cfg.ollama_models.length > 0 && (
-          <form onSubmit={handleDelete} class="flex gap-2">
-            <select
-              class={`${INPUT} flex-1`}
-              value={delModel}
-              onChange={(e) =>
-                setDelModel((e.target as HTMLSelectElement).value)
-              }
-              required
-            >
-              <option value="">Select model to delete…</option>
-              {cfg.ollama_models.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-            <Button type="submit" variant="secondary" loading={deleting}>
-              Delete
-            </Button>
-          </form>
-        )}
+            <form onSubmit={handlePull} class="flex gap-2 mb-4">
+              <input
+                class={`${INPUT} flex-1`}
+                placeholder="llama3.2:3b"
+                value={pullModel}
+                onInput={(e) => setPullModel((e.target as HTMLInputElement).value)}
+                required
+              />
+              <Button type="submit" loading={pulling}>
+                Pull
+              </Button>
+            </form>
 
-        {cfg.ollama_models.length === 0 && (
-          <p class="text-sm text-slate-500 dark:text-slate-400">
-            No models found. Run{' '}
-            <code class="font-mono bg-slate-100 dark:bg-slate-800 px-1 rounded">
-              ollama pull llama3.2:3b
-            </code>{' '}
-            on the host.
-          </p>
+            {cfg.ollama_models.length > 0 && (
+              <form onSubmit={handleDelete} class="flex gap-2">
+                <select
+                  class={`${INPUT} flex-1`}
+                  value={delModel}
+                  onChange={(e) =>
+                    setDelModel((e.target as HTMLSelectElement).value)
+                  }
+                  required
+                >
+                  <option value="">Select model to delete…</option>
+                  {cfg.ollama_models.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+                <Button type="submit" variant="secondary" loading={deleting}>
+                  Delete
+                </Button>
+              </form>
+            )}
+
+            {cfg.ollama_models.length === 0 && (
+              <p class="text-sm text-slate-500 dark:text-slate-400">
+                No models found. Run{' '}
+                <code class="font-mono bg-slate-100 dark:bg-slate-800 px-1 rounded">
+                  ollama pull llama3.2:3b
+                </code>{' '}
+                on the host.
+              </p>
+            )}
+          </>
         )}
       </Card>
     </div>

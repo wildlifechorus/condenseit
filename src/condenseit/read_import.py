@@ -1,9 +1,9 @@
 """Import read-article URLs from a remote /api/read/export endpoint.
 
 Mirrors the ratings import mechanism so that articles the user marks as read
-on a remote PWA (e.g. digest.example.com) are pulled into the local
-SQLite store before the digest pipeline runs. The pipeline's ``_filter_read``
-step then excludes those URLs from the next digest.
+on the remote SPA are pulled into the local SQLite store before the digest
+pipeline runs. The pipeline's ``_filter_read`` step then excludes those URLs
+from the next digest.
 
 Environment variables (take priority over YAML config):
     CONDENSEIT_READ_IMPORT_URL           - URL of the remote /api/read/export
@@ -96,12 +96,12 @@ def apply_configured_read_import(store: ContentStore, config: AppConfig) -> int:
     """Pull read URLs from the configured remote endpoint before a pipeline run.
 
     Checks ``CONDENSEIT_READ_IMPORT_URL`` env var first, then falls back to
-    ``digest_pwa.read_import_url`` in YAML config. Returns the number of URLs
+    ``sync.read_import_url`` in YAML config. Returns the number of URLs
     upserted into the local ``read_articles`` table.
     """
     url_raw = (
         os.environ.get("CONDENSEIT_READ_IMPORT_URL", "").strip()
-        or config.digest_pwa.read_import_url.strip()
+        or config.sync.read_import_url.strip()
     )
     if not url_raw:
         return 0

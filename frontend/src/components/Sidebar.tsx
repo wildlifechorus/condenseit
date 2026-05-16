@@ -20,11 +20,15 @@ const SECTIONS: NavSection[] = [
   {
     label: 'Configure',
     links: [
-      { href: '/admin', label: 'Overview', exact: true },
       { href: '/admin/sources', label: 'Sources' },
       { href: '/admin/llm', label: 'LLM' },
       { href: '/admin/keys', label: 'API keys' },
-      { href: '/admin/advisor', label: 'Model advisor' },
+      { href: '/admin/schedule', label: 'Schedule' },
+      { href: '/admin/settings', label: 'Digest' },
+      { href: '/admin/preferences', label: 'Profile' },
+      { href: '/admin/security', label: 'Security' },
+      { href: '/admin/budget', label: 'Budget' },
+      { href: '/admin/logs', label: 'Logs' },
     ],
   },
 ];

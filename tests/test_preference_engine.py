@@ -10,13 +10,12 @@ from pathlib import Path
 import pytest
 
 from condenseit.learning.preference_engine import (
-    PreferenceEngine,
     _STOP_WORDS,
+    PreferenceEngine,
     _time_decay,
     _tokenize,
 )
 from condenseit.store.database import ContentStore
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -156,11 +155,21 @@ def test_time_decay_invalid_date_returns_one() -> None:
 
 def test_engine_no_learning_below_threshold(store: ContentStore) -> None:
     """With fewer ratings than min_ratings, scores stay at 0.0."""
-    _save_article(store, "https://a.test/", "Kubernetes CVE", "cve kubernetes", "Infosec", "Feed")
+    _save_article(
+        store, "https://a.test/", "Kubernetes CVE", "cve kubernetes", "Infosec", "Feed"
+    )
     _rate(store, "https://a.test/", 5)
 
     eng = _engine(store, min_ratings=5)
-    articles = [{"url": "https://a.test/", "title": "Kubernetes CVE", "content": "cve kubernetes", "category": "Infosec", "source": "Feed"}]
+    articles = [
+        {
+            "url": "https://a.test/",
+            "title": "Kubernetes CVE",
+            "content": "cve kubernetes",
+            "category": "Infosec",
+            "source": "Feed",
+        }
+    ]
     ranked = eng.rank_articles(articles)
     assert ranked[0]["preference_score"] == 0.0
 
@@ -169,12 +178,26 @@ def test_engine_learns_after_threshold(store: ContentStore) -> None:
     """Once min_ratings is reached, liked articles rank higher."""
     for i in range(5):
         url = f"https://infosec.test/{i}"
-        _save_article(store, url, "CVE Report", "cve exploit vulnerability", "Infosec", "Feed")
+        _save_article(
+            store, url, "CVE Report", "cve exploit vulnerability", "Infosec", "Feed"
+        )
         _rate(store, url, 5)
 
     eng = _engine(store, min_ratings=5, tfidf_weight=0.35)
-    high = {"url": "https://new.test/1", "title": "New CVE exploit", "content": "cve exploit vulnerability", "category": "Infosec", "source": "Feed"}
-    low = {"url": "https://new.test/2", "title": "Recipe book", "content": "baking bread flour", "category": "Lifestyle", "source": "Other"}
+    high = {
+        "url": "https://new.test/1",
+        "title": "New CVE exploit",
+        "content": "cve exploit vulnerability",
+        "category": "Infosec",
+        "source": "Feed",
+    }
+    low = {
+        "url": "https://new.test/2",
+        "title": "Recipe book",
+        "content": "baking bread flour",
+        "category": "Lifestyle",
+        "source": "Other",
+    }
     ranked = eng.rank_articles([low, high])
     assert ranked[0]["url"] == high["url"]
 
@@ -189,18 +212,44 @@ def test_category_preference_boosts_liked_category(store: ContentStore) -> None:
     # 5 liked "Infosec" articles.
     for i in range(5):
         url = f"https://infosec.test/{i}"
-        _save_article(store, url, f"Infosec story {i}", "security cve firewall", "Infosec", "SecFeed")
+        _save_article(
+            store,
+            url,
+            f"Infosec story {i}",
+            "security cve firewall",
+            "Infosec",
+            "SecFeed",
+        )
         _rate(store, url, 5)
 
     # 5 disliked "Lifestyle" articles.
     for i in range(5):
         url = f"https://life.test/{i}"
-        _save_article(store, url, f"Recipe {i}", "cooking recipes kitchen", "Lifestyle", "LifeFeed")
+        _save_article(
+            store,
+            url,
+            f"Recipe {i}",
+            "cooking recipes kitchen",
+            "Lifestyle",
+            "LifeFeed",
+        )
         _rate(store, url, 1)
 
     eng = _engine(store, min_ratings=5, tfidf_weight=0.0)
-    infosec = {"url": "https://new.test/a", "title": "Firewall bypass", "content": "firewall bypass technique", "category": "Infosec", "source": "SecFeed"}
-    lifestyle = {"url": "https://new.test/b", "title": "Pasta recipe", "content": "pasta tomato basil", "category": "Lifestyle", "source": "LifeFeed"}
+    infosec = {
+        "url": "https://new.test/a",
+        "title": "Firewall bypass",
+        "content": "firewall bypass technique",
+        "category": "Infosec",
+        "source": "SecFeed",
+    }
+    lifestyle = {
+        "url": "https://new.test/b",
+        "title": "Pasta recipe",
+        "content": "pasta tomato basil",
+        "category": "Lifestyle",
+        "source": "LifeFeed",
+    }
     ranked = eng.rank_articles([lifestyle, infosec])
     assert ranked[0]["url"] == infosec["url"], "Infosec should rank first"
 
@@ -209,7 +258,9 @@ def test_category_score_neutral_for_three_star(store: ContentStore) -> None:
     """Articles with all-3-star category ratings contribute 0 category score."""
     for i in range(5):
         url = f"https://neutral.test/{i}"
-        _save_article(store, url, f"Neutral {i}", "neutral content here", "General", "Feed")
+        _save_article(
+            store, url, f"Neutral {i}", "neutral content here", "General", "Feed"
+        )
         _rate(store, url, 3)
 
     eng = _engine(store, min_ratings=5, tfidf_weight=0.0)
@@ -227,7 +278,9 @@ def test_category_weight_zero_disables_category_scoring(store: ContentStore) -> 
     """
     for i in range(5):
         url = f"https://loved.test/{i}"
-        _save_article(store, url, f"Infosec {i}", "peculiarsecurityword", "Infosec", "Feed")
+        _save_article(
+            store, url, f"Infosec {i}", "peculiarsecurityword", "Infosec", "Feed"
+        )
         _rate(store, url, 5)
 
     art = {
@@ -257,17 +310,38 @@ def test_source_preference_boosts_liked_source(store: ContentStore) -> None:
     """Articles from a consistently high-rated source rank above others."""
     for i in range(5):
         url = f"https://good-feed.test/{i}"
-        _save_article(store, url, f"Good article {i}", "interesting topic content", "Tech", "GoodFeed")
+        _save_article(
+            store,
+            url,
+            f"Good article {i}",
+            "interesting topic content",
+            "Tech",
+            "GoodFeed",
+        )
         _rate(store, url, 5)
 
     for i in range(5):
         url = f"https://bad-feed.test/{i}"
-        _save_article(store, url, f"Bad article {i}", "boring topic content", "Tech", "BadFeed")
+        _save_article(
+            store, url, f"Bad article {i}", "boring topic content", "Tech", "BadFeed"
+        )
         _rate(store, url, 1)
 
     eng = _engine(store, min_ratings=5, tfidf_weight=0.0, category_weight=0.0)
-    good = {"url": "https://new.test/g", "title": "GoodFeed new", "content": "interesting new", "category": "Tech", "source": "GoodFeed"}
-    bad = {"url": "https://new.test/b", "title": "BadFeed new", "content": "boring new", "category": "Tech", "source": "BadFeed"}
+    good = {
+        "url": "https://new.test/g",
+        "title": "GoodFeed new",
+        "content": "interesting new",
+        "category": "Tech",
+        "source": "GoodFeed",
+    }
+    bad = {
+        "url": "https://new.test/b",
+        "title": "BadFeed new",
+        "content": "boring new",
+        "category": "Tech",
+        "source": "BadFeed",
+    }
     ranked = eng.rank_articles([bad, good])
     assert ranked[0]["url"] == good["url"], "GoodFeed article should rank first"
 
@@ -280,7 +354,9 @@ def test_source_scores_in_learned_state(store: ContentStore) -> None:
         _rate(store, url, 5)
     for i in range(5):
         url = f"https://disliked.test/{i}"
-        _save_article(store, url, f"Disliked {i}", "disliked content", "Tech", "DislikedSource")
+        _save_article(
+            store, url, f"Disliked {i}", "disliked content", "Tech", "DislikedSource"
+        )
         _rate(store, url, 1)
 
     eng = _engine(store, min_ratings=5)
@@ -297,21 +373,42 @@ def test_source_scores_in_learned_state(store: ContentStore) -> None:
 def test_old_ratings_have_less_effect_than_recent(store: ContentStore) -> None:
     """A recent negative rating should outweigh an old positive one."""
     # Old liked article (90 days ago).
-    _save_article(store, "https://old.test/like", "Old liked", "security audit cve exploit", "Infosec", "OldFeed")
+    _save_article(
+        store,
+        "https://old.test/like",
+        "Old liked",
+        "security audit cve exploit",
+        "Infosec",
+        "OldFeed",
+    )
     _rate(store, "https://old.test/like", 5, days_ago=90)
 
     # Recent disliked article with same terms (1 day ago).
-    _save_article(store, "https://new.test/dislike", "New disliked", "security audit cve exploit", "Infosec", "OldFeed")
+    _save_article(
+        store,
+        "https://new.test/dislike",
+        "New disliked",
+        "security audit cve exploit",
+        "Infosec",
+        "OldFeed",
+    )
     _rate(store, "https://new.test/dislike", 1, days_ago=1)
 
-    eng = _engine(store, min_ratings=1, decay_half_life_days=30, tfidf_weight=0.0, category_weight=0.0)
+    eng = _engine(
+        store,
+        min_ratings=1,
+        decay_half_life_days=30,
+        tfidf_weight=0.0,
+        category_weight=0.0,
+    )
     eng.learn_from_ratings()
 
-    # Liked terms from 90-day-old rating should be much weaker than disliked from yesterday.
+    # Recent dislikes should outweigh stale likes for the same terms.
     liked_total = sum(eng._liked_terms.values())
     disliked_total = sum(eng._disliked_terms.values())
     assert disliked_total > liked_total, (
-        f"Recent dislike ({disliked_total:.2f}) should outweigh old like ({liked_total:.2f})"
+        f"Recent dislike ({disliked_total:.2f}) should outweigh "
+        f"old like ({liked_total:.2f})"
     )
 
 
@@ -321,7 +418,9 @@ def test_very_large_half_life_approximates_no_decay(store: ContentStore) -> None
     _rate(store, "https://a.test/", 5, days_ago=365)
 
     eng_decay = _engine(store, min_ratings=1, decay_half_life_days=30, tfidf_weight=0.0)
-    eng_nodecay = _engine(store, min_ratings=1, decay_half_life_days=36500, tfidf_weight=0.0)
+    eng_nodecay = _engine(
+        store, min_ratings=1, decay_half_life_days=36500, tfidf_weight=0.0
+    )
     eng_decay.learn_from_ratings()
     eng_nodecay.learn_from_ratings()
 
@@ -349,7 +448,14 @@ def test_profile_summary_shape_no_ratings(store: ContentStore) -> None:
 def test_profile_summary_with_ratings(store: ContentStore) -> None:
     for i in range(5):
         url = f"https://infosec.test/{i}"
-        _save_article(store, url, f"CVE {i}", "cve exploit kernel vulnerability", "Infosec", "SecFeed")
+        _save_article(
+            store,
+            url,
+            f"CVE {i}",
+            "cve exploit kernel vulnerability",
+            "Infosec",
+            "SecFeed",
+        )
         _rate(store, url, 5)
 
     eng = _engine(store, min_ratings=5)
@@ -401,7 +507,12 @@ def test_engine_empty_articles_list(store: ContentStore) -> None:
 
 
 def test_engine_article_without_url_still_ranked(store: ContentStore) -> None:
-    art = {"title": "No URL", "content": "content", "category": "Tech", "source": "Feed"}
+    art = {
+        "title": "No URL",
+        "content": "content",
+        "category": "Tech",
+        "source": "Feed",
+    }
     eng = _engine(store, min_ratings=1)
     ranked = eng.rank_articles([art])
     assert len(ranked) == 1
@@ -409,7 +520,13 @@ def test_engine_article_without_url_still_ranked(store: ContentStore) -> None:
 
 def test_engine_articles_without_content(store: ContentStore) -> None:
     arts = [
-        {"url": f"https://x.test/{i}", "title": "", "content": "", "category": "Tech", "source": "Feed"}
+        {
+            "url": f"https://x.test/{i}",
+            "title": "",
+            "content": "",
+            "category": "Tech",
+            "source": "Feed",
+        }
         for i in range(3)
     ]
     eng = _engine(store, min_ratings=1)
@@ -417,14 +534,18 @@ def test_engine_articles_without_content(store: ContentStore) -> None:
     assert len(ranked) == 3
 
 
-def test_api_preferences_profile_endpoint(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_api_preferences_profile_endpoint(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """The /api/preferences/profile endpoint returns a valid JSON object."""
     from fastapi.testclient import TestClient
+
     from condenseit.web.app import create_app
 
+    _auth = {"Authorization": "Bearer condenseit"}
     monkeypatch.setenv("CONDENSEIT_DATA_DIR", str(tmp_path / "data"))
     client = TestClient(create_app())
-    resp = client.get("/api/preferences/profile")
+    resp = client.get("/api/preferences/profile", headers=_auth)
     assert resp.status_code == 200
     data = resp.json()
     assert "rating_count" in data
@@ -432,9 +553,12 @@ def test_api_preferences_profile_endpoint(monkeypatch: pytest.MonkeyPatch, tmp_p
     assert isinstance(data["top_liked_terms"], list)
 
 
-def test_digest_detail_includes_ratings(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_digest_detail_includes_ratings(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """The /api/digests/latest response includes rating field on each item."""
     from fastapi.testclient import TestClient
+
     from condenseit.web.app import create_app
 
     data_root = tmp_path / "appdata"
@@ -444,15 +568,23 @@ def test_digest_detail_includes_ratings(monkeypatch: pytest.MonkeyPatch, tmp_pat
     store = ContentStore(db_path=data_root / "condenseit.db")
     payload = {
         "digest_items": [
-            {"url": "https://r.test/a", "title": "Rated", "kind": "article", "summary": "S", "source": "", "category": "Tech"},
+            {
+                "url": "https://r.test/a",
+                "title": "Rated",
+                "kind": "article",
+                "summary": "S",
+                "source": "",
+                "category": "Tech",
+            },
         ],
     }
     store.save_digest("# D", "<p>D</p>", json.dumps(payload))
     store.rate_article("https://r.test/a", 4)
 
+    _auth = {"Authorization": "Bearer condenseit"}
     monkeypatch.setenv("CONDENSEIT_DATA_DIR", str(data_root))
     client = TestClient(create_app())
-    resp = client.get("/api/digests/latest")
+    resp = client.get("/api/digests/latest", headers=_auth)
     assert resp.status_code == 200
     items = resp.json()["items"]
     assert items[0]["rating"] == 4

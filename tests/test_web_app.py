@@ -8,6 +8,9 @@ from fastapi.testclient import TestClient
 from condenseit.store.database import ContentStore
 from condenseit.web.app import create_app
 
+# All API routes now require auth. Use the built-in default password via Bearer token.
+_AUTH = {"Authorization": "Bearer condenseit"}
+
 
 def test_health_and_api_endpoints(
     monkeypatch: pytest.MonkeyPatch,
@@ -20,22 +23,15 @@ def test_health_and_api_endpoints(
     health = client.get("/health")
     assert health.json() == {"status": "ok"}
 
-    status = client.get("/api/digest/status")
+    status = client.get("/api/digest/status", headers=_AUTH)
     assert status.json()["state"] == "idle"
 
-    # Admin overview
-    overview = client.get("/api/admin/overview")
-    assert overview.status_code == 200
-    data = overview.json()
-    assert "source_count" in data
-    assert "model" in data
-
     # Digest list and latest (empty DB)
-    digests = client.get("/api/digests")
+    digests = client.get("/api/digests", headers=_AUTH)
     assert digests.status_code == 200
     assert digests.json() == []
 
-    latest = client.get("/api/digests/latest")
+    latest = client.get("/api/digests/latest", headers=_AUTH)
     assert latest.status_code == 200
     assert latest.json() is None
 
@@ -49,7 +45,6 @@ def test_spa_shell_served_for_ui_routes(
     client = TestClient(create_app())
     home = client.get("/")
     assert home.status_code == 200
-    # SPA shell always contains this
     assert "CondenseIt" in home.text
 
     admin = client.get("/admin/")
@@ -93,7 +88,9 @@ def test_digest_api_returns_items(
                 "id": 0,
                 "title": "Hello",
                 "url": "https://example.com/a",
-                "summary": "Here is a 2-3 sentence summary of the article: Summary text.",
+                "summary": (
+                    "Here is a 2-3 sentence summary of the article: Summary text."
+                ),
                 "source": "Example Feed",
                 "category": "News",
                 "published_at": "2026-01-15T12:00:00+00:00",
@@ -104,7 +101,7 @@ def test_digest_api_returns_items(
     store.save_digest("# Hello", "<p>Hello</p>", json.dumps(payload))
     client = TestClient(create_app())
 
-    latest = client.get("/api/digests/latest")
+    latest = client.get("/api/digests/latest", headers=_AUTH)
     assert latest.status_code == 200
     data = latest.json()
     assert data is not None
@@ -152,7 +149,7 @@ def test_ratings_api_prefers_digest_items(
     store.save_digest("# Hello", "<p>Hello</p>", json.dumps(payload))
     client = TestClient(create_app())
 
-    ratings = client.get("/api/ratings")
+    ratings = client.get("/api/ratings", headers=_AUTH)
     assert ratings.status_code == 200
     items = ratings.json()
     titles = [r["title"] for r in items]

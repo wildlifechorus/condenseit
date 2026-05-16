@@ -3,7 +3,7 @@
 ## Files
 
 - `config.yaml` (or path from `CONDENSEIT_CONFIG`) holds feeds, YouTube channels,
-  LLM provider, budgets, email, and VPS settings.
+  LLM provider, budgets, and VPS settings.
 - `CONDENSEIT_DATA_DIR` (default `./data`) holds SQLite, digests on disk, and keys.
 - `CONDENSEIT_FRONTEND_DIST` (optional): directory with the Vite SPA output
   (`index.html` and assets). Docker Compose sets this to `/app/frontend/dist` so
@@ -18,26 +18,32 @@
   an API key for requests.
 - `llm.openrouter_daily_budget_usd` / `openrouter_monthly_budget_usd`: spend caps.
 
+## Digest settings
+
+The following settings can be edited live in the **Admin > Settings** page or
+set in `config.yaml`:
+
+- `max_articles_per_digest` (default `50`): total articles per digest run.
+- `max_articles_per_category` (default `5`): cap per category when balancing.
+- `balance_digest_categories` (default `true`): reserve a slot per category before
+  filling remaining slots by rank.
+- `preferred_languages`: ISO 639-1 codes (e.g. `["en", "pt"]`). Leave empty to
+  accept all languages. Language detection uses `langdetect`.
+
 ## Preferences
 
 - `relevance.tfidf_preference_weight`: blend of cosine similarity between article
   tokens and a profile built from your star ratings (set `0` to disable).
+- The learned preference profile (category scores, source scores, liked/disliked
+  topics) is visible in **Admin > Preferences**.
 
 ## Scheduling
 
-CondenseIt does not daemonize itself. Use cron, systemd timers, or launchd.
-See [scheduling.md](scheduling.md) for Linux and macOS examples, and the sample
-plist under `launchd/`. The `bash scripts/install.sh` helper can emit cron lines
-and a plist from a chosen time and cadence (see [installation.md](installation.md)).
+Set `CONDENSEIT_SCHEDULER_ENABLED=1` in `.env` and start `condenseit serve`.
+The built-in scheduler runs digests at the times configured in **Admin > Schedule**
+(stored in the DB, overriding `config.schedule.times`). No cron, systemd timer,
+or launchd entry is needed. See [scheduling.md](scheduling.md) for details.
 
-## Email (Resend)
-
-- `config.yaml` `email` section: `enabled`, `from`, `to`, and optional
-  `resend_api_key` (often `${RESEND_API_KEY}` so the secret stays in `.env`).
-- On startup, if a `.env` file exists next to `config.yaml` or in the current
-  working directory, it is loaded first (without overriding variables already
-  set in the process).
-- **Precedence:** `RESEND_FROM` and `DIGEST_EMAIL_TO`, when non-empty after
-  `load_config` reads YAML, **replace** `email.from` and `email.to`. `RESEND_API_KEY`
-  replaces `email.resend_api_key` when set. The Resend API key can also live in
-  the admin key store under `resend` instead of config.
+If you prefer external scheduling (cron, systemd, launchd), the
+`bash scripts/install.sh` helper can emit ready-to-paste snippets for your
+chosen time and cadence (see [installation.md](installation.md)).

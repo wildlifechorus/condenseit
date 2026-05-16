@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Collect feeds on host only (no LLM). Optional: start UI container.
+# Dry run - collect and rank feeds only, no LLM summarization.
+# Useful for testing sources and config without waiting for Ollama.
 set -euo pipefail
-if [[ "${1:-}" == "--with-ui" ]]; then
-  shift
-  "$(dirname "$0")/docker-up.sh"
-fi
-exec "$(dirname "$0")/native-dry-run.sh" "$@"
+source "$(dirname "$0")/lib/common.sh"
+ensure_config
+ensure_venv
+log "Dry run (no LLM)"
+condenseit run --dry-run "$@"

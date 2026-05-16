@@ -1,13 +1,19 @@
 import type {
-  AdminOverview,
-  AdvisorPageData,
   ApiKey,
+  BudgetData,
+  BudgetLimits,
+  DigestConfig,
   DigestDetail,
   DigestEntry,
   Job,
   LlmConfig,
+  PasswordInfo,
   PreferenceProfile,
   RatingArticle,
+  RunLog,
+  RunLogSummary,
+  ScheduleConfig,
+  SchedulerStatus,
   Source,
 } from './types';
 
@@ -28,8 +34,6 @@ async function request<T>(
   }
   const res = await fetch(path, init);
   if (!res.ok) {
-    // Notify the app shell so it can show the login page when the session
-    // cookie expires or is cleared mid-session.
     if (res.status === 401) {
       window.dispatchEvent(new CustomEvent('auth:expired'));
     }
@@ -44,14 +48,14 @@ async function request<T>(
 }
 
 export const api = {
-  // ---------- Digests --------------------------------------------------
+  // Digests
   listDigests: () => request<DigestEntry[]>('GET', '/api/digests'),
   getLatestDigest: () =>
     request<DigestDetail | null>('GET', '/api/digests/latest'),
   getDigest: (id: number) =>
     request<DigestDetail>('GET', `/api/digests/${id}`),
 
-  // ---------- Job -------------------------------------------------------
+  // Job
   getJobStatus: () => request<Job>('GET', '/api/digest/status'),
   runDigest: () =>
     request<{ ok: boolean; message: string; job: Job }>(
@@ -60,19 +64,19 @@ export const api = {
     ),
   dismissJob: () => request<Job>('POST', '/api/digest/dismiss'),
 
-  // ---------- Read tracking ---------------------------------------------
+  // Read tracking
   getReadUrls: () => request<{ urls: string[] }>('GET', '/api/read'),
   markRead: (url: string, isRead: boolean) =>
     request<void>('POST', '/api/read', { url, read: isRead }),
 
-  // ---------- Ratings ---------------------------------------------------
+  // Ratings
   getRatings: () => request<RatingArticle[]>('GET', '/api/ratings'),
   submitRating: (url: string, rating: number) =>
     request<void>('POST', '/api/ratings', { url, rating }),
   getPreferenceProfile: () =>
     request<PreferenceProfile>('GET', '/api/preferences/profile'),
 
-  // ---------- Sources ---------------------------------------------------
+  // Sources
   listSources: () => request<Source[]>('GET', '/api/sources'),
   addSource: (data: FormData) => request<Source>('POST', '/api/sources', data),
   deleteSource: (id: number) =>
@@ -81,7 +85,7 @@ export const api = {
     request<{ added: number }>('POST', '/api/sources/import-opml', data),
   exportOpmlUrl: () => '/api/sources/export.opml',
 
-  // ---------- LLM Config ------------------------------------------------
+  // LLM config
   getLlmConfig: () => request<LlmConfig>('GET', '/api/config/llm'),
   saveLlmConfig: (data: Partial<LlmConfig>) =>
     request<void>('PUT', '/api/config/llm', data),
@@ -98,18 +102,47 @@ export const api = {
       { model },
     ),
 
-  // ---------- API Keys --------------------------------------------------
+  // API keys
   listKeys: () => request<ApiKey[]>('GET', '/api/config/keys'),
   saveKey: (service: string, key_value: string) =>
     request<void>('POST', '/api/config/keys', { service, key_value }),
   deleteKey: (service: string) =>
     request<void>('DELETE', `/api/config/keys/${service}`),
 
-  // ---------- Admin -----------------------------------------------------
-  getAdminOverview: () =>
-    request<AdminOverview>('GET', '/api/admin/overview'),
-  getAdvisor: () =>
-    request<AdvisorPageData>('GET', '/api/admin/advisor'),
-  applyAdvisor: (recommended_model: string) =>
-    request<void>('POST', '/api/admin/advisor/apply', { recommended_model }),
+  // Budget
+  getBudget: () => request<BudgetData>('GET', '/api/config/budget'),
+  getBudgetLimits: () =>
+    request<BudgetLimits>('GET', '/api/config/budget-limits'),
+  saveBudgetLimits: (data: BudgetLimits) =>
+    request<void>('PUT', '/api/config/budget-limits', data),
+
+  // Scheduler
+  getSchedulerStatus: () =>
+    request<SchedulerStatus>('GET', '/api/scheduler/status'),
+
+  // Schedule config
+  getScheduleConfig: () =>
+    request<ScheduleConfig>('GET', '/api/config/schedule'),
+  saveScheduleConfig: (payload: { times?: string[]; enabled?: boolean }) =>
+    request<{ ok: boolean }>('PUT', '/api/config/schedule', payload),
+
+  // Digest pipeline settings
+  getDigestConfig: () =>
+    request<DigestConfig>('GET', '/api/config/digest'),
+  saveDigestConfig: (data: Partial<DigestConfig>) =>
+    request<void>('PUT', '/api/config/digest', data),
+
+  // Security
+  getPasswordInfo: () =>
+    request<PasswordInfo>('GET', '/api/config/password-info'),
+  changePassword: (current_password: string, new_password: string) =>
+    request<void>('PUT', '/api/config/password', {
+      current_password,
+      new_password,
+    }),
+
+  // Run logs
+  listLogs: () => request<RunLogSummary[]>('GET', '/api/logs'),
+  getLog: (id: number) => request<RunLog | null>('GET', `/api/logs/${id}`),
+  getLatestLog: () => request<RunLog | null>('GET', '/api/logs/latest'),
 };

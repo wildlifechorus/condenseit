@@ -1,41 +1,82 @@
-# Deployment notes
+# Deployment
 
-## Digest PWA (static public site)
+CondenseIt runs in two modes: local (on your machine) or remote (on a VPS).
+Both use the same web UI, API, and admin panel.
 
-For an installable static digest (for example `digest.example.com` on nginx),
-see [digest-pwa.md](digest-pwa.md).
+## Local deployment
 
-## macOS schedule (launchd)
-
-For cron and systemd timer examples (Linux) and more launchd notes, see
-[scheduling.md](scheduling.md).
-
-See `launchd/com.condenseit.digest.plist`. Edit paths to your venv `condenseit`
-binary and config, then:
+Start the web UI and admin panel on your machine:
 
 ```bash
-cp launchd/com.condenseit.digest.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.condenseit.digest.plist
+condenseit serve --port 8899
 ```
 
-## Static site + HTTPS (Caddy)
+Open `http://localhost:8899`. Run digests from the UI or with `condenseit run`.
 
-If you rsync digests to a VPS, Caddy can serve files with automatic HTTPS:
+Enable the built-in scheduler so digests run automatically:
 
-```caddy
-digest.example.com {
-    root * /var/www/condenseit
-    file_server
-}
+```
+CONDENSEIT_SCHEDULER_ENABLED=1  # in .env
 ```
 
-Point `vps.digest_url` in `config.yaml` at the public URL for email links.
+The scheduler reads `config.schedule.times` (default `["07:00", "18:00"]`).
 
-## Docker UI only
+## Remote deployment (VPS)
 
-The provided `docker-compose.yml` runs the FastAPI UI. Run `condenseit run` on the
-host for Ollama (Metal). Set `OLLAMA_HOST=http://host.docker.internal:11434` in
-compose when the UI triggers pulls or digests from inside the container.
+### One-time server setup
 
-For script entry points (`run-with-ollama.sh`, `docker-up.sh`, Make targets, and
-environment knobs), see [scripts.md](scripts.md).
+1. Copy the nginx template and edit for your domain:
+
+   ```bash
+   cp scripts/nginx/digest.example.com.conf scripts/nginx/your.domain.conf
+   # Replace digest.example.com with your domain in the file
+   ```
+
+2. Set SSH connection in `.env`:
+
+   ```
+   DIGEST_PWA_SSH_HOST=your-ssh-alias   # or user@ip
+   DIGEST_PWA_DOMAIN=your.domain
+   ```
+
+3. Run the bootstrap script (prompts for secrets):
+
+   ```bash
+   ./scripts/bootstrap-server.sh
+   ```
+
+   This installs condenseit, the systemd service, nginx vhost, and writes
+   `~/condenseit/.env` on the VPS with your OpenRouter key and app password.
+
+4. Get a TLS certificate (after DNS is pointed at your VPS):
+
+   ```bash
+   ssh your-vps 'sudo certbot --nginx -d your.domain'
+   ```
+
+### Deploying updates
+
+```bash
+./scripts/deploy.sh
+```
+
+This builds the frontend, packages a wheel, rsyncs everything to the VPS,
+and restarts the `condenseit-web` service.
+
+### Service management
+
+```bash
+# Logs
+ssh your-vps 'journalctl -u condenseit-web -f'
+
+# Status
+ssh your-vps 'sudo systemctl status condenseit-web'
+
+# Restart
+ssh your-vps 'sudo systemctl restart condenseit-web'
+```
+
+## Environment variables
+
+See [`.env.example`](../.env.example) for all variables with comments.
+See [`configuration.md`](configuration.md) for YAML config options.

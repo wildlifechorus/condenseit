@@ -1,15 +1,16 @@
 model: "llama3.2:3b"
-# YAML default here is illustrative; App code defaults to 50. Override with env
-# CONDENSEIT_MAX_ARTICLES_PER_DIGEST for one-off runs.
+# Maximum articles per digest run. Override with CONDENSEIT_MAX_ARTICLES_PER_DIGEST.
 max_articles_per_digest: 50
-# When true, reserve one slot per category (in rank order) before filling.
+# Reserve one slot per category before filling remaining slots by rank.
 balance_digest_categories: true
-# Maximum articles from any single category in the balanced digest (default: 5).
+# Maximum articles from any single category in the balanced digest.
 max_articles_per_category: 5
-# Articles older than this many hours (by published_at) are excluded from the
-# digest. Set to 0 to disable the age gate. Default: 36.
+# Articles older than this many hours are excluded from ranking.
+# Set to 0 to disable the age gate.
 max_article_age_hours: 36
 
+# Digest schedule (used by the built-in scheduler when CONDENSEIT_SCHEDULER_ENABLED=1).
+# Times are UTC (HH:MM, 24-hour).
 schedule:
   times: ["07:00", "18:00"]
 
@@ -22,25 +23,12 @@ feeds:
     category: "General News"
     priority: 2
 
-  # Ukraine
-  - url: "https://www.theguardian.com/world/ukraine/rss"
-    category: "Ukraine"
-    priority: 1
-
   # Developer News
   - url: "https://cursor.com/changelog/rss.xml"
     category: "Developer News"
     priority: 1
 
-  # FPV News
-  - url: "https://oscarliang.com/feed/"
-    category: "FPV News"
-    priority: 2
-
   # Infosec News
-  - url: "https://aspicts.substack.com/feed"
-    category: "Infosec News"
-    priority: 1
   - url: "https://www.darkreading.com/rss.xml"
     category: "Infosec News"
     priority: 1
@@ -51,54 +39,21 @@ feeds:
     category: "Infosec News"
     priority: 1
 
-youtube_channels:
-  # Ukraine
-  - handle: "@DenysDavydov"
-    channel_id: "UCpr-NNORb2UQYDD3k-w-OFg"
-    category: "Ukraine"
-
-  # AI News
-  - handle: "@aiexplained-official"
-    channel_id: "UCNJ1Ymd5yFuUPtn21xtRbbw"
-    category: "AI News"
-  - handle: "@ThePrimeTimeagen"
-    channel_id: "UC8ENHE5xdFSwx71u3fDH5Xw"
-    category: "AI News"
-
-  # FPV News
-  - handle: "@oscarliang"
-    channel_id: "UCX3eufnI7A2I7IkKHZn8KSQ"
-    category: "FPV News"
-
-  # General Interesting
-  - handle: "@BennJordan"
-    channel_id: "UC213K1tH6XJwHj6ZiVtLDrw"
-    category: "General Interesting"
-  - handle: "@rossmanngroup"
-    channel_id: "UC6nZlvfz4YWoBWbjiaYJA3g"
-    category: "General Interesting"
+youtube_channels: []
 
 watch_urls: []
 
 relevance:
-  # Minimum number of ratings before the preference engine starts influencing
-  # article ranking. Avoids noisy signals when you only have a few ratings.
+  # Minimum ratings before preference learning activates.
   min_ratings_for_learning: 5
-
   # Weight of the TF-IDF cosine similarity component (term-level profile).
   tfidf_preference_weight: 0.35
-
   # Weight applied to per-category mean-rating deviation from neutral (3.0).
-  # Set to 0 to disable category-level preference learning.
   category_preference_weight: 0.6
-
   # Weight applied to per-source (feed) mean-rating deviation from neutral.
-  # Set to 0 to disable source-level preference learning.
   source_preference_weight: 0.3
-
-  # Half-life in days for the exponential time-decay applied to each rating.
-  # A rating made 30 days ago contributes half as much as one made today.
-  # Set to a very large number (e.g. 3650) to effectively disable decay.
+  # Exponential time-decay half-life in days (e.g. 30 = rating from 30 days
+  # ago contributes half as much as one made today).
   rating_decay_half_life_days: 30
 
   initial_keywords:
@@ -109,49 +64,52 @@ output:
   format: "both"
   path: "data/digests"
 
-digest_pwa:
-  output_dir: "data/pwa-dist"
-  # Baked into pwa-build: optional GET URL whose JSON fills missing PWA keys
-  # only (localStorage wins if you already rated that URL).
-  ratings_merge_url: ""
-  # Host-only: optional path/URL merged into SQLite before each ``condenseit
-  # run`` (same JSON as PWA export). Bearer token only via env (see .env.example).
-  #
-  # To enable remote rating via your VPS:
-  #   1. Run scripts/bootstrap-ratings-service.sh (one-time VPS setup)
-  #   2. Set CONDENSEIT_VPS_WITH_SERVICE=1 and run deploy-digest-pwa.sh
-  #   3. Point ratings_import_url at your live site's export endpoint:
-  #        ratings_import_url: "https://digest.example.com/api/ratings/export"
-  #   Each local digest run will then pull remote ratings automatically.
-  ratings_import_path: ""
-  ratings_import_url: ""
-
+# ---------------------------------------------------------------------------
+# LLM configuration
+#
+# Two modes:
+#   Local:  provider: "ollama" - runs on your Mac/server with Ollama
+#   Remote: provider: "openrouter" - uses OpenRouter cloud API
+#   Both:   provider: "fallback" - tries Ollama first, falls back to OpenRouter
+# ---------------------------------------------------------------------------
 llm:
-  provider: "ollama"
+  provider: "openrouter"
+
+  # Local Ollama (used when provider is "ollama" or "fallback")
   ollama_host: "${OLLAMA_HOST:-http://localhost:11434}"
+  # Set to false when connecting to a remote Ollama instance.
   manage_lifecycle: true
+
+  # OpenRouter (used when provider is "openrouter" or "fallback")
+  # API key comes from OPENROUTER_API_KEY env var (required by default).
   openrouter_model: "openai/gpt-4o-mini"
+  # Hard limits to prevent runaway costs. Pipeline stops if exceeded.
   openrouter_daily_budget_usd: 1.0
   openrouter_monthly_budget_usd: 10.0
-  openrouter_pick_cheapest: false
+  # When true, picks the cheapest available model (re-checked hourly).
+  openrouter_pick_cheapest: true
 
-# Post-run: email and VPS deploy are on by default. Without keys or host you
-# get clear "not run" lines in the CLI and in the Run digest banner (not a
-# silent skip).
-email:
-  enabled: true
-  resend_api_key: "${RESEND_API_KEY}"
-  # Optional: substitute from the shell; RESEND_FROM / DIGEST_EMAIL_TO override
-  # these when set (see docs/configuration.md).
-  from: "${RESEND_FROM:-CondenseIt <digest@example.com>}"
-  to: "${DIGEST_EMAIL_TO:-you@example.com}"
-
+# VPS deployment (used by scripts/deploy.sh)
+# Leave host empty until you have a real SSH target.
+# Override with DIGEST_PWA_SSH_HOST, DIGEST_PWA_REMOTE_DIR, DIGEST_PWA_LIVE_URL.
+# ---------------------------------------------------------------------------
 vps:
   enabled: true
-  # Leave empty until you have a real SSH target; rsync runs only when set.
-  # You can set DIGEST_PWA_SSH_HOST (and path/URL) in .env instead; see .env.example.
   host: ""
-  path: "/var/www/condenseit/"
+  path: "/var/www/digest.example.com"
   ssh_key: "~/.ssh/id_ed25519"
   ssh_port: 22
   digest_url: "https://digest.example.com"
+
+# ---------------------------------------------------------------------------
+# Remote sync
+# Import ratings and read state from a remote condenseit-web instance before
+# running the local digest pipeline.
+# ---------------------------------------------------------------------------
+sync:
+  # Import ratings before each run (file path or URL).
+  ratings_import_path: ""
+  ratings_import_url: ""
+  # Import read URLs before each run.
+  # Example: read_import_url: "https://digest.example.com/api/read/export"
+  read_import_url: ""

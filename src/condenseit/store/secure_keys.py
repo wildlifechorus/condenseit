@@ -65,7 +65,6 @@ class SecureKeyStore:
 
 def _env_fallback(service: str) -> str | None:
     mapping = {
-        "resend": "RESEND_API_KEY",
         "openrouter": "OPENROUTER_API_KEY",
     }
     var = mapping.get(service, f"{service.upper()}_API_KEY")

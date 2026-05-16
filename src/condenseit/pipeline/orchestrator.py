@@ -12,7 +12,6 @@ from typing import Any
 
 import markdown
 
-from condenseit.advisor.model_advisor import ModelAdvisor
 from condenseit.collectors.rss import RSSCollector
 from condenseit.collectors.website import check_website_changes_with_health
 from condenseit.collectors.youtube import YouTubeCollector
@@ -24,10 +23,8 @@ from condenseit.providers.factory import build_summarizer
 from condenseit.ratings_import import apply_configured_ratings_import
 from condenseit.read_import import apply_configured_read_import
 from condenseit.services.deploy import VpsDeployer
-from condenseit.services.notifications import send_digest_email
 from condenseit.settings_overlay import apply_db_settings
 from condenseit.store.database import ContentStore
-from condenseit.store.secure_keys import SecureKeyStore
 from condenseit.store.sources import SourceRegistry
 
 logger = logging.getLogger(__name__)
@@ -117,9 +114,6 @@ class DigestPipeline:
         todays_articles = self.store.articles_collected_since(today_midnight)
 
         if todays_articles:
-            # DB rows already include the just-saved fresh items; use the full
-            # today set so subsequent same-day digests cover everything seen
-            # since midnight, not just what arrived in this specific run.
             articles = todays_articles
             logger.info(
                 "Same-day accumulation: %d articles collected today"
@@ -132,6 +126,7 @@ class DigestPipeline:
 
         articles = self._filter_by_age(articles)
         articles = self._filter_read(articles)
+        articles = self._filter_by_language(articles)
 
         keywords = self.config.relevance.initial_keywords
         ranked = self.preferences.rank_articles(
@@ -218,8 +213,6 @@ class DigestPipeline:
             json.dumps(self.stats),
         )
         logger.info("Digest complete in %s", self.stats["processing_time"])
-        if not dry_run:
-            self._maybe_weekly_advisor()
         return self.stats
 
     def _filter_by_age(
@@ -241,7 +234,6 @@ class DigestPipeline:
         for art in articles:
             raw = str(art.get('published_at') or '').strip()
             if not raw:
-                # No publish date available; keep it.
                 kept.append(art)
                 continue
             try:
@@ -249,7 +241,6 @@ class DigestPipeline:
                 if pub.tzinfo is None:
                     pub = pub.replace(tzinfo=UTC)
             except ValueError:
-                # Unparseable date; keep it to avoid silent data loss.
                 kept.append(art)
                 continue
 
@@ -270,11 +261,7 @@ class DigestPipeline:
     def _filter_read(
         self, articles: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
-        """Exclude articles the user has already marked as read.
-
-        Only articles explicitly marked read are removed. Unread articles that
-        fall within the age window continue to appear in subsequent digests.
-        """
+        """Exclude articles the user has already marked as read."""
         read_urls = self.store.get_read_urls()
         if not read_urls:
             return articles
@@ -288,54 +275,64 @@ class DigestPipeline:
             )
         return kept
 
-    def _maybe_weekly_advisor(self) -> None:
-        """At most once per week, store a model recommendation snapshot."""
-        last = self.store.get_setting("advisor_weekly_last", "")
-        now = datetime.now(UTC)
-        if last:
+    def _filter_by_language(
+        self, articles: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Drop articles whose detected language is not in preferred_languages.
+
+        If preferred_languages is empty, all articles are kept. Detection
+        failures always keep the article to avoid silent data loss.
+        """
+        preferred = self.config.preferred_languages
+        if not preferred:
+            return articles
+
+        try:
+            import langdetect
+        except ImportError:
+            logger.warning(
+                "langdetect not installed; skipping language filter."
+            )
+            return articles
+
+        preferred_set = {lang.lower() for lang in preferred}
+        kept: list[dict[str, Any]] = []
+        dropped = 0
+
+        for art in articles:
+            text = (
+                str(art.get("title") or "")
+                + " "
+                + str(art.get("content") or "")[:300]
+            ).strip()
+            if not text:
+                kept.append(art)
+                continue
             try:
-                prev = datetime.fromisoformat(last.replace("Z", "+00:00"))
-                if prev.tzinfo is None:
-                    prev = prev.replace(tzinfo=UTC)
-                if now - prev < timedelta(days=7):
-                    return
-            except ValueError:
-                pass
-        cur = self.store.get_setting("model", self.config.model)
-        rec = ModelAdvisor(self.store, self.config.llm.ollama_host).recommend(cur)
-        self.store.set_setting("advisor_weekly_last", now.isoformat())
-        self.store.set_setting(
-            "advisor_weekly_recommendation",
-            json.dumps(rec, default=str),
-        )
-        logger.info(
-            "Weekly advisor snapshot: %s",
-            rec.get("recommended_model"),
-        )
+                detected = langdetect.detect(text).lower()
+                if detected in preferred_set:
+                    kept.append(art)
+                else:
+                    dropped += 1
+            except Exception:
+                # Keep article when detection is uncertain.
+                kept.append(art)
+
+        if dropped:
+            logger.info(
+                "Language filter (%s): dropped %d article(s), %d remaining",
+                ", ".join(preferred),
+                dropped,
+                len(kept),
+            )
+        return kept
 
     def post_run(
         self,
         *,
-        skip_email: bool = False,
         skip_deploy: bool = False,
     ) -> dict[str, Any]:
         results: dict[str, Any] = {}
-        keys = SecureKeyStore(self.store)
-
-        if skip_email:
-            results["email"] = {
-                "status": "skipped",
-                "reason": "digest run requested skip email",
-            }
-        else:
-            results["email"] = send_digest_email(
-                self.config.email,
-                keys,
-                digest_md=self.digest_md,
-                digest_html=self.digest_html,
-                stats=self.stats,
-                digest_url=self.config.vps.digest_url,
-            )
 
         if skip_deploy:
             results["deploy"] = {

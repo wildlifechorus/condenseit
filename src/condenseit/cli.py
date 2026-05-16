@@ -10,10 +10,7 @@ import click
 from rich.console import Console
 from rich.panel import Panel
 
-from condenseit.advisor.benchmark import benchmark_model
-from condenseit.advisor.model_advisor import ModelAdvisor
 from condenseit.config import get_config_path, load_config
-from condenseit.pwa.build import build_digest_pwa
 from condenseit.ratings_import import import_ratings_path, import_ratings_url
 from condenseit.read_import import import_read_url
 from condenseit.services.digest_runner import execute_digest
@@ -39,13 +36,11 @@ def cli() -> None:
 
 @cli.command()
 @click.option("--dry-run", is_flag=True, help="Collect without LLM.")
-@click.option("--no-email", is_flag=True, help="Skip Resend notification.")
 @click.option("--no-deploy", is_flag=True, help="Skip VPS rsync.")
 @click.option("--config", "-c", default=None, help="Path to config.yaml.")
 @click.option("-v", "--verbose", is_flag=True)
 def run(
     dry_run: bool,
-    no_email: bool,
     no_deploy: bool,
     config: str | None,
     verbose: bool,
@@ -53,11 +48,10 @@ def run(
     """Run the digest pipeline once."""
     _setup_logging(verbose)
 
-    with console.status("[bold green]Running digest pipeline..."):
+    with console.status("[bold green]Running..."):
         result = execute_digest(
             config,
             dry_run=dry_run,
-            skip_email=no_email,
             skip_deploy=no_deploy,
         )
         stats = result["stats"]
@@ -98,32 +92,6 @@ def serve(port: int, host: str, config: str | None) -> None:
     console.print(f"[bold]CondenseIt[/] http://{host}:{port}/")
     console.print(f"  Admin: http://{host}:{port}/admin/")
     uvicorn.run(app, host=host, port=port, log_level="info")
-
-
-@cli.command("pwa-build")
-@click.option("--config", "-c", default=None, help="Path to config.yaml.")
-@click.option(
-    "--output",
-    "-o",
-    default=None,
-    help="Output directory (default: digest_pwa.output_dir in config).",
-)
-def pwa_build(config: str | None, output: str | None) -> None:
-    """Export latest digest as a static PWA (for nginx or static hosting)."""
-    cfg = load_config(config)
-    store = ContentStore()
-    out = Path(output or cfg.digest_pwa.output_dir)
-    info = build_digest_pwa(out, store, cfg)
-    console.print(
-        Panel(
-            f"Wrote PWA to [bold]{info['output_dir']}[/]\n"
-            f"Digest id: {info['digest_id']}\n"
-            f"Total size: {info['bytes']} bytes\n\n"
-            "Deploy: [cyan]./scripts/deploy-digest-pwa.sh[/]",
-            title="PWA export",
-            style="green",
-        ),
-    )
 
 
 @cli.command("ratings-import")
@@ -202,27 +170,3 @@ def status(config: str | None) -> None:
         console.print(f"Latest digest id: {latest['id']} at {latest['created_at']}")
     else:
         console.print("No digests yet.")
-
-
-@cli.group()
-def advisor() -> None:
-    """Model advisor commands."""
-
-
-@advisor.command("recommend")
-@click.option("--config", "-c", default=None)
-def advisor_recommend(config: str | None) -> None:
-    cfg = load_config(config)
-    store = ContentStore()
-    rec = ModelAdvisor(store, cfg.llm.ollama_host).recommend(cfg.model)
-    console.print(rec)
-
-
-@advisor.command("benchmark")
-@click.argument("model")
-@click.option("--config", "-c", default=None)
-def advisor_benchmark(model: str, config: str | None) -> None:
-    cfg = load_config(config)
-    store = ContentStore()
-    result = benchmark_model(store, cfg.llm.ollama_host, model)
-    console.print(result)

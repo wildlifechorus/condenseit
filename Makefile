@@ -1,13 +1,14 @@
-.PHONY: install dev test lint run dry-run serve docker-ui-digest \
-	docker-up docker-down docker-run docker-dry-run \
-	run-with-ollama run-with-ollama-pwa-deploy run-without-ollama native-setup \
-	seed-next-pwa-deploy-sources \
-	native-serve digest-pwa digest-pwa-serve digest-pwa-deploy digest-pwa-bootstrap \
-	schedule-install schedule-uninstall schedule-status teardown logs-clean
+.PHONY: install dev test lint run dry-run serve \
+	run-with-ollama run-without-ollama native-setup native-serve \
+	docker-up docker-down docker-run docker-dry-run docker-ui-digest \
+	build-frontend deploy bootstrap logs-clean
 
-PYTHON ?= $(shell if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi)
+PYTHON    ?= $(shell if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi)
 CONDENSEIT ?= $(shell if [ -x .venv/bin/condenseit ]; then echo .venv/bin/condenseit; else echo condenseit; fi)
-PWA_PORT ?= 8898
+
+# ---------------------------------------------------------------------------
+# Development
+# ---------------------------------------------------------------------------
 
 install:
 	pip install -e .
@@ -15,38 +16,46 @@ install:
 dev:
 	pip install -e ".[dev]"
 
+# Run the digest pipeline once (local mode).
 run:
 	$(CONDENSEIT) run
 
 dry-run:
 	$(CONDENSEIT) run --dry-run
 
+# Start the web UI and admin panel (local mode).
 serve:
 	$(CONDENSEIT) serve --port 8899
 
-# Docker UI + native digest (see ./scripts/docker-ui-digest.sh ui | restart)
-docker-ui-digest:
-	./scripts/docker-ui-digest.sh
+# ---------------------------------------------------------------------------
+# Local helpers
+# ---------------------------------------------------------------------------
 
-# UI in Docker (rebuilds image FE), digest on host, then static PWA build + rsync
-run-with-ollama-pwa-deploy: seed-next-pwa-deploy-sources
-	./scripts/run-with-ollama.sh && ./scripts/deploy-digest-pwa.sh
+# One-time setup: venv + Ollama model pull + frontend build.
+setup:
+	./scripts/native-setup.sh
 
-# UI in Docker; digest on host (Ollama / Metal)
+# Start the web UI (builds frontend if missing).
+native-serve:
+	./scripts/native-serve.sh
+
+# Run digest with Ollama.
 run-with-ollama:
 	./scripts/run-with-ollama.sh
 
-seed-next-pwa-deploy-sources:
-	$(PYTHON) scripts/seed-next-pwa-deploy-sources.py
-
+# Dry run - collect only, no LLM.
 run-without-ollama:
 	./scripts/run-without-ollama.sh
 
 native-setup:
 	./scripts/native-setup.sh
 
-native-serve:
-	./scripts/native-serve.sh
+# ---------------------------------------------------------------------------
+# Docker UI
+# ---------------------------------------------------------------------------
+
+docker-ui-digest:
+	./scripts/docker-ui-digest.sh
 
 docker-up:
 	./scripts/docker-up.sh
@@ -60,44 +69,29 @@ docker-run:
 docker-dry-run:
 	./scripts/docker-dry-run.sh
 
-digest-pwa:
-	$(CONDENSEIT) pwa-build
+# ---------------------------------------------------------------------------
+# Frontend
+# ---------------------------------------------------------------------------
 
-digest-pwa-serve: digest-pwa
-	$(PYTHON) -m http.server $(PWA_PORT) --directory data/pwa-dist
+build-frontend:
+	cd frontend && npm ci && npm run build
 
-digest-pwa-deploy:
-	./scripts/deploy-digest-pwa.sh
+# ---------------------------------------------------------------------------
+# Remote VPS deployment
+# ---------------------------------------------------------------------------
 
-digest-pwa-bootstrap:
-	./scripts/bootstrap-digest-pwa-server.sh
+# Deploy to VPS (build frontend + wheel, rsync, restart service).
+deploy:
+	./scripts/deploy.sh
 
-teardown:
-	./scripts/teardown-after-digest.sh
+# One-time VPS setup (venv, systemd unit, nginx, .env).
+bootstrap:
+	./scripts/bootstrap-server.sh
 
-# launchd agent: twice-daily digest at 06:00 and 21:00
-PLIST_SRC  := launchd/com.condenseit.scheduled-digest.plist
-PLIST_DEST := $(HOME)/Library/LaunchAgents/com.condenseit.scheduled-digest.plist
-AGENT_LABEL := com.condenseit.scheduled-digest
+# ---------------------------------------------------------------------------
+# Maintenance
+# ---------------------------------------------------------------------------
 
-schedule-install:
-	cp "$(PLIST_SRC)" "$(PLIST_DEST)"
-	launchctl load -w "$(PLIST_DEST)"
-	@echo "Installed. Next runs: 06:00 and 21:00 daily."
-	@echo "Force a manual run: make schedule-run"
-
-schedule-uninstall:
-	launchctl unload "$(PLIST_DEST)" 2>/dev/null || true
-	rm -f "$(PLIST_DEST)"
-	@echo "Uninstalled."
-
-schedule-status:
-	launchctl list $(AGENT_LABEL) 2>/dev/null || echo "Agent not loaded"
-
-schedule-run:
-	launchctl start $(AGENT_LABEL)
-
-# Trim digest logs when safe (skips files another process has open).
 logs-clean:
 	./scripts/cleanup-condenseit-logs.sh all-safe
 

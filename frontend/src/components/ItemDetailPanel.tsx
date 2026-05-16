@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'preact/hooks';
 import { Badge, kindVariant } from './Badge';
 import { RatingStars } from './RatingStars';
-import { cleanSummary } from '../lib/clean-summary';
+import { cleanSummary, tryParseStructuredSummary } from '../lib/clean-summary';
 import type { DigestItem } from '../lib/types';
 import { api } from '../lib/api';
-
-const IS_PWA = import.meta.env.MODE === 'pwa';
 
 interface ItemDetailPanelProps {
   item: DigestItem;
@@ -121,6 +119,20 @@ export function ItemDetailPanel({
   onRate,
   onMarkRead,
 }: ItemDetailPanelProps) {
+  /*
+   * Some older items have the LLM's structured output stored as a raw JSON
+   * blob in `summary` rather than being split into the dedicated fields.
+   * Fall back to the parsed JSON values when the dedicated fields are absent.
+   */
+  const jsonFallback = item.summary
+    ? tryParseStructuredSummary(item.summary)
+    : null;
+  const tldr = item.tldr ?? jsonFallback?.tldr;
+  const keyTakeaways =
+    item.key_takeaways?.length
+      ? item.key_takeaways
+      : jsonFallback?.key_takeaways;
+
   const segments = parseSummary(item.summary);
   const date = formatDate(item.published_at);
   const metaParts: string[] = [];
@@ -159,9 +171,7 @@ export function ItemDetailPanel({
     setLocalRating(r);
     setSaving(true);
     try {
-      if (!IS_PWA) {
-        await api.submitRating(item.url, r);
-      }
+      await api.submitRating(item.url, r);
       onRate?.(item.url, r);
       setSavedFlash(true);
       setTimeout(() => setSavedFlash(false), 2000);
@@ -266,25 +276,25 @@ export function ItemDetailPanel({
           <hr class="border-slate-100 dark:border-slate-800" />
 
           {/* TL;DR */}
-          {item.tldr && (
+          {tldr && (
             <div class="space-y-2">
               <h2 class="text-xs font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500">
                 TL;DR
               </h2>
               <p class="text-[15px] font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
-                {item.tldr}
+                {tldr}
               </p>
             </div>
           )}
 
           {/* Key Takeaways */}
-          {item.key_takeaways && item.key_takeaways.length > 0 && (
+          {keyTakeaways && keyTakeaways.length > 0 && (
             <div class="space-y-2">
               <h2 class="text-xs font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500">
                 Key Takeaways
               </h2>
               <ul class="space-y-2 pl-0 list-none">
-                {item.key_takeaways.map((point, i) => (
+                {keyTakeaways.map((point, i) => (
                   <li key={i} class="flex gap-2.5 text-[15px] text-slate-700 dark:text-slate-300 leading-relaxed">
                     <span
                       class="mt-[0.45em] flex-shrink-0 w-1.5 h-1.5 rounded-full bg-teal-400 dark:bg-teal-500"
@@ -298,7 +308,7 @@ export function ItemDetailPanel({
           )}
 
           {/* Divider before summary, shown only when structured fields are present */}
-          {(item.tldr || (item.key_takeaways && item.key_takeaways.length > 0)) && (
+          {(tldr || (keyTakeaways && keyTakeaways.length > 0)) && (
             <hr class="border-slate-100 dark:border-slate-800" />
           )}
 
@@ -330,7 +340,7 @@ export function ItemDetailPanel({
               </div>
             </div>
           ) : (
-            !item.tldr && !item.key_takeaways?.length && (
+            !tldr && !keyTakeaways?.length && (
               <p class="text-sm text-slate-400 dark:text-slate-500 italic">
                 No summary available.
               </p>

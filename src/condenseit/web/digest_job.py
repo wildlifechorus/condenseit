@@ -14,6 +14,26 @@ from condenseit.services.post_run_format import format_post_run_lines
 logger = logging.getLogger(__name__)
 
 
+class _ListHandler(logging.Handler):
+    """Captures log records emitted during a digest run into a list."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._lines: list[str] = []
+        self.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+        )
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            self._lines.append(self.format(record))
+        except Exception:
+            pass
+
+    def get_text(self) -> str:
+        return "\n".join(self._lines)
+
+
 @dataclass
 class DigestJobSnapshot:
     state: str = "idle"
@@ -33,8 +53,13 @@ class DigestJobSnapshot:
 class DigestJobManager:
     """Single-flight background digest runner."""
 
-    def __init__(self, config_path: str | None = None) -> None:
+    def __init__(
+        self,
+        config_path: str | None = None,
+        store: Any | None = None,
+    ) -> None:
         self._config_path = config_path
+        self._store = store
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._snapshot = DigestJobSnapshot()
@@ -52,7 +77,6 @@ class DigestJobManager:
         self,
         *,
         dry_run: bool = False,
-        skip_email: bool = False,
         skip_deploy: bool = False,
     ) -> tuple[bool, str]:
         with self._lock:
@@ -60,14 +84,13 @@ class DigestJobManager:
                 return False, "A digest is already running."
             self._snapshot = DigestJobSnapshot(
                 state="running",
-                message="Collecting feeds and summarizing…",
+                message="Running...",
                 started_at=_now_iso(),
             )
             self._thread = threading.Thread(
                 target=self._run,
                 kwargs={
                     "dry_run": dry_run,
-                    "skip_email": skip_email,
                     "skip_deploy": skip_deploy,
                 },
                 name="condenseit-digest",
@@ -80,14 +103,17 @@ class DigestJobManager:
         self,
         *,
         dry_run: bool,
-        skip_email: bool,
         skip_deploy: bool,
     ) -> None:
+        handler = _ListHandler()
+        root_logger = logging.getLogger("condenseit")
+        root_logger.addHandler(handler)
+        digest_id: int | None = None
+
         try:
             result = execute_digest(
                 self._config_path,
                 dry_run=dry_run,
-                skip_email=skip_email,
                 skip_deploy=skip_deploy,
             )
             stats = result["stats"]
@@ -99,6 +125,7 @@ class DigestJobManager:
                     raw_post if isinstance(raw_post, dict) else None,
                 ),
             )
+            digest_id = result.get("digest_id")
             with self._lock:
                 self._snapshot = DigestJobSnapshot(
                     state="completed",
@@ -111,7 +138,7 @@ class DigestJobManager:
                     stats=slim_stats,
                     post=result.get("post"),
                     post_display=post_display,
-                    digest_id=result.get("digest_id"),
+                    digest_id=digest_id,
                 )
         except Exception as exc:
             logger.exception("Digest job failed")
@@ -123,6 +150,14 @@ class DigestJobManager:
                     finished_at=_now_iso(),
                     error=str(exc),
                 )
+        finally:
+            root_logger.removeHandler(handler)
+            log_text = handler.get_text()
+            if self._store is not None and log_text:
+                try:
+                    self._store.save_run_log(digest_id, log_text)
+                except Exception:
+                    logger.warning("Failed to persist run log", exc_info=True)
 
     def dismiss(self) -> None:
         """Clear completed/failed state back to idle."""

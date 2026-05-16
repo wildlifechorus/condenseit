@@ -8,7 +8,11 @@ from typing import Any
 import httpx
 
 from condenseit.digest.format import build_digest_markdown
-from condenseit.providers.base import ArticleSummary, SummarizerProvider, parse_summary_response
+from condenseit.providers.base import (
+    ArticleSummary,
+    SummarizerProvider,
+    parse_summary_response,
+)
 from condenseit.providers.budget import BudgetTracker
 
 logger = logging.getLogger(__name__)
@@ -20,16 +24,29 @@ _SYSTEM_PROMPT = (
     "no markdown, no code fences, no additional text."
 )
 
-_USER_PROMPT = """\
-Analyze this article and respond with a JSON object in exactly this structure:
-{{
-  "tldr": "<one sentence: what happened and why it matters>",
-  "key_takeaways": ["<takeaway 1>", "<takeaway 2>", "<takeaway 3>"],
-  "summary": "<detailed summary in 3 paragraphs: first paragraph covers what happened and the key events; second paragraph covers the implications and why it matters; third paragraph covers context, background, or conclusions>"
-}}
 
-Title: {title}
-Content: {content}"""
+def _build_user_prompt(
+    title: str,
+    content: str,
+    max_key_takeaways: int = 5,
+    max_summary_paragraphs: int = 5,
+) -> str:
+    """Build the per-article user prompt with configurable output size."""
+    takeaway_placeholders = ", ".join(
+        f'"<takeaway {i + 1}>"' for i in range(max_key_takeaways)
+    )
+    para_word = "paragraph" if max_summary_paragraphs == 1 else "paragraphs"
+    return (
+        "Analyze this article and respond with a JSON object "
+        "in exactly this structure:\n"
+        f"{{\n"
+        f'  "tldr": "<one sentence: what happened and why it matters>",\n'
+        f'  "key_takeaways": [{takeaway_placeholders}],\n'
+        f'  "summary": "<detailed summary in {max_summary_paragraphs} {para_word}>"\n'
+        f"}}\n\n"
+        f"Title: {title}\n"
+        f"Content: {content}"
+    )
 
 
 class OpenRouterSummarizer(SummarizerProvider):
@@ -38,10 +55,14 @@ class OpenRouterSummarizer(SummarizerProvider):
         model: str,
         api_key: str,
         budget: BudgetTracker | None = None,
+        max_key_takeaways: int = 5,
+        max_summary_paragraphs: int = 5,
     ) -> None:
         self.model = model
         self.api_key = api_key
         self.budget = budget
+        self.max_key_takeaways = max_key_takeaways
+        self.max_summary_paragraphs = max_summary_paragraphs
 
     @property
     def model_name(self) -> str:
@@ -92,7 +113,12 @@ class OpenRouterSummarizer(SummarizerProvider):
             {"role": "system", "content": _SYSTEM_PROMPT},
             {
                 "role": "user",
-                "content": _USER_PROMPT.format(title=title, content=content),
+                "content": _build_user_prompt(
+                    title,
+                    content,
+                    self.max_key_takeaways,
+                    self.max_summary_paragraphs,
+                ),
             },
         ]
         raw = self._chat(messages, max_tokens=700)

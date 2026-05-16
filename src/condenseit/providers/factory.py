@@ -17,11 +17,16 @@ def build_summarizer(config: AppConfig, store: ContentStore) -> SummarizerProvid
     keys = SecureKeyStore(store)
     provider = config.llm.provider.lower()
     model = config.model
-
-    ollama = OllamaSummarizer(model=model, host=config.llm.ollama_host)
+    max_takeaways = config.max_key_takeaways
+    max_paragraphs = config.max_summary_paragraphs
 
     if provider == "ollama":
-        return ollama
+        return OllamaSummarizer(
+            model=model,
+            host=config.llm.ollama_host,
+            max_key_takeaways=max_takeaways,
+            max_summary_paragraphs=max_paragraphs,
+        )
 
     or_key = keys.get_key("openrouter") or config.llm.openrouter_api_key
     if not or_key:
@@ -38,12 +43,24 @@ def build_summarizer(config: AppConfig, store: ContentStore) -> SummarizerProvid
         if picked:
             or_model = picked
 
-    cloud = OpenRouterSummarizer(or_model, or_key, budget=budget)
+    cloud = OpenRouterSummarizer(
+        or_model,
+        or_key,
+        budget=budget,
+        max_key_takeaways=max_takeaways,
+        max_summary_paragraphs=max_paragraphs,
+    )
 
     if provider == "openrouter":
         return cloud
 
     if provider == "fallback":
+        ollama = OllamaSummarizer(
+            model=model,
+            host=config.llm.ollama_host,
+            max_key_takeaways=max_takeaways,
+            max_summary_paragraphs=max_paragraphs,
+        )
         return FallbackChainProvider(ollama, cloud)
 
     raise ValueError(f"Unknown llm.provider: {provider}")

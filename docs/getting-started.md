@@ -1,8 +1,9 @@
 # Getting started
 
 For a full **local install** (uv, `config.yaml`, `.env`, first run), see
-[installation.md](installation.md). To run digests on a **schedule** (cron,
-systemd, launchd), see [scheduling.md](scheduling.md).
+[installation.md](installation.md). To run digests automatically, set
+`CONDENSEIT_SCHEDULER_ENABLED=1` in `.env` — no cron or launchd needed. See
+[scheduling.md](scheduling.md) for details and optional external scheduling.
 
 Quick path:
 

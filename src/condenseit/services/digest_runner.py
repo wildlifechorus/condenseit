@@ -16,7 +16,6 @@ def execute_digest(
     config_path: str | None = None,
     *,
     dry_run: bool = False,
-    skip_email: bool = False,
     skip_deploy: bool = False,
 ) -> dict[str, Any]:
     """Collect, summarize, save digest; return stats plus optional post-run info."""
@@ -37,11 +36,10 @@ def execute_digest(
 
     if dry_run:
         post = {
-            "email": {"status": "skipped", "reason": "dry run"},
             "deploy": {"status": "skipped", "reason": "dry run"},
         }
     else:
-        post = pipeline.post_run(skip_email=skip_email, skip_deploy=skip_deploy)
+        post = pipeline.post_run(skip_deploy=skip_deploy)
 
     latest = pipeline.store.latest_digest()
     digest_id = latest["id"] if latest else None

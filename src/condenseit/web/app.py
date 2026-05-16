@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
 import re
 import secrets
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
+import httpx
 import markdown
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import (
@@ -28,19 +32,20 @@ from condenseit.settings_overlay import apply_db_settings
 from condenseit.store.database import ContentStore
 from condenseit.web.admin.routes import create_admin_router
 from condenseit.web.digest_job import DigestJobManager
+from condenseit.web.scheduler import (
+    _SCHEDULER_STATE,
+    get_scheduler_status,
+    is_env_scheduler_enabled,
+    scheduler_loop,
+    trigger_reschedule,
+)
 from condenseit.web.templating import page_context, templates
 
 _STATIC = Path(__file__).resolve().parent / "static"
+_TIME_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 
 
 def _frontend_dist_dir() -> Path:
-    """Resolve the Vite ``dist`` folder for the SPA shell.
-
-    - ``CONDENSEIT_FRONTEND_DIST``: explicit path (set in Docker Compose).
-    - Repo checkout: ``src/condenseit/web`` -> four parents -> repo
-      ``frontend/dist``.
-    - Else ``./frontend/dist`` from the process cwd (e.g. Docker ``WORKDIR``).
-    """
     override = (os.environ.get("CONDENSEIT_FRONTEND_DIST") or "").strip()
     if override:
         return Path(override)
@@ -53,9 +58,7 @@ def _frontend_dist_dir() -> Path:
         return cwd_candidate
     return legacy
 
-# ---------------------------------------------------------------------------
-# Summary cleaning: strip LLM prompt artifacts from stored summaries
-# ---------------------------------------------------------------------------
+
 _SUMMARY_PREFIX = re.compile(
     r"^(?:here\s+is\s+(?:a\s+)?(?:\d+[-\u2013]\d+\s+sentence\s+)?"
     r"(?:brief\s+)?summary[^:]*:|this\s+(?:is\s+(?:a|an)\s+)?"
@@ -66,7 +69,6 @@ _NOTE_SUFFIX = re.compile(r"\n+\s*note:\s.*$", re.IGNORECASE | re.DOTALL)
 
 
 def _clean_summary(raw: str) -> str:
-    """Remove common LLM preamble/postamble from summary text."""
     s = (raw or "").strip()
     s = _SUMMARY_PREFIX.sub("", s)
     s = _NOTE_SUFFIX.sub("", s)
@@ -89,7 +91,6 @@ def _normalize_item(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def _clean_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Return a new list with summaries cleaned and JSON-wrapped items unwrapped."""
     return [_normalize_item(it) for it in items]
 
 
@@ -97,7 +98,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
     config = load_config(config_path)
     store = ContentStore()
     config = apply_db_settings(config, store)
-    job_manager = DigestJobManager(config_path)
+    job_manager = DigestJobManager(config_path, store=store)
     spa_dist = _frontend_dist_dir()
     relevance = config.relevance
     preferences = PreferenceEngine(
@@ -109,21 +110,61 @@ def create_app(config_path: str | None = None) -> FastAPI:
         relevance.rating_decay_half_life_days,
     )
 
-    app = FastAPI(title="CondenseIt", docs_url="/docs")
+    def _get_schedule_times() -> list[str]:
+        """Return current schedule times from DB, falling back to config."""
+        raw = store.get_setting("schedule_times", "")
+        if raw:
+            try:
+                times = json.loads(raw)
+                if isinstance(times, list):
+                    return [str(t) for t in times]
+            except Exception:
+                pass
+        return config.schedule.get("times", [])
+
+    def _is_scheduler_enabled() -> bool:
+        """Check DB setting first, then fall back to env var."""
+        db_val = store.get_setting("scheduler_enabled", "")
+        if db_val == "1":
+            return True
+        if db_val == "0":
+            return False
+        return is_env_scheduler_enabled()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        # Always start the scheduler task; the loop checks _is_scheduler_enabled()
+        # on each iteration so it can be toggled live from the admin UI.
+        _SCHEDULER_STATE["schedule_times"] = _get_schedule_times()
+        task = asyncio.create_task(
+            scheduler_loop(
+                _get_schedule_times,
+                job_manager.start,
+                is_enabled=_is_scheduler_enabled,
+            ),
+            name="condenseit-scheduler",
+        )
+        try:
+            yield
+        finally:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+    app = FastAPI(title="CondenseIt", docs_url="/docs", lifespan=lifespan)
     app.state.job_manager = job_manager
     templates.env.globals["digest_job"] = job_manager.snapshot
 
-    # ------------------------------------------------------------------
-    # Session-cookie auth
-    #
-    # Set DIGEST_PWA_AUTH_PASSWORD in .env to protect all /api/* routes.
-    # Set DIGEST_PWA_SESSION_SECRET to a fixed random hex string so that
-    # sessions survive service restarts (generate with: openssl rand -hex 32).
-    # ------------------------------------------------------------------
-    _auth_password = os.environ.get("DIGEST_PWA_AUTH_PASSWORD", "").strip()
+    default_auth_password = "condenseit"
+    _env_auth_password = (
+        os.environ.get("CONDENSEIT_AUTH_PASSWORD", "").strip()
+        or os.environ.get("DIGEST_PWA_AUTH_PASSWORD", "").strip()
+    )
     _session_secret = os.environ.get("DIGEST_PWA_SESSION_SECRET", "").strip()
 
-    if _auth_password and not _session_secret:
+    if not _session_secret:
         logging.warning(
             "DIGEST_PWA_SESSION_SECRET is not set; a temporary random key "
             "will be used. All sessions will be invalidated on every service "
@@ -132,14 +173,22 @@ def create_app(config_path: str | None = None) -> FastAPI:
         )
         _session_secret = secrets.token_hex(32)
 
-    # /api/auth/* endpoints are always registered so the frontend can
-    # probe auth state regardless of whether a password is configured.
+    def _get_auth_password() -> str:
+        """Effective password: DB > env var > built-in default."""
+        db_pw = store.get_setting("auth_password", "")
+        if db_pw:
+            return db_pw
+        return _env_auth_password if _env_auth_password else default_auth_password
+
+    def _password_source() -> str:
+        if store.get_setting("auth_password", ""):
+            return "db"
+        if _env_auth_password:
+            return "env"
+        return "default"
 
     @app.get("/api/auth/check", response_model=None)
     async def api_auth_check(request: Request) -> JSONResponse:
-        """Return 200 when authenticated (or when no password is configured)."""
-        if not _auth_password:
-            return JSONResponse({"authenticated": True})
         session: dict[str, Any] = getattr(request, "session", {})
         if session.get("authenticated"):
             return JSONResponse({"authenticated": True})
@@ -150,48 +199,30 @@ def create_app(config_path: str | None = None) -> FastAPI:
         request: Request,
         body: dict[str, Any],
     ) -> JSONResponse:
-        """Validate password and issue a signed session cookie."""
-        if not _auth_password:
-            # Auth not configured: always succeed so the frontend can proceed.
-            return JSONResponse({"ok": True})
         pw = str(body.get("password", "")).strip()
-        if not pw or not secrets.compare_digest(pw, _auth_password):
+        if not pw or not secrets.compare_digest(pw, _get_auth_password()):
             return JSONResponse({"error": "Invalid password"}, status_code=401)
         request.session["authenticated"] = True
         return JSONResponse({"ok": True})
 
     @app.post("/api/auth/logout", response_model=None)
     async def api_auth_logout(request: Request) -> JSONResponse:
-        """Clear the session cookie."""
         session: dict[str, Any] = getattr(request, "session", {})
         session.clear()
         return JSONResponse({"ok": True})
 
-    # HTTP auth guard: blocks all /api/* except /api/auth/* when a password is
-    # configured.  Must be registered BEFORE app.add_middleware(SessionMiddleware)
-    # so it becomes the inner layer and only executes after the session cookie has
-    # already been parsed.
-    #
-    # Two valid auth methods:
-    #   1. Session cookie (set by POST /api/auth/login — browser / PWA flow).
-    #   2. Bearer token in Authorization header (CLI import tools).
     @app.middleware("http")
     async def _auth_guard(
         request: Request,
         call_next: Callable,
     ) -> Response:
         path = request.url.path
-        if (
-            _auth_password
-            and path.startswith("/api/")
-            and not path.startswith("/api/auth/")
-        ):
-            # Accept a matching Bearer token so CLI tools can still reach the
-            # export endpoints without a browser session.
+        if path.startswith("/api/") and not path.startswith("/api/auth/"):
+            effective_pw = _get_auth_password()
             auth_header = request.headers.get("Authorization", "")
             bearer_ok = auth_header.startswith("Bearer ") and secrets.compare_digest(
                 auth_header[len("Bearer "):].strip(),
-                _auth_password,
+                effective_pw,
             )
             session: dict[str, Any] = getattr(request, "session", {})
             if not bearer_ok and not session.get("authenticated"):
@@ -201,22 +232,16 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 )
         return await call_next(request)
 
-    # SessionMiddleware must be added AFTER the auth guard so it becomes the
-    # outermost layer and parses the signed cookie before the guard runs.
-    if _session_secret:
-        app.add_middleware(
-            SessionMiddleware,
-            secret_key=_session_secret,
-            # 90 days: iOS stores the cookie across PWA restarts.
-            max_age=7_776_000,
-            # Require HTTPS for the Secure cookie flag in production.
-            https_only=True,
-            same_site="lax",
-        )
+    _https_only = os.environ.get("CONDENSEIT_HTTPS_ONLY", "").strip()
+    https_only = _https_only == "1" if _https_only else False
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=_session_secret,
+        max_age=7_776_000,
+        https_only=https_only,
+        same_site="lax",
+    )
 
-    # ------------------------------------------------------------------
-    # Static assets (legacy CSS/JS for Jinja2 pages)
-    # ------------------------------------------------------------------
     if _STATIC.is_dir():
         app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
 
@@ -251,7 +276,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
             return JSONResponse(None, status_code=404)
         return JSONResponse(_build_digest_detail(dict(rows[0]), store))
 
-    # --- Job status / control (already existed, kept as-is) -----------
+    # --- Job status / control -----------------------------------------
 
     @app.get("/api/digest/status")
     async def api_digest_status() -> dict[str, Any]:
@@ -260,12 +285,10 @@ def create_app(config_path: str | None = None) -> FastAPI:
     @app.post("/api/digest/run")
     async def api_digest_run(
         dry_run: int = Query(0),
-        skip_email: int = Query(0),
         skip_deploy: int = Query(0),
     ) -> JSONResponse:
         ok, message = job_manager.start(
             dry_run=bool(dry_run),
-            skip_email=bool(skip_email),
             skip_deploy=bool(skip_deploy),
         )
         status = 200 if ok else 409
@@ -276,6 +299,173 @@ def create_app(config_path: str | None = None) -> FastAPI:
     async def api_digest_dismiss() -> dict[str, Any]:
         job_manager.dismiss()
         return job_manager.snapshot()
+
+    # --- Scheduler status / config ------------------------------------
+
+    @app.get("/api/scheduler/status", response_model=None)
+    async def api_scheduler_status() -> JSONResponse:
+        return JSONResponse(get_scheduler_status())
+
+    @app.get("/api/config/schedule", response_model=None)
+    async def api_get_schedule() -> JSONResponse:
+        times = _get_schedule_times()
+        return JSONResponse(
+            {
+                "times": times,
+                "enabled": _is_scheduler_enabled(),
+                "next_run_utc": _SCHEDULER_STATE.get("next_run_utc"),
+            }
+        )
+
+    @app.put("/api/config/schedule", response_model=None)
+    async def api_save_schedule(body: dict[str, Any]) -> JSONResponse:
+        # Handle enabled toggle
+        if "enabled" in body:
+            store.set_setting(
+                "scheduler_enabled",
+                "1" if body["enabled"] else "0",
+            )
+
+        # Handle times update
+        if "times" in body:
+            times = body["times"]
+            if not isinstance(times, list):
+                return JSONResponse({"error": "times must be a list"}, status_code=422)
+            validated: list[str] = []
+            for t in times:
+                t = str(t).strip()
+                if _TIME_RE.match(t):
+                    validated.append(t)
+                else:
+                    return JSONResponse(
+                        {"error": f"Invalid time format: {t!r}. Use HH:MM (24-hour)."},
+                        status_code=422,
+                    )
+            store.set_setting("schedule_times", json.dumps(validated))
+            _SCHEDULER_STATE["schedule_times"] = validated
+
+        # Wake the scheduler loop so changes take effect immediately.
+        await trigger_reschedule()
+        return JSONResponse({"ok": True})
+
+    # --- Budget -------------------------------------------------------
+
+    @app.get("/api/config/budget", response_model=None)
+    async def api_budget() -> JSONResponse:
+        merged = apply_db_settings(load_config(config_path), store)
+        or_key = merged.llm.openrouter_api_key
+        if not or_key:
+            from condenseit.store.secure_keys import SecureKeyStore
+            or_key = SecureKeyStore(store).get_key("openrouter") or ""
+
+        openrouter_data: dict[str, Any] | None = None
+        if or_key:
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    resp = await client.get(
+                        "https://openrouter.ai/api/v1/key",
+                        headers={"Authorization": f"Bearer {or_key}"},
+                    )
+                    resp.raise_for_status()
+                    payload = resp.json()
+                    data = payload.get("data", {})
+                    openrouter_data = {
+                        "usage_daily": float(data.get("usage_daily") or 0),
+                        "usage_weekly": float(data.get("usage_weekly") or 0),
+                        "usage_monthly": float(data.get("usage_monthly") or 0),
+                        "limit": data.get("limit"),
+                        "limit_remaining": data.get("limit_remaining"),
+                        "is_free_tier": bool(data.get("is_free_tier", True)),
+                    }
+            except Exception as exc:
+                logging.getLogger(__name__).warning(
+                    "OpenRouter key stats failed: %s", exc
+                )
+
+        today_str = _today_iso()
+        month_str = today_str[:7]
+
+        today_usd = _sum_spending(store, f"recorded_at >= '{today_str}'")
+        month_usd = _sum_spending(store, f"recorded_at >= '{month_str}-01'")
+
+        by_model: list[dict[str, Any]] = []
+        if "spending" in store.db.table_names():
+            rows = list(store.db.query(
+                "SELECT model, SUM(amount_usd) as total_usd, COUNT(*) as requests"
+                " FROM spending GROUP BY model ORDER BY total_usd DESC"
+            ))
+            by_model = [
+                {
+                    "model": str(r["model"] or ""),
+                    "total_usd": float(r["total_usd"] or 0),
+                    "requests": int(r["requests"] or 0),
+                }
+                for r in rows
+            ]
+
+        recent_digests: list[dict[str, Any]] = []
+        for digest in store.list_digests(limit=10):
+            d_id = digest.get("id")
+            d_at = str(digest.get("created_at", ""))
+            stats_raw = digest.get("stats_json", "") or ""
+            articles = 0
+            try:
+                stats = json.loads(stats_raw)
+                articles = int(stats.get("articles_count", 0))
+            except (json.JSONDecodeError, TypeError):
+                pass
+            cost = 0.0
+            if d_at and "spending" in store.db.table_names():
+                try:
+                    rows2 = list(store.db.query(
+                        "SELECT SUM(amount_usd) as total FROM spending"
+                        " WHERE recorded_at >= ?"
+                        " AND recorded_at <= datetime(?, '+10 minutes')",
+                        [d_at[:16], d_at[:16]],
+                    ))
+                    cost = float(rows2[0]["total"] or 0) if rows2 else 0.0
+                except Exception:
+                    pass
+            recent_digests.append({
+                "digest_id": d_id,
+                "created_at": d_at,
+                "cost_usd": cost,
+                "articles": articles,
+            })
+
+        # Average cost per digest: total all-time spending / total digest count.
+        avg_cost_per_digest_usd = 0.0
+        if "spending" in store.db.table_names() and "digests" in store.db.table_names():
+            try:
+                digest_count_rows = list(store.db.query(
+                    "SELECT COUNT(*) as n FROM digests"
+                ))
+                total_digests = int(
+                    digest_count_rows[0]["n"] or 0
+                ) if digest_count_rows else 0
+                all_spend_rows = list(store.db.query(
+                    "SELECT SUM(amount_usd) as total FROM spending"
+                ))
+                all_time_usd = float(
+                    all_spend_rows[0]["total"] or 0
+                ) if all_spend_rows else 0.0
+                if total_digests > 0:
+                    avg_cost_per_digest_usd = all_time_usd / total_digests
+            except Exception:
+                pass
+
+        return JSONResponse({
+            "openrouter": openrouter_data,
+            "local": {
+                "today_usd": today_usd,
+                "month_usd": month_usd,
+                "daily_limit_usd": merged.llm.openrouter_daily_budget_usd,
+                "monthly_limit_usd": merged.llm.openrouter_monthly_budget_usd,
+                "avg_cost_per_digest_usd": avg_cost_per_digest_usd,
+                "by_model": by_model,
+                "recent_digests": recent_digests,
+            },
+        })
 
     # --- Ratings -------------------------------------------------------
 
@@ -295,13 +485,6 @@ def create_app(config_path: str | None = None) -> FastAPI:
 
     @app.get("/api/ratings/export", response_model=None)
     async def api_ratings_export() -> JSONResponse:
-        """Export all ratings as {ratings:[{url,rating}]} for ratings_import_url.
-
-        Compatible with ``condenseit ratings-import --url`` and the
-        ``CONDENSEIT_RATINGS_IMPORT_URL`` / ``digest_pwa.ratings_import_url``
-        settings so the local pipeline can pull remote ratings automatically
-        before each digest run.
-        """
         if "ratings" not in store.db.table_names():
             return JSONResponse({"ratings": []})
         rows = list(
@@ -320,18 +503,11 @@ def create_app(config_path: str | None = None) -> FastAPI:
 
     @app.get("/api/read", response_model=None)
     async def api_get_read() -> JSONResponse:
-        """Return all URLs the user has marked as read."""
         urls = sorted(store.get_read_urls())
         return JSONResponse({"urls": urls})
 
     @app.post("/api/read", response_model=None)
     async def api_mark_read(body: dict[str, Any]) -> JSONResponse:
-        """Mark or unmark a single article URL as read.
-
-        Body: ``{"url": "...", "read": true}``
-        When ``read`` is ``false`` the URL is removed from the read set so the
-        article becomes eligible to appear in the next digest again.
-        """
         url = str(body.get("url", "")).strip()
         is_read = bool(body.get("read", True))
         if not url:
@@ -344,12 +520,6 @@ def create_app(config_path: str | None = None) -> FastAPI:
 
     @app.get("/api/read/export", response_model=None)
     async def api_read_export() -> JSONResponse:
-        """Export all read URLs as ``{"urls": [...]}`` for CONDENSEIT_READ_IMPORT_URL.
-
-        Compatible with ``digest_pwa.read_import_url`` and the
-        ``CONDENSEIT_READ_IMPORT_URL`` env var so the local pipeline can pull
-        remote read state automatically before each digest run.
-        """
         urls = sorted(store.get_read_urls())
         return JSONResponse({"urls": urls})
 
@@ -357,35 +527,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
 
     @app.get("/api/preferences/profile", response_model=None)
     async def api_preferences_profile() -> JSONResponse:
-        """Return a snapshot of the learned preference profile.
-
-        Shows liked/disliked terms, category scores, source scores, and
-        rating counts so the user can verify what the engine has learned.
-        """
         return JSONResponse(preferences.profile_summary())
-
-    # --- Admin overview -----------------------------------------------
-
-    @app.get("/api/admin/overview", response_model=None)
-    async def api_admin_overview() -> JSONResponse:
-        from condenseit.providers.base import parse_summary_response
-
-        merged = apply_db_settings(load_config(config_path), store)
-        sources = SourceRegistry(store)
-        sources.seed_from_config(merged)
-        latest = store.latest_digest()
-        return JSONResponse(
-            {
-                "source_count": len(sources.list_all()),
-                "provider": merged.llm.provider,
-                "model": store.get_setting("model", merged.model),
-                "latest": (
-                    {"id": latest["id"], "created_at": latest.get("created_at", "")}
-                    if latest
-                    else None
-                ),
-            }
-        )
 
     # ==================================================================
     # Legacy Jinja2 HTML routes (kept during transition)
@@ -406,10 +548,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
 
         selected_id = row.get("id") if row else None
 
-        # Serve SPA if the dist is present; else fall back to Jinja2
         if spa_dist.is_dir() and not raw:
             from starlette.responses import FileResponse
-
             return FileResponse(spa_dist / "index.html")
 
         return templates.TemplateResponse(
@@ -431,15 +571,23 @@ def create_app(config_path: str | None = None) -> FastAPI:
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    # ------------------------------------------------------------------
-    # SPA catch-all: serve index.html for all other GET requests
-    # ------------------------------------------------------------------
     if spa_dist.is_dir():
-        app.mount(
-            "/",
-            StaticFiles(directory=str(spa_dist), html=True),
-            name="spa",
-        )
+        from starlette.responses import FileResponse
+
+        assets_dir = spa_dist / "assets"
+        if assets_dir.is_dir():
+            app.mount(
+                "/assets",
+                StaticFiles(directory=str(assets_dir)),
+                name="spa-assets",
+            )
+
+        @app.get("/{full_path:path}", response_model=None, include_in_schema=False)
+        async def spa_catchall(full_path: str) -> Response:
+            candidate = spa_dist / full_path
+            if candidate.is_file():
+                return FileResponse(str(candidate))
+            return FileResponse(str(spa_dist / "index.html"))
 
     return app
 
@@ -449,15 +597,27 @@ def create_app(config_path: str | None = None) -> FastAPI:
 # ---------------------------------------------------------------------------
 
 
+def _today_iso() -> str:
+    from datetime import UTC, datetime
+    return datetime.now(UTC).strftime("%Y-%m-%d")
+
+
+def _sum_spending(store: ContentStore, where: str) -> float:
+    if "spending" not in store.db.table_names():
+        return 0.0
+    try:
+        rows = list(store.db.query(
+            f"SELECT SUM(amount_usd) as total FROM spending WHERE {where}"
+        ))
+        return float(rows[0]["total"] or 0) if rows else 0.0
+    except Exception:
+        return 0.0
+
+
 def _build_digest_detail(
     row: dict[str, Any],
     store: ContentStore | None = None,
 ) -> dict[str, Any]:
-    """Convert a DB digest row to the JSON API response shape.
-
-    When ``store`` is supplied, saved star ratings are merged into each item
-    so the frontend can show the user's current rating alongside each card.
-    """
     md = row.get("markdown") or ""
     html = markdown.markdown(md, extensions=["tables", "fenced_code"])
     meta = _parse_stats(row.get("stats_json", ""))
@@ -519,7 +679,6 @@ def _attach_ratings(
     store: ContentStore,
     rows: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Merge rating from ratings table into article rows (mutates in place)."""
     urls = [str(r["url"]) for r in rows if r.get("url")]
     if not urls:
         return rows
@@ -539,7 +698,6 @@ def _rate_page_article_rows(
     store: ContentStore,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
-    """Prefer URLs from recent digest stats; fall back to articles table."""
     rows_out: list[dict[str, Any]] = []
     seen: set[str] = set()
     for d in store.list_digests(limit=30):

@@ -44,7 +44,7 @@ uv sync --extra dev
    ```
 
 Adjust feeds in `config.yaml` and set `OLLAMA_HOST`, `OLLAMA_MODEL`, and any
-email keys in `.env` as needed. See [configuration.md](configuration.md).
+API keys in `.env` as needed. See [configuration.md](configuration.md).
 
 ## First run
 
@@ -64,6 +64,10 @@ The CLI entrypoint is declared in `pyproject.toml` as `condenseit =
 "condenseit.cli:cli"`.
 
 ## Interactive installer (configs + schedule snippets)
+
+> **Tip:** If you set `CONDENSEIT_SCHEDULER_ENABLED=1` in `.env`, the
+> built-in scheduler runs digests automatically at the times in
+> `config.schedule.times`. You can skip the installer entirely in that case.
 
 To check prerequisites, optionally create `config.yaml` / `.env` from the
 examples, and print **ready-to-paste** cron lines plus a **launchd** plist

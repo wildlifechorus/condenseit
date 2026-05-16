@@ -13,6 +13,9 @@ interface Filters {
 interface FilterPanelProps {
   items: DigestItem[];
   onFiltered: (filtered: DigestItem[]) => void;
+  readCount?: number;
+  hideRead?: boolean;
+  onToggleHideRead?: () => void;
 }
 
 const EMPTY_FILTERS: Filters = {
@@ -59,11 +62,13 @@ function passes(it: DigestItem, f: Filters): boolean {
   return true;
 }
 
-/**
- * Search and filter bar for digest items.
- * Calls onFiltered whenever the visible set changes.
- */
-export function FilterPanel({ items, onFiltered }: FilterPanelProps) {
+export function FilterPanel({
+  items,
+  onFiltered,
+  readCount = 0,
+  hideRead = true,
+  onToggleHideRead,
+}: FilterPanelProps) {
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [open, setOpen] = useState(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -93,7 +98,6 @@ export function FilterPanel({ items, onFiltered }: FilterPanelProps) {
 
   return (
     <div class="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
-      {/* Primary search + toggle */}
       <div class="flex items-center gap-2 p-3">
         <div class="relative flex-1">
           <svg
@@ -111,7 +115,7 @@ export function FilterPanel({ items, onFiltered }: FilterPanelProps) {
           </svg>
           <input
             type="search"
-            placeholder="Search title, summary, source…"
+            placeholder="Search title, summary, source..."
             class="w-full pl-9 pr-3 py-2 text-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 dark:focus:ring-teal-400"
             onInput={(e) => handleSearch((e.target as HTMLInputElement).value)}
           />
@@ -155,12 +159,55 @@ export function FilterPanel({ items, onFiltered }: FilterPanelProps) {
             Clear
           </button>
         )}
+
+        {readCount > 0 && onToggleHideRead && (
+          <button
+            type="button"
+            onClick={onToggleHideRead}
+            class={[
+              'flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg border transition-colors',
+              hideRead
+                ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40'
+                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800',
+            ].join(' ')}
+          >
+            <svg
+              class="w-4 h-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              {hideRead ? (
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
+                />
+              ) : (
+                <>
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                  />
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                  />
+                </>
+              )}
+            </svg>
+            {hideRead
+              ? `Show ${readCount} read`
+              : `Hide ${readCount} read`}
+          </button>
+        )}
       </div>
 
-      {/* Expanded filters */}
       {open && (
         <div class="px-3 pb-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-          {/* Category */}
           <label class="flex flex-col gap-1">
             <span class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
               Category
@@ -181,7 +228,6 @@ export function FilterPanel({ items, onFiltered }: FilterPanelProps) {
             </select>
           </label>
 
-          {/* Source */}
           <label class="flex flex-col gap-1">
             <span class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
               Source
@@ -202,7 +248,6 @@ export function FilterPanel({ items, onFiltered }: FilterPanelProps) {
             </select>
           </label>
 
-          {/* Kind */}
           <label class="flex flex-col gap-1">
             <span class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
               Type
@@ -221,7 +266,6 @@ export function FilterPanel({ items, onFiltered }: FilterPanelProps) {
             </select>
           </label>
 
-          {/* Date from */}
           <label class="flex flex-col gap-1">
             <span class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
               From
@@ -236,7 +280,6 @@ export function FilterPanel({ items, onFiltered }: FilterPanelProps) {
             />
           </label>
 
-          {/* Date to */}
           <label class="flex flex-col gap-1">
             <span class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
               To

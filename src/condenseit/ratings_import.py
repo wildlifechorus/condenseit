@@ -98,7 +98,7 @@ def import_ratings_url(
 
 def apply_configured_ratings_import(store: ContentStore, config: AppConfig) -> int:
     """
-    Import ratings from env or digest_pwa config before a pipeline run.
+    Import ratings from env or sync config before a pipeline run.
 
     Env overrides YAML when set:
     - CONDENSEIT_RATINGS_IMPORT_PATH
@@ -108,7 +108,7 @@ def apply_configured_ratings_import(store: ContentStore, config: AppConfig) -> i
     total = 0
     path_raw = (
         os.environ.get("CONDENSEIT_RATINGS_IMPORT_PATH", "").strip()
-        or config.digest_pwa.ratings_import_path.strip()
+        or config.sync.ratings_import_path.strip()
     )
     if path_raw:
         n = import_ratings_path(store, Path(path_raw))
@@ -118,7 +118,7 @@ def apply_configured_ratings_import(store: ContentStore, config: AppConfig) -> i
 
     url_raw = (
         os.environ.get("CONDENSEIT_RATINGS_IMPORT_URL", "").strip()
-        or config.digest_pwa.ratings_import_url.strip()
+        or config.sync.ratings_import_url.strip()
     )
     if url_raw:
         bearer = os.environ.get("CONDENSEIT_RATINGS_IMPORT_BEARER_TOKEN", "")

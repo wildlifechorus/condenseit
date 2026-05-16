@@ -1,21 +1,21 @@
-import { useState, useCallback } from 'preact/hooks';
-import { Router, Route, Switch } from 'wouter';
+import { useState, useCallback, useEffect } from 'preact/hooks';
+import { Router, Route, Switch, Redirect } from 'wouter';
 
 import { AppLayout } from './layouts/AppLayout';
-import { PwaLayout } from './layouts/PwaLayout';
 import { DigestPage } from './pages/Digest';
 import { LoginPage } from './pages/Login';
-import { AdminOverviewPage } from './pages/admin/Overview';
 import { SourcesPage } from './pages/admin/Sources';
 import { LlmConfigPage } from './pages/admin/LlmConfig';
 import { ApiKeysPage } from './pages/admin/ApiKeys';
-import { AdvisorPage } from './pages/admin/Advisor';
+import { BudgetPage } from './pages/admin/Budget';
+import { SchedulePage } from './pages/admin/Schedule';
+import { LogsPage } from './pages/admin/Logs';
+import { SettingsPage } from './pages/admin/Settings';
+import { PreferencesPage } from './pages/admin/Preferences';
+import { SecurityPage } from './pages/admin/Security';
 import { api } from './lib/api';
 import { checkAuth } from './lib/auth';
 import type { DigestEntry } from './lib/types';
-import { useEffect } from 'preact/hooks';
-
-const IS_PWA = import.meta.env.MODE === 'pwa';
 
 /** Possible auth states while the app determines whether a session is active. */
 type AuthState = 'checking' | 'authenticated' | 'unauthenticated';
@@ -26,23 +26,19 @@ export function App() {
   const [authState, setAuthState] = useState<AuthState>('checking');
 
   useEffect(() => {
-    // Probe the session cookie on every cold start.  The server returns 200
-    // when authenticated (or when no password is configured), 401 otherwise.
     checkAuth()
       .then((ok) => setAuthState(ok ? 'authenticated' : 'unauthenticated'))
       .catch(() => setAuthState('unauthenticated'));
   }, []);
 
   useEffect(() => {
-    // Listen for 401 responses dispatched by the API helper so that an
-    // expired or cleared session mid-use returns to the login page.
     const handleExpired = () => setAuthState('unauthenticated');
     window.addEventListener('auth:expired', handleExpired);
     return () => window.removeEventListener('auth:expired', handleExpired);
   }, []);
 
   useEffect(() => {
-    if (!IS_PWA && authState === 'authenticated') {
+    if (authState === 'authenticated') {
       api.listDigests().then(setDigests).catch(() => {});
     }
   }, [authState]);
@@ -55,7 +51,6 @@ export function App() {
     setAuthState('authenticated');
   }, []);
 
-  // Show a minimal spinner while the auth check request is in flight.
   if (authState === 'checking') {
     return (
       <div class='min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950'>
@@ -64,19 +59,8 @@ export function App() {
     );
   }
 
-  // Show login form when the session is absent or expired.
   if (authState === 'unauthenticated') {
     return <LoginPage onLogin={handleLogin} />;
-  }
-
-  if (IS_PWA) {
-    return (
-      <Router>
-        <PwaLayout>
-          <DigestPage onDigestLoaded={handleDigestLoaded} />
-        </PwaLayout>
-      </Router>
-    );
   }
 
   return (
@@ -87,7 +71,7 @@ export function App() {
             <DigestPage onDigestLoaded={handleDigestLoaded} />
           </Route>
           <Route path="/admin">
-            <AdminOverviewPage />
+            <Redirect to="/admin/sources" />
           </Route>
           <Route path="/admin/sources">
             <SourcesPage />
@@ -98,8 +82,23 @@ export function App() {
           <Route path="/admin/keys">
             <ApiKeysPage />
           </Route>
-          <Route path="/admin/advisor">
-            <AdvisorPage />
+          <Route path="/admin/budget">
+            <BudgetPage />
+          </Route>
+          <Route path="/admin/schedule">
+            <SchedulePage />
+          </Route>
+          <Route path="/admin/logs">
+            <LogsPage />
+          </Route>
+          <Route path="/admin/settings">
+            <SettingsPage />
+          </Route>
+          <Route path="/admin/preferences">
+            <PreferencesPage />
+          </Route>
+          <Route path="/admin/security">
+            <SecurityPage />
           </Route>
           <Route>
             <div class="py-20 text-center text-slate-500 dark:text-slate-400">
