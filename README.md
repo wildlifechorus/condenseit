@@ -46,14 +46,15 @@ digest you can read in the browser.
 
 | Page | What it does |
 |------|-------------|
-| **Sources** | Add/remove all source types; import/export OPML for RSS feeds |
-| **Schedule** | Set the daily run times; shows next scheduled run |
-| **Settings** | Digest limits (max articles, category balance), language filter |
-| **Preferences** | Read-only view of what the ranking engine has learned from your ratings |
-| **LLM** | Provider, model, Ollama pull/delete |
-| **API Keys** | OpenRouter key (encrypted in SQLite) |
-| **Budget** | OpenRouter spend and local cost tracking |
-| **Logs** | Full output from each digest run |
+| **Sources** | Add/remove all source types; filter by category; set source priority; import/export OPML for RSS feeds |
+| **LLM** | Provider, model, OpenRouter cheapest-model option, Ollama pull/delete |
+| **API keys** | OpenRouter key storage, encrypted at rest in SQLite |
+| **Schedule** | Enable/disable automatic digest runs, set daily run times, and view the next scheduled run |
+| **Digest** | Article limits, category balance, article age cutoff, language filter, and summary format |
+| **Profile** | Read-only learning profile built from your star ratings |
+| **Security** | Change the admin password and warn when the default password is still active |
+| **Budget** | OpenRouter account usage, local pipeline cost tracking, and daily/monthly budget limits |
+| **Logs** | Full output captured from recent digest runs |
 
 ---
 
@@ -175,9 +176,12 @@ All sources (including the new types) are managed from **Admin > Sources** in th
 Settings also editable live in the admin panel (stored in SQLite, no restart needed):
 
 - **Schedule** - run times
-- **Settings** - `max_articles_per_digest`, `balance_digest_categories`,
-  `max_articles_per_category`, `preferred_languages`
-- **LLM** - provider, model
+- **Digest** - `max_articles_per_digest`, `balance_digest_categories`,
+  `max_articles_per_category`, `max_article_age_hours`,
+  `preferred_languages`, `max_key_takeaways`, `max_summary_paragraphs`
+- **LLM** - provider, model, OpenRouter model, cheapest-model selection
+- **Budget** - OpenRouter daily and monthly budget limits
+- **Security** - admin password
 
 ---
 
