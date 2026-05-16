@@ -97,6 +97,79 @@ function LanguageInput({
   );
 }
 
+/** Generic tag-style input for arbitrary keyword phrases. */
+function KeywordInput({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string[];
+  onChange: (keywords: string[]) => void;
+  placeholder?: string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [draft, setDraft] = useState('');
+
+  function addKeyword(raw: string) {
+    const phrase = raw.trim();
+    if (!phrase) return;
+    if (!value.includes(phrase)) {
+      onChange([...value, phrase]);
+    }
+    setDraft('');
+    if (inputRef.current) inputRef.current.value = '';
+  }
+
+  function removeKeyword(phrase: string) {
+    onChange(value.filter((k) => k !== phrase));
+  }
+
+  function handleKeyDown(e: KeyboardEvent) {
+    const target = e.target as HTMLInputElement;
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      addKeyword(target.value);
+    } else if (e.key === 'Backspace' && !target.value && value.length > 0) {
+      onChange(value.slice(0, -1));
+    }
+  }
+
+  return (
+    <div class="flex flex-wrap gap-1.5 p-2 min-h-[42px] bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg focus-within:ring-2 focus-within:ring-teal-500">
+      {value.map((phrase) => (
+        <span
+          key={phrase}
+          class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-rose-100 dark:bg-rose-900/40 text-rose-800 dark:text-rose-200"
+        >
+          {phrase}
+          <button
+            type="button"
+            onClick={() => removeKeyword(phrase)}
+            class="hover:text-red-500 dark:hover:text-red-400 transition-colors leading-none"
+            aria-label={`Remove ${phrase}`}
+          >
+            x
+          </button>
+        </span>
+      ))}
+      <input
+        ref={inputRef}
+        type="text"
+        class="flex-1 min-w-[120px] bg-transparent text-sm text-slate-900 dark:text-slate-100 focus:outline-none placeholder:text-slate-400"
+        placeholder={
+          value.length === 0
+            ? (placeholder ?? 'Community Forum, sponsored...')
+            : ''
+        }
+        value={draft}
+        onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
+        onKeyDown={handleKeyDown}
+        onBlur={(e) => addKeyword((e.target as HTMLInputElement).value)}
+      />
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const [cfg, setCfg] = useState<DigestConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -362,6 +435,26 @@ export function SettingsPage() {
               value={cfg.preferred_languages}
               onChange={(langs) =>
                 setCfg((p) => (p ? { ...p, preferred_languages: langs } : p))
+              }
+            />
+          </Field>
+        </Card>
+
+        <Card>
+          <CardHeader
+            title="Keyword exclusions"
+            description="Articles whose title or description contains any of these phrases are dropped before ranking. Matching is case-insensitive."
+          />
+          <Field
+            label="Excluded keywords"
+            hint="Type a phrase and press Enter or comma to add. Leave empty to disable."
+          >
+            <KeywordInput
+              value={cfg.exclude_keywords}
+              onChange={(keywords) =>
+                setCfg((p) =>
+                  p ? { ...p, exclude_keywords: keywords } : p,
+                )
               }
             />
           </Field>

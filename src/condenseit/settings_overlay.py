@@ -79,6 +79,16 @@ def apply_db_settings(config: AppConfig, store: ContentStore) -> AppConfig:
         except Exception:
             pass
 
+    # Keyword exclusions
+    kw_raw = store.get_setting("exclude_keywords", "")
+    if kw_raw:
+        try:
+            kw_list = json.loads(kw_raw)
+            if isinstance(kw_list, list):
+                config.exclude_keywords = [str(k) for k in kw_list]
+        except Exception:
+            pass
+
     # OpenRouter budget limits
     daily_budget = store.get_setting("openrouter_daily_budget_usd", "")
     if daily_budget:

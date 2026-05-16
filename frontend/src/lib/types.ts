@@ -170,6 +170,7 @@ export interface DigestConfig {
   max_articles_per_category: number;
   max_article_age_hours: number;
   preferred_languages: string[];
+  exclude_keywords: string[];
   max_key_takeaways: number;
   max_summary_paragraphs: number;
 }

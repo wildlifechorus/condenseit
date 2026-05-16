@@ -67,6 +67,16 @@ watch_urls: []
 # Enter the repo as owner/repo, e.g. astral-sh/uv or ollama/ollama
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Keyword exclusion filter
+# Articles whose title or description (first 500 chars) contains any of
+# these phrases (case-insensitive substring match) are dropped before
+# ranking. Add as many entries as needed; empty list disables the filter.
+# ---------------------------------------------------------------------------
+exclude_keywords: []
+#  - "Community Forum"
+#  - "sponsored"
+
 relevance:
   # Minimum ratings before preference learning activates.
   min_ratings_for_learning: 5

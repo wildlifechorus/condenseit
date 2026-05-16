@@ -367,6 +367,11 @@ def create_admin_router(
             langs = json.loads(langs_raw) if langs_raw else merged.preferred_languages
         except Exception:
             langs = merged.preferred_languages
+        kw_raw = store.get_setting("exclude_keywords", "")
+        try:
+            excl_kw = json.loads(kw_raw) if kw_raw else merged.exclude_keywords
+        except Exception:
+            excl_kw = merged.exclude_keywords
         return JSONResponse(
             {
                 "max_articles_per_digest": merged.max_articles_per_digest,
@@ -374,6 +379,7 @@ def create_admin_router(
                 "max_articles_per_category": merged.max_articles_per_category,
                 "max_article_age_hours": merged.max_article_age_hours,
                 "preferred_languages": langs,
+                "exclude_keywords": excl_kw,
                 "max_key_takeaways": merged.max_key_takeaways,
                 "max_summary_paragraphs": merged.max_summary_paragraphs,
             }
@@ -434,6 +440,19 @@ def create_admin_router(
                 if str(language).strip()
             ]
             store.set_setting("preferred_languages", json.dumps(cleaned))
+        if "exclude_keywords" in body:
+            kw_list = body["exclude_keywords"]
+            if not isinstance(kw_list, list):
+                return JSONResponse(
+                    {"error": "exclude_keywords must be a list"},
+                    status_code=422,
+                )
+            cleaned_kw = [
+                str(phrase).strip()
+                for phrase in kw_list
+                if str(phrase).strip()
+            ]
+            store.set_setting("exclude_keywords", json.dumps(cleaned_kw))
         if "max_key_takeaways" in body:
             try:
                 val = int(body["max_key_takeaways"])
