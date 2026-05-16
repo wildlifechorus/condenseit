@@ -35,6 +35,7 @@ export function SourcesPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(
     null,
   );
+  const [togglingId, setTogglingId] = useState<number | null>(null);
   const [addLoading, setAddLoading] = useState(false);
   const [opmlLoading, setOpmlLoading] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
@@ -109,6 +110,34 @@ export function SourcesPage() {
       );
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  async function handleToggle(id: number, currentEnabled: number) {
+    const next = currentEnabled === 0;
+    // Optimistically update UI before the request completes.
+    setSources((prev) =>
+      prev.map((s) =>
+        s.id === id ? { ...s, enabled: next ? 1 : 0 } : s,
+      ),
+    );
+    setTogglingId(id);
+    try {
+      await api.toggleSource(id, next);
+    } catch (err) {
+      // Revert on failure.
+      setSources((prev) =>
+        prev.map((s) =>
+          s.id === id ? { ...s, enabled: currentEnabled } : s,
+        ),
+      );
+      showFlash(
+        err instanceof Error
+          ? err.message
+          : 'Failed to toggle source.',
+      );
+    } finally {
+      setTogglingId(null);
     }
   }
 
@@ -607,6 +636,7 @@ export function SourcesPage() {
                     <th class="text-left px-4 py-3">Category</th>
                     <th class="text-left px-4 py-3">Priority</th>
                     <th class="text-left px-4 py-3">Health</th>
+                    <th class="text-left px-4 py-3">Enabled</th>
                     <th class="px-4 py-3" />
                   </tr>
                 </thead>
@@ -614,7 +644,12 @@ export function SourcesPage() {
                   {filteredSources.map((s) => (
                     <tr
                       key={s.id}
-                      class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/30"
+                      class={[
+                        'border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/30',
+                        s.enabled === 0
+                          ? 'opacity-50'
+                          : '',
+                      ].join(' ')}
                     >
                       <td class="px-4 py-3">
                         <Badge variant={kindVariant(s.type)}>
@@ -668,6 +703,15 @@ export function SourcesPage() {
                         )}
                       </td>
                       <td class="px-4 py-3">
+                        <ToggleSwitch
+                          enabled={s.enabled !== 0}
+                          disabled={togglingId === s.id}
+                          onChange={() =>
+                            handleToggle(s.id, s.enabled ?? 1)
+                          }
+                        />
+                      </td>
+                      <td class="px-4 py-3">
                         <Button
                           variant={
                             confirmDeleteId === s.id
@@ -690,12 +734,14 @@ export function SourcesPage() {
             </div>
           </div>
 
-          {/* Mobile card view */}
           <div class="md:hidden space-y-3">
             {filteredSources.map((s) => (
               <div
                 key={s.id}
-                class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm p-4 space-y-2"
+                class={[
+                  'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm p-4 space-y-2',
+                  s.enabled === 0 ? 'opacity-50' : '',
+                ].join(' ')}
               >
                 <div class="flex items-start justify-between gap-2">
                   <div class="min-w-0 flex-1">
@@ -740,7 +786,19 @@ export function SourcesPage() {
                     </>
                   )}
                 </div>
-                <div class="flex justify-end pt-1">
+                <div class="flex items-center justify-between pt-1">
+                  <div class="flex items-center gap-2">
+                    <ToggleSwitch
+                      enabled={s.enabled !== 0}
+                      disabled={togglingId === s.id}
+                      onChange={() =>
+                        handleToggle(s.id, s.enabled ?? 1)
+                      }
+                    />
+                    <span class="text-xs text-slate-500 dark:text-slate-400">
+                      {s.enabled !== 0 ? 'Enabled' : 'Disabled'}
+                    </span>
+                  </div>
                   <Button
                     variant={
                       confirmDeleteId === s.id
@@ -781,5 +839,48 @@ function Field({
       </span>
       {children}
     </label>
+  );
+}
+
+/**
+ * Accessible toggle switch. Uses a button with role="switch" so screen
+ * readers announce the on/off state correctly.
+ */
+function ToggleSwitch({
+  enabled,
+  onChange,
+  disabled = false,
+}: {
+  enabled: boolean;
+  onChange: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={enabled}
+      disabled={disabled}
+      onClick={onChange}
+      class={[
+        'relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full',
+        'transition-colors duration-200 ease-in-out',
+        'focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-1',
+        enabled
+          ? 'bg-teal-500'
+          : 'bg-slate-300 dark:bg-slate-600',
+        disabled
+          ? 'opacity-50 cursor-not-allowed'
+          : 'cursor-pointer',
+      ].join(' ')}
+    >
+      <span
+        class={[
+          'inline-block h-3.5 w-3.5 rounded-full bg-white shadow',
+          'transition-transform duration-200 ease-in-out',
+          enabled ? 'translate-x-5' : 'translate-x-0.5',
+        ].join(' ')}
+      />
+    </button>
   );
 }

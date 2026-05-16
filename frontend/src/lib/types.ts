@@ -41,6 +41,8 @@ export interface Source {
   url: string;
   category: string;
   priority: number;
+  /** 1 = enabled, 0 = disabled. Defaults to 1 for newly-added sources. */
+  enabled: number;
   last_status?: string;
   last_item_count?: number;
   last_checked_at?: string;

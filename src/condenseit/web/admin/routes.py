@@ -229,6 +229,18 @@ def create_admin_router(
         sources.delete(source_id)
         return JSONResponse({"ok": True})
 
+    @router.patch("/api/sources/{source_id}/toggle", response_model=None)
+    async def api_toggle_source(
+        source_id: int, body: dict[str, Any]
+    ) -> JSONResponse:
+        """Enable or disable a source. Body: ``{"enabled": true|false}``."""
+        if "enabled" not in body:
+            return JSONResponse(
+                {"error": "enabled field is required"}, status_code=422
+            )
+        sources.toggle(source_id, bool(body["enabled"]))
+        return JSONResponse({"ok": True})
+
     @router.post("/api/sources/import-opml", response_model=None)
     async def api_import_opml(file: UploadFile = File(...)) -> JSONResponse:
         raw = await file.read()

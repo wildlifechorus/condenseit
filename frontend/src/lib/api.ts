@@ -81,6 +81,12 @@ export const api = {
   addSource: (data: FormData) => request<Source>('POST', '/api/sources', data),
   deleteSource: (id: number) =>
     request<void>('DELETE', `/api/sources/${id}`),
+  toggleSource: (id: number, enabled: boolean) =>
+    request<{ ok: boolean }>(
+      'PATCH',
+      `/api/sources/${id}/toggle`,
+      { enabled },
+    ),
   importOpml: (data: FormData) =>
     request<{ added: number }>('POST', '/api/sources/import-opml', data),
   exportOpmlUrl: () => '/api/sources/export.opml',
