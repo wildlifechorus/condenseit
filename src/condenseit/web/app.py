@@ -82,6 +82,12 @@ def _normalize_item(row: dict[str, Any]) -> dict[str, Any]:
         row["tldr"] = parsed["tldr"]
         row["key_takeaways"] = parsed["key_takeaways"]
         row["summary"] = parsed["summary"]
+    elif str(row.get("summary") or "").strip().startswith("{"):
+        # Structured fields are already populated but the summary column still
+        # holds the raw JSON blob from the old storage format.  Extract just
+        # the prose text so the UI never renders raw JSON.
+        parsed = parse_summary_response(str(row["summary"]))
+        row["summary"] = parsed["summary"] or parsed["tldr"] or row["summary"]
     row["summary"] = _clean_summary(str(row.get("summary") or ""))
     if row.get("tldr"):
         row["tldr"] = _clean_summary(str(row["tldr"]))
