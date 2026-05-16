@@ -156,7 +156,6 @@ Key `config.yaml` sections:
 - `llm` - provider (`ollama` / `openrouter` / `fallback`), model, budget limits
 - `feeds` / `youtube_channels` / `watch_urls` - sources to collect
 - `schedule.times` - default daily run times (overridden by Admin > Schedule)
-- `sync` - pull ratings and read state from a remote instance before local runs
 - `vps` - SSH target for `scripts/deploy.sh`
 
 Settings also editable live in the admin panel (stored in SQLite, no restart needed):
@@ -187,23 +186,6 @@ Set preferred languages in **Admin > Settings** (ISO 639-1 codes, e.g. `en`,
 `pt`, `de`). Articles in other languages are excluded before ranking. Leave
 empty to accept all languages. Uses the `langdetect` library; detection
 failures always keep the article.
-
----
-
-## Sync between local and remote
-
-If you also run the pipeline locally (e.g. for testing), you can pull
-ratings and read state from your remote instance before each local run:
-
-```yaml
-# config.yaml
-sync:
-  ratings_import_url: "https://your.domain/api/ratings/export"
-  read_import_url: "https://your.domain/api/read/export"
-```
-
-Set `CONDENSEIT_RATINGS_IMPORT_BEARER_TOKEN` and
-`CONDENSEIT_READ_IMPORT_BEARER_TOKEN` in `.env` if auth is enabled.
 
 ---
 

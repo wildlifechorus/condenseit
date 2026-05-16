@@ -68,14 +68,6 @@ class VpsConfig(BaseModel):
     digest_url: str = ""
 
 
-class SyncConfig(BaseModel):
-    """Remote sync import settings for the digest pipeline."""
-
-    ratings_import_path: str = ""
-    ratings_import_url: str = ""
-    read_import_url: str = ""
-
-
 class AppConfig(BaseModel):
     model: str = "llama3.2:3b"
     max_articles_per_digest: int = Field(default=50, ge=1, le=200)
@@ -97,7 +89,6 @@ class AppConfig(BaseModel):
     output: OutputConfig = Field(default_factory=OutputConfig)
     llm: LlmConfig = Field(default_factory=LlmConfig)
     vps: VpsConfig = Field(default_factory=VpsConfig)
-    sync: SyncConfig = Field(default_factory=SyncConfig)
 
 
 _ENV_PATTERN = re.compile(r"\$\{([^}:]+)(?::-([^}]*))?\}")
@@ -165,8 +156,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
 
     expanded = _expand_dict(raw)
-    # Remove any stale email section from YAML so it doesn't cause validation errors.
+    # Remove stale/removed sections from YAML so they don't cause validation errors.
     expanded.pop("email", None)
+    expanded.pop("sync", None)
 
     if os.environ.get("OLLAMA_HOST"):
         llm = expanded.setdefault("llm", {})

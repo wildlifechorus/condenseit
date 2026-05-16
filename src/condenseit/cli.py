@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 
 import click
@@ -11,8 +10,6 @@ from rich.console import Console
 from rich.panel import Panel
 
 from condenseit.config import get_config_path, load_config
-from condenseit.ratings_import import import_ratings_path, import_ratings_url
-from condenseit.read_import import import_read_url
 from condenseit.services.digest_runner import execute_digest
 from condenseit.services.post_run_format import format_post_run_lines
 from condenseit.store.database import ContentStore
@@ -92,67 +89,6 @@ def serve(port: int, host: str, config: str | None) -> None:
     console.print(f"[bold]CondenseIt[/] http://{host}:{port}/")
     console.print(f"  Admin: http://{host}:{port}/admin/")
     uvicorn.run(app, host=host, port=port, log_level="info")
-
-
-@cli.command("ratings-import")
-@click.argument(
-    "path",
-    required=False,
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-)
-@click.option(
-    "--url",
-    "import_url",
-    default=None,
-    help="HTTPS URL for a ratings JSON export (optional bearer via env).",
-)
-def ratings_import(path: Path | None, import_url: str | None) -> None:
-    """Merge ratings from a JSON file and/or URL into the local SQLite store."""
-    if path is None and not (import_url and import_url.strip()):
-        raise click.UsageError("Provide a JSON file path and/or --url.")
-
-    store = ContentStore()
-    total = 0
-    if path is not None:
-        n = import_ratings_path(store, path)
-        total += n
-        console.print(f"Imported [bold]{n}[/] rating(s) from file.")
-    if import_url and import_url.strip():
-        token = os.environ.get("CONDENSEIT_RATINGS_IMPORT_BEARER_TOKEN", "")
-        n = import_ratings_url(store, import_url.strip(), bearer_token=token)
-        total += n
-        console.print(f"Imported [bold]{n}[/] rating(s) from URL.")
-    console.print(
-        Panel(
-            f"Total upserts this run: [bold]{total}[/]. "
-            "Run ``condenseit run`` to apply preferences.",
-            title="Ratings import",
-            style="green",
-        ),
-    )
-
-
-@cli.command("read-import")
-@click.option(
-    "--url",
-    "import_url",
-    required=True,
-    help="HTTPS URL for a read-state JSON export (optional bearer via env).",
-)
-def read_import(import_url: str) -> None:
-    """Merge read URLs from a JSON URL into the local SQLite store."""
-    store = ContentStore()
-    token = os.environ.get("CONDENSEIT_READ_IMPORT_BEARER_TOKEN", "")
-    total = import_read_url(store, import_url.strip(), bearer_token=token)
-    console.print(f"Imported [bold]{total}[/] read URL(s) from URL.")
-    console.print(
-        Panel(
-            f"Total upserts this run: [bold]{total}[/]. "
-            "Run ``condenseit run`` to filter already-read items.",
-            title="Read import",
-            style="green",
-        ),
-    )
 
 
 @cli.command()

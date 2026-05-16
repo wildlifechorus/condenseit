@@ -20,8 +20,6 @@ from condenseit.learning.preference_engine import PreferenceEngine
 from condenseit.pipeline.article_balance import select_balanced_digest_articles
 from condenseit.providers.base import SummarizerProvider
 from condenseit.providers.factory import build_summarizer
-from condenseit.ratings_import import apply_configured_ratings_import
-from condenseit.read_import import apply_configured_read_import
 from condenseit.services.deploy import VpsDeployer
 from condenseit.settings_overlay import apply_db_settings
 from condenseit.store.database import ContentStore
@@ -55,14 +53,6 @@ class DigestPipeline:
     def run(self, *, dry_run: bool = False) -> dict[str, Any]:
         start = time.time()
         logger.info("Starting digest pipeline")
-
-        imported = apply_configured_ratings_import(self.store, self.config)
-        if imported:
-            logger.info("Ratings sidecar import applied %d upserts", imported)
-
-        read_imported = apply_configured_read_import(self.store, self.config)
-        if read_imported:
-            logger.info("Read sidecar import applied %d URL(s)", read_imported)
 
         feeds = self.sources.feeds_for_config() or self.config.feeds
         youtube = self.sources.youtube_for_config() or self.config.youtube_channels

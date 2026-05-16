@@ -483,22 +483,6 @@ def create_app(config_path: str | None = None) -> FastAPI:
         store.rate_article(url, rating)
         return JSONResponse({"ok": True})
 
-    @app.get("/api/ratings/export", response_model=None)
-    async def api_ratings_export() -> JSONResponse:
-        if "ratings" not in store.db.table_names():
-            return JSONResponse({"ratings": []})
-        rows = list(
-            store.db.query(
-                "SELECT url, rating FROM ratings"
-                " WHERE rating >= 1 AND rating <= 5"
-                " ORDER BY rated_at DESC",
-            ),
-        )
-        payload = [
-            {"url": str(r["url"]), "rating": int(r["rating"])} for r in rows
-        ]
-        return JSONResponse({"ratings": payload})
-
     # --- Read tracking -------------------------------------------------
 
     @app.get("/api/read", response_model=None)
@@ -517,11 +501,6 @@ def create_app(config_path: str | None = None) -> FastAPI:
         else:
             store.mark_article_unread(url)
         return JSONResponse({"ok": True})
-
-    @app.get("/api/read/export", response_model=None)
-    async def api_read_export() -> JSONResponse:
-        urls = sorted(store.get_read_urls())
-        return JSONResponse({"urls": urls})
 
     # --- Preference profile --------------------------------------------
 

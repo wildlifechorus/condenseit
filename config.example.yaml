@@ -101,15 +101,3 @@ vps:
   ssh_port: 22
   digest_url: "https://digest.example.com"
 
-# ---------------------------------------------------------------------------
-# Remote sync
-# Import ratings and read state from a remote condenseit-web instance before
-# running the local digest pipeline.
-# ---------------------------------------------------------------------------
-sync:
-  # Import ratings before each run (file path or URL).
-  ratings_import_path: ""
-  ratings_import_url: ""
-  # Import read URLs before each run.
-  # Example: read_import_url: "https://digest.example.com/api/read/export"
-  read_import_url: ""

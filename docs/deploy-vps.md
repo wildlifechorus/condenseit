@@ -204,24 +204,6 @@ ssh digest-vps 'cat > ~/condenseit/config.yaml' < config.yaml
 ssh digest-vps 'sudo systemctl restart condenseit-web'
 ```
 
-## Syncing ratings from the VPS back to local
-
-If you also run the pipeline locally, pull ratings and read state from the
-remote before each local run. Add to `config.yaml`:
-
-```yaml
-sync:
-  ratings_import_url: "https://your.domain/api/ratings/export"
-  read_import_url: "https://your.domain/api/read/export"
-```
-
-And to `.env`:
-
-```
-CONDENSEIT_RATINGS_IMPORT_BEARER_TOKEN=your-password
-CONDENSEIT_READ_IMPORT_BEARER_TOKEN=your-password
-```
-
 ## Backups
 
 The SQLite database lives at `~/condenseit/data/condenseit.db` on the VPS.
