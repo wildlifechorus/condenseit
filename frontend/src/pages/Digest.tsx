@@ -10,7 +10,9 @@ import {
   type PwaRatingsStore,
 } from '../lib/pwa-data';
 import type { DigestDetail, DigestItem } from '../lib/types';
+import { normalizeItem } from '../lib/normalize-item';
 import { DigestCard } from '../components/DigestCard';
+import { ItemDetailPanel } from '../components/ItemDetailPanel';
 import { PwaRatingsToolbar, PwaReadToolbar } from '../components/PwaRatings';
 import { PreferencesCard } from '../components/PreferencesCard';
 import { FilterPanel } from '../components/FilterPanel';
@@ -69,6 +71,9 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
 
   /** When true (default) read items are hidden from the grid. */
   const [hideRead, setHideRead] = useState(true);
+
+  /** Item currently open in the detail panel, or null when closed. */
+  const [selectedItem, setSelectedItem] = useState<DigestItem | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -285,15 +290,22 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
             </div>
           ) : (
             <div class="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-              {visibleItems.map((item) => (
-                <DigestCard
-                  key={item.url}
-                  item={{ ...item, rating: ratings[item.url] ?? item.rating }}
-                  onRate={IS_PWA ? pwaRate : handleRate}
-                  onMarkRead={handleMarkRead}
-                  isRead={readUrls.has(item.url)}
-                />
-              ))}
+              {visibleItems.map((raw) => {
+                const item = normalizeItem({
+                  ...raw,
+                  rating: ratings[raw.url] ?? raw.rating,
+                });
+                return (
+                  <DigestCard
+                    key={item.url}
+                    item={item}
+                    onRate={IS_PWA ? pwaRate : handleRate}
+                    onMarkRead={handleMarkRead}
+                    isRead={readUrls.has(item.url)}
+                    onSelect={setSelectedItem}
+                  />
+                );
+              })}
             </div>
           )}
         </div>
@@ -315,6 +327,21 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
 
       {/* Normal mode: collapsible preferences card */}
       {!IS_PWA && <PreferencesCard />}
+
+      {/* Item detail panel (slide-over) */}
+      {selectedItem && (
+        <ItemDetailPanel
+          item={normalizeItem({
+            ...selectedItem,
+            rating: ratings[selectedItem.url] ?? selectedItem.rating,
+          })}
+          isRead={readUrls.has(selectedItem.url)}
+          rating={ratings[selectedItem.url] ?? selectedItem.rating}
+          onClose={() => setSelectedItem(null)}
+          onRate={IS_PWA ? pwaRate : handleRate}
+          onMarkRead={handleMarkRead}
+        />
+      )}
     </div>
   );
 }

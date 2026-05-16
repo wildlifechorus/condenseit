@@ -14,6 +14,8 @@ interface DigestCardProps {
   onMarkRead?: (url: string) => void;
   /** Whether this item has been marked as read. */
   isRead?: boolean;
+  /** Opens the detail panel for this item. */
+  onSelect?: (item: DigestItem) => void;
 }
 
 function formatDate(iso?: string): string {
@@ -39,6 +41,7 @@ export function DigestCard({
   onRate,
   onMarkRead,
   isRead = false,
+  onSelect,
 }: DigestCardProps) {
   const summary = cleanSummary(item.summary);
   const metaParts: string[] = [];
@@ -106,11 +109,29 @@ export function DigestCard({
       </div>
 
       <h3 class="text-sm font-semibold text-slate-900 dark:text-slate-100 leading-snug">
+        {/*
+         * When a detail panel is available, left-click opens it.
+         * The href is still present so right-click / middle-click opens the
+         * source URL directly in a new tab.
+         */}
         <a
           href={item.url}
           target="_blank"
           rel="noopener noreferrer"
-          class="hover:text-teal-600 dark:hover:text-teal-400 transition-colors"
+          onClick={
+            onSelect
+              ? (e) => {
+                  e.preventDefault();
+                  onSelect(item);
+                }
+              : undefined
+          }
+          class={[
+            'transition-colors',
+            onSelect
+              ? 'cursor-pointer hover:text-teal-600 dark:hover:text-teal-400'
+              : 'hover:text-teal-600 dark:hover:text-teal-400',
+          ].join(' ')}
         >
           {item.title || 'Untitled'}
         </a>
@@ -123,7 +144,13 @@ export function DigestCard({
       )}
 
       {summary && (
-        <p class="text-sm text-slate-600 dark:text-slate-400 leading-relaxed line-clamp-4">
+        <p
+          class={[
+            'text-sm text-slate-600 dark:text-slate-400 leading-relaxed line-clamp-4',
+            onSelect ? 'cursor-pointer' : '',
+          ].join(' ')}
+          onClick={onSelect ? () => onSelect(item) : undefined}
+        >
           {summary}
         </p>
       )}

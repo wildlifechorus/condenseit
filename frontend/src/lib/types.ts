@@ -4,6 +4,10 @@ export interface DigestItem {
   url: string;
   title: string;
   summary: string;
+  /** One-sentence summary produced by the LLM structured output. */
+  tldr?: string;
+  /** Bullet-point takeaways produced by the LLM structured output. */
+  key_takeaways?: string[];
   source: string;
   category: string;
   kind: string;

@@ -162,12 +162,14 @@ class DigestPipeline:
         if not dry_run:
             for art in ranked:
                 category = str(art.get("category", "General"))
-                summary = self.summarizer.summarize_article(art)
+                result = self.summarizer.summarize_article(art)
                 is_video = art["url"] in video_urls
                 entry = {
                     "title": art["title"],
                     "url": art["url"],
-                    "summary": summary,
+                    "summary": result["summary"],
+                    "tldr": result["tldr"],
+                    "key_takeaways": result["key_takeaways"],
                     "source": str(art.get("source", "")),
                     "category": category,
                     "published_at": str(art.get("published_at") or ""),
@@ -373,6 +375,8 @@ class DigestPipeline:
                     "title": f"Website ({status})",
                     "url": str(c.get("url", "")),
                     "summary": str(c.get("snippet", ""))[:800],
+                    "tldr": "",
+                    "key_takeaways": [],
                     "source": "watch",
                     "category": str(c.get("category", "General")),
                     "published_at": "",
@@ -397,6 +401,8 @@ class DigestPipeline:
                     "title": str(art.get("title", "")),
                     "url": u,
                     "summary": "",
+                    "tldr": "",
+                    "key_takeaways": [],
                     "source": str(art.get("source", "")),
                     "category": str(art.get("category", "General")),
                     "published_at": str(art.get("published_at") or ""),
@@ -412,6 +418,8 @@ class DigestPipeline:
                     "title": f"Website ({status})",
                     "url": str(c.get("url", "")),
                     "summary": str(c.get("snippet", ""))[:800],
+                    "tldr": "",
+                    "key_takeaways": [],
                     "source": "watch",
                     "category": str(c.get("category", "General")),
                     "published_at": "",

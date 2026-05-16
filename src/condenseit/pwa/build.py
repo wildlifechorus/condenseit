@@ -25,6 +25,7 @@ from typing import Any
 import markdown
 
 from condenseit.config import AppConfig
+from condenseit.providers.base import parse_summary_response
 from condenseit.store.database import ContentStore
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -57,8 +58,16 @@ def _clean_items(items: list[Any]) -> list[Any]:
             out.append(it)
             continue
         row = dict(it)
-        if "summary" in row:
-            row["summary"] = _clean_summary(str(row.get("summary") or ""))
+        if not (row.get("tldr") or row.get("key_takeaways")):
+            parsed = parse_summary_response(str(row.get("summary") or ""))
+            row["tldr"] = parsed["tldr"]
+            row["key_takeaways"] = parsed["key_takeaways"]
+            row["summary"] = parsed["summary"]
+        row["summary"] = _clean_summary(str(row.get("summary") or ""))
+        if row.get("tldr"):
+            row["tldr"] = _clean_summary(str(row["tldr"]))
+        if not isinstance(row.get("key_takeaways"), list):
+            row["key_takeaways"] = []
         out.append(row)
     return out
 

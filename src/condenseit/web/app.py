@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 
 from condenseit.config import load_config
 from condenseit.learning.preference_engine import PreferenceEngine
+from condenseit.providers.base import parse_summary_response
 from condenseit.settings_overlay import apply_db_settings
 from condenseit.store.database import ContentStore
 from condenseit.web.admin.routes import create_admin_router
@@ -69,15 +70,24 @@ def _clean_summary(raw: str) -> str:
     return s.strip()
 
 
+def _normalize_item(row: dict[str, Any]) -> dict[str, Any]:
+    row = dict(row)
+    if not (row.get("tldr") or row.get("key_takeaways")):
+        parsed = parse_summary_response(str(row.get("summary") or ""))
+        row["tldr"] = parsed["tldr"]
+        row["key_takeaways"] = parsed["key_takeaways"]
+        row["summary"] = parsed["summary"]
+    row["summary"] = _clean_summary(str(row.get("summary") or ""))
+    if row.get("tldr"):
+        row["tldr"] = _clean_summary(str(row["tldr"]))
+    if not isinstance(row.get("key_takeaways"), list):
+        row["key_takeaways"] = []
+    return row
+
+
 def _clean_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Return a new list with summaries cleaned."""
-    out = []
-    for it in items:
-        row = dict(it)
-        if "summary" in row:
-            row["summary"] = _clean_summary(str(row.get("summary") or ""))
-        out.append(row)
-    return out
+    """Return a new list with summaries cleaned and JSON-wrapped items unwrapped."""
+    return [_normalize_item(it) for it in items]
 
 
 def create_app(config_path: str | None = None) -> FastAPI:
@@ -254,7 +264,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
 
     @app.get("/api/admin/overview", response_model=None)
     async def api_admin_overview() -> JSONResponse:
-        from condenseit.store.sources import SourceRegistry
+        from condenseit.providers.base import parse_summary_response
 
         merged = apply_db_settings(load_config(config_path), store)
         sources = SourceRegistry(store)
