@@ -206,7 +206,7 @@ is enabled, then verify:
 
 ### 4.4 Trigger a digest run
 
-From the web UI header, click **Run digest**. Watch the status badge update.
+From the web UI header, click **Run digest**.
 Alternatively:
 
 ```bash
