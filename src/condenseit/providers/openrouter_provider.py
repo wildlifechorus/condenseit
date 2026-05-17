@@ -21,7 +21,8 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 _SYSTEM_PROMPT = (
     "You are a concise news analyst. Respond ONLY with a JSON object — "
-    "no markdown, no code fences, no additional text."
+    "no markdown, no code fences, no additional text. "
+    "Write all JSON field values in English regardless of the article's language."
 )
 
 
@@ -38,11 +39,11 @@ def _build_user_prompt(
     para_word = "paragraph" if max_summary_paragraphs == 1 else "paragraphs"
     return (
         "Analyze this article and respond with a JSON object "
-        "in exactly this structure:\n"
+        "in exactly this structure. All values must be written in English:\n"
         f"{{\n"
-        f'  "tldr": "<one sentence: what happened and why it matters>",\n'
+        f'  "tldr": "<one sentence in English: what happened and why it matters>",\n'
         f'  "key_takeaways": [{takeaway_placeholders}],\n'
-        f'  "summary": "<detailed summary in {max_summary_paragraphs} {para_word}>"\n'
+        f'  "summary": "<detailed summary in English, {max_summary_paragraphs} {para_word}>"\n'
         f"}}\n\n"
         f"Title: {title}\n"
         f"Content: {content}"

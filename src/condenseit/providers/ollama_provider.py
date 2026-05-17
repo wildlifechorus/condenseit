@@ -27,12 +27,12 @@ def _build_summary_prompt(
     para_word = "paragraph" if max_summary_paragraphs == 1 else "paragraphs"
     return (
         "Analyze this article and respond ONLY with a JSON object — no markdown, "
-        "no code fences, no extra text.\n\n"
+        "no code fences, no extra text. All values must be written in English.\n\n"
         "Use exactly this structure:\n"
         f"{{\n"
-        f'  "tldr": "<one sentence: what happened and why it matters>",\n'
+        f'  "tldr": "<one sentence in English: what happened and why it matters>",\n'
         f'  "key_takeaways": [{takeaway_placeholders}],\n'
-        f'  "summary": "<detailed summary in {max_summary_paragraphs} {para_word}>"\n'
+        f'  "summary": "<detailed summary in English, {max_summary_paragraphs} {para_word}>"\n'
         f"}}\n\n"
         f"Title: {title}\n"
         f"Content: {content}\n\n"

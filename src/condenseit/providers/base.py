@@ -27,6 +27,29 @@ _FENCE_RE = re.compile(
 # Greedily matches the outermost {...} object in a raw response.
 _BRACE_RE = re.compile(r"\{.*\}", re.DOTALL)
 
+# Detects the start of a Chinese LLM refusal phrase that some multilingual
+# models append mid-response (e.g. "作为一个人工智能语言模型...").
+# We strip from the first run of consecutive CJK characters onward when that
+# run comprises the majority of the remaining text, so we don't accidentally
+# truncate article titles that legitimately contain a single CJK character.
+_CJK_BLOCK_RE = re.compile(r"[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]{4,}")
+
+
+def _strip_non_latin_tail(value: str) -> str:
+    """Remove a trailing CJK/non-Latin injection appended by the LLM.
+
+    Some cheap multilingual models start answering in English, then switch
+    to a Chinese refusal phrase mid-field.  This function finds the earliest
+    CJK run that makes up more than 30 % of the remaining text and truncates
+    there, returning a clean Latin-script prefix.
+    """
+    for m in _CJK_BLOCK_RE.finditer(value):
+        tail = value[m.start():]
+        non_ascii_in_tail = sum(1 for c in tail if ord(c) > 127)
+        if len(tail) > 0 and non_ascii_in_tail / len(tail) > 0.3:
+            return value[: m.start()].rstrip()
+    return value
+
 
 def parse_summary_response(raw: str) -> ArticleSummary:
     """Parse a JSON article-summary response produced by an LLM.
@@ -69,14 +92,29 @@ def parse_summary_response(raw: str) -> ArticleSummary:
             elif not isinstance(takeaways, list):
                 takeaways = []
             return ArticleSummary(
-                tldr=str(data.get("tldr", "") or "").strip(),
-                key_takeaways=[str(t) for t in takeaways if t],
-                summary=str(data.get("summary", "") or "").strip(),
+                tldr=_strip_non_latin_tail(
+                    str(data.get("tldr", "") or "").strip()
+                ),
+                key_takeaways=[
+                    _strip_non_latin_tail(str(t))
+                    for t in takeaways
+                    if t
+                ],
+                summary=_strip_non_latin_tail(
+                    str(data.get("summary", "") or "").strip()
+                ),
             )
         except (json.JSONDecodeError, ValueError):
             continue
 
-    # Final fallback: treat the whole text as a plain summary.
+    # Final fallback: treat the whole text as a plain summary, but only when
+    # it looks like Latin-script prose. If most characters are non-ASCII (e.g.
+    # a Chinese refusal phrase from a multilingual model), discard the response
+    # to avoid showing garbage text in the UI.
+    if text:
+        non_ascii = sum(1 for c in text if ord(c) > 127)
+        if non_ascii / len(text) > 0.2:
+            return ArticleSummary(tldr="", key_takeaways=[], summary="")
     return ArticleSummary(tldr="", key_takeaways=[], summary=text)
 
 
