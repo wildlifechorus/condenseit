@@ -200,8 +200,8 @@ export function FilterPanel({
               )}
             </svg>
             {hideRead
-              ? `Show ${readCount} read`
-              : `Hide ${readCount} read`}
+              ? `Show ${readCount} hidden`
+              : `Hide ${readCount} hidden`}
           </button>
         )}
       </div>
