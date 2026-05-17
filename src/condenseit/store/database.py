@@ -33,6 +33,20 @@ class ContentStore:
         conn.execute("PRAGMA busy_timeout=30000")
         self._ensure_schema()
 
+    def close(self) -> None:
+        """Close the underlying SQLite connection.
+
+        Call this explicitly when the store is no longer needed (e.g. at the
+        end of a background pipeline run). Relying on GC to close the
+        connection is unreliable: a lingering open connection holds SQLite
+        writer-lock state that blocks all other write operations on the same
+        database file, causing 500s on /api/read, /api/dismiss, etc.
+        """
+        try:
+            self.db.conn.close()
+        except Exception:
+            pass
+
     def _ensure_schema(self) -> None:
         if "articles" not in self.db.table_names():
             self.db["articles"].create(

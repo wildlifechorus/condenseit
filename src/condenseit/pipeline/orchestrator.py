@@ -62,6 +62,27 @@ class DigestPipeline:
         self.digest_html = ""
         self.stats: dict[str, Any] = {}
 
+    # ------------------------------------------------------------------
+    # Context-manager support
+    # ------------------------------------------------------------------
+
+    def __enter__(self) -> "DigestPipeline":
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        self.close()
+
+    def close(self) -> None:
+        """Explicitly close the pipeline's database connection.
+
+        Always call this (or use DigestPipeline as a context manager) when
+        the pipeline is done. Leaving the connection open keeps a SQLite
+        writer lock alive that blocks every write on the shared web-server
+        connection, causing 500s on /api/read, /api/dismiss, and other
+        write endpoints.
+        """
+        self.store.close()
+
     def _record_health(
         self,
         health: list[tuple[str, str | None, int]],
