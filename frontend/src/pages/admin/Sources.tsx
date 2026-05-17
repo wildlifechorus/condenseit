@@ -1,3 +1,4 @@
+import { Fragment } from 'preact';
 import { useState, useEffect, useMemo } from 'preact/hooks';
 import { api } from '../../lib/api';
 import type { Source } from '../../lib/types';
@@ -27,6 +28,40 @@ const PRIORITY_COLORS: Record<number, string> = {
   5: 'bg-slate-50 text-slate-400 dark:bg-slate-800/50 dark:text-slate-500',
 };
 
+type SourceExtra = Record<string, string | number | boolean | null>;
+
+function parseSourceExtra(source: Source): SourceExtra {
+  if (!source.extra_json) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(source.extra_json) as unknown;
+    return parsed != null && typeof parsed === 'object'
+      ? (parsed as SourceExtra)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function extraText(
+  extra: SourceExtra,
+  key: string,
+  fallback = '',
+): string {
+  const value = extra[key];
+  return value == null ? fallback : String(value);
+}
+
+function extraNumber(
+  extra: SourceExtra,
+  key: string,
+  fallback: number,
+): number {
+  const value = Number(extra[key]);
+  return Number.isFinite(value) ? value : fallback;
+}
+
 export function SourcesPage() {
   const [sources, setSources] = useState<Source[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,6 +71,10 @@ export function SourcesPage() {
     null,
   );
   const [togglingId, setTogglingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editLoadingId, setEditLoadingId] = useState<number | null>(
+    null,
+  );
   const [addLoading, setAddLoading] = useState(false);
   const [opmlLoading, setOpmlLoading] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
@@ -110,6 +149,25 @@ export function SourcesPage() {
       );
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  async function handleEdit(e: Event, source: Source) {
+    e.preventDefault();
+    const form = e.currentTarget as HTMLFormElement;
+    const data = new FormData(form);
+    setEditLoadingId(source.id);
+    try {
+      await api.updateSource(source.id, data);
+      setEditingId(null);
+      load();
+      showFlash('Source updated.');
+    } catch (err) {
+      showFlash(
+        err instanceof Error ? err.message : 'Failed to update source.',
+      );
+    } finally {
+      setEditLoadingId(null);
     }
   }
 
@@ -642,92 +700,116 @@ export function SourcesPage() {
                 </thead>
                 <tbody>
                   {filteredSources.map((s) => (
-                    <tr
-                      key={s.id}
-                      class={[
-                        'border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/30',
-                        s.enabled === 0
-                          ? 'opacity-50'
-                          : '',
-                      ].join(' ')}
-                    >
-                      <td class="px-4 py-3">
-                        <Badge variant={kindVariant(s.type)}>
-                          {s.type}
-                        </Badge>
-                      </td>
-                      <td class="px-4 py-3 font-medium text-slate-900 dark:text-slate-100">
-                        {s.name}
-                      </td>
-                      <td class="px-4 py-3 max-w-xs truncate text-slate-500 dark:text-slate-400 font-mono text-xs">
-                        {s.url}
-                      </td>
-                      <td class="px-4 py-3 text-slate-600 dark:text-slate-400">
-                        {s.category}
-                      </td>
-                      <td class="px-4 py-3">
-                        <span
-                          class={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full ${PRIORITY_COLORS[s.priority] ?? PRIORITY_COLORS[2]}`}
-                        >
-                          {PRIORITY_LABELS[s.priority] ??
-                            `P${s.priority}`}
-                        </span>
-                      </td>
-                      <td class="px-4 py-3 text-xs text-slate-500">
-                        {s.last_status ? (
-                          <div class="flex flex-col gap-0.5">
-                            <Badge
-                              variant={kindVariant(
-                                s.last_status === 'ok'
-                                  ? 'ok'
-                                  : 'error',
-                              )}
-                            >
-                              {s.last_status}
-                            </Badge>
-                            {s.last_item_count != null && (
-                              <span>
-                                {s.last_item_count} items
-                              </span>
-                            )}
-                            {s.last_checked_at && (
-                              <span title={s.last_error ?? ''}>
-                                {s.last_checked_at.slice(0, 16)}
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <span class="text-slate-400">
-                            &mdash;
+                    <Fragment key={s.id}>
+                      <tr
+                        class={[
+                          'border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/30',
+                          s.enabled === 0 ? 'opacity-50' : '',
+                        ].join(' ')}
+                      >
+                        <td class="px-4 py-3">
+                          <Badge variant={kindVariant(s.type)}>
+                            {s.type}
+                          </Badge>
+                        </td>
+                        <td class="px-4 py-3 font-medium text-slate-900 dark:text-slate-100">
+                          {s.name}
+                        </td>
+                        <td class="px-4 py-3 max-w-xs truncate text-slate-500 dark:text-slate-400 font-mono text-xs">
+                          {s.url}
+                        </td>
+                        <td class="px-4 py-3 text-slate-600 dark:text-slate-400">
+                          {s.category}
+                        </td>
+                        <td class="px-4 py-3">
+                          <span
+                            class={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full ${PRIORITY_COLORS[s.priority] ?? PRIORITY_COLORS[2]}`}
+                          >
+                            {PRIORITY_LABELS[s.priority] ??
+                              `P${s.priority}`}
                           </span>
-                        )}
-                      </td>
-                      <td class="px-4 py-3">
-                        <ToggleSwitch
-                          enabled={s.enabled !== 0}
-                          disabled={togglingId === s.id}
-                          onChange={() =>
-                            handleToggle(s.id, s.enabled ?? 1)
-                          }
-                        />
-                      </td>
-                      <td class="px-4 py-3">
-                        <Button
-                          variant={
-                            confirmDeleteId === s.id
-                              ? 'danger'
-                              : 'ghost'
-                          }
-                          size="sm"
-                          loading={deletingId === s.id}
-                          onClick={() => handleDelete(s.id)}
-                        >
-                          {confirmDeleteId === s.id
-                            ? 'Confirm'
-                            : 'Delete'}
-                        </Button>
-                      </td>
-                    </tr>
+                        </td>
+                        <td class="px-4 py-3 text-xs text-slate-500">
+                          {s.last_status ? (
+                            <div class="flex flex-col gap-0.5">
+                              <Badge
+                                variant={kindVariant(
+                                  s.last_status === 'ok'
+                                    ? 'ok'
+                                    : 'error',
+                                )}
+                              >
+                                {s.last_status}
+                              </Badge>
+                              {s.last_item_count != null && (
+                                <span>
+                                  {s.last_item_count} items
+                                </span>
+                              )}
+                              {s.last_checked_at && (
+                                <span title={s.last_error ?? ''}>
+                                  {s.last_checked_at.slice(0, 16)}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span class="text-slate-400">
+                              &mdash;
+                            </span>
+                          )}
+                        </td>
+                        <td class="px-4 py-3">
+                          <ToggleSwitch
+                            enabled={s.enabled !== 0}
+                            disabled={togglingId === s.id}
+                            onChange={() =>
+                              handleToggle(s.id, s.enabled ?? 1)
+                            }
+                          />
+                        </td>
+                        <td class="px-4 py-3">
+                          <div class="flex justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() =>
+                                setEditingId(
+                                  editingId === s.id ? null : s.id,
+                                )
+                              }
+                            >
+                              {editingId === s.id ? 'Cancel' : 'Edit'}
+                            </Button>
+                            <Button
+                              variant={
+                                confirmDeleteId === s.id
+                                  ? 'danger'
+                                  : 'ghost'
+                              }
+                              size="sm"
+                              loading={deletingId === s.id}
+                              onClick={() => handleDelete(s.id)}
+                            >
+                              {confirmDeleteId === s.id
+                                ? 'Confirm'
+                                : 'Delete'}
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                      {editingId === s.id && (
+                        <tr class="border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                          <td colSpan={8} class="px-4 py-4">
+                            <SourceEditForm
+                              source={s}
+                              loading={editLoadingId === s.id}
+                              onCancel={() => setEditingId(null)}
+                              onSubmit={(e) => handleEdit(e, s)}
+                            />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
@@ -799,27 +881,266 @@ export function SourcesPage() {
                       {s.enabled !== 0 ? 'Enabled' : 'Disabled'}
                     </span>
                   </div>
-                  <Button
-                    variant={
-                      confirmDeleteId === s.id
-                        ? 'danger'
-                        : 'ghost'
-                    }
-                    size="sm"
-                    loading={deletingId === s.id}
-                    onClick={() => handleDelete(s.id)}
-                  >
-                    {confirmDeleteId === s.id
-                      ? 'Confirm delete'
-                      : 'Delete'}
-                  </Button>
+                  <div class="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        setEditingId(editingId === s.id ? null : s.id)
+                      }
+                    >
+                      {editingId === s.id ? 'Cancel' : 'Edit'}
+                    </Button>
+                    <Button
+                      variant={
+                        confirmDeleteId === s.id
+                          ? 'danger'
+                          : 'ghost'
+                      }
+                      size="sm"
+                      loading={deletingId === s.id}
+                      onClick={() => handleDelete(s.id)}
+                    >
+                      {confirmDeleteId === s.id
+                        ? 'Confirm delete'
+                        : 'Delete'}
+                    </Button>
+                  </div>
                 </div>
+                {editingId === s.id && (
+                  <div class="pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <SourceEditForm
+                      source={s}
+                      loading={editLoadingId === s.id}
+                      onCancel={() => setEditingId(null)}
+                      onSubmit={(e) => handleEdit(e, s)}
+                    />
+                  </div>
+                )}
               </div>
             ))}
           </div>
         </>
       )}
     </div>
+  );
+}
+
+function SourceEditForm({
+  source,
+  loading,
+  onCancel,
+  onSubmit,
+}: {
+  source: Source;
+  loading: boolean;
+  onCancel: () => void;
+  onSubmit: (e: Event) => void;
+}) {
+  const extra = parseSourceExtra(source);
+  const sourceType = source.type;
+
+  return (
+    <form
+      onSubmit={onSubmit}
+      class="grid grid-cols-1 sm:grid-cols-2 gap-3"
+    >
+      <input type="hidden" name="source_type" value={sourceType} />
+      <Field label="Name">
+        <input
+          name="name"
+          required
+          defaultValue={source.name}
+          class={inputCls}
+        />
+      </Field>
+
+      {(sourceType === 'rss' ||
+        sourceType === 'youtube' ||
+        sourceType === 'website') && (
+        <Field label="URL" className="sm:col-span-2">
+          <input
+            name="url"
+            required
+            defaultValue={source.url}
+            class={inputCls}
+          />
+        </Field>
+      )}
+
+      {sourceType === 'youtube' && (
+        <Field label="YouTube channel ID" className="sm:col-span-2">
+          <input
+            name="channel_id"
+            defaultValue={extraText(extra, 'channel_id')}
+            class={inputCls}
+          />
+        </Field>
+      )}
+
+      {sourceType === 'google_news' && (
+        <>
+          <Field label="Search query" className="sm:col-span-2">
+            <input
+              name="query"
+              required
+              defaultValue={extraText(extra, 'query')}
+              class={inputCls}
+            />
+          </Field>
+          <Field label="Language">
+            <input
+              name="language"
+              defaultValue={extraText(extra, 'language', 'en')}
+              class={inputCls}
+            />
+          </Field>
+          <Field label="Country">
+            <input
+              name="country"
+              defaultValue={extraText(extra, 'country', 'US')}
+              class={inputCls}
+            />
+          </Field>
+        </>
+      )}
+
+      {sourceType === 'hackernews' && (
+        <>
+          <Field label="Feed">
+            <select
+              name="hn_feed"
+              class={inputCls}
+              defaultValue={extraText(extra, 'feed', 'top')}
+            >
+              <option value="top">Top stories</option>
+              <option value="best">Best stories</option>
+              <option value="new">New stories</option>
+              <option value="ask">Ask HN</option>
+              <option value="show">Show HN</option>
+            </select>
+          </Field>
+          <Field label="Min score">
+            <input
+              name="hn_min_score"
+              type="number"
+              min="0"
+              defaultValue={extraNumber(extra, 'min_score', 50)}
+              class={inputCls}
+            />
+          </Field>
+          <Field label="Max items">
+            <input
+              name="hn_max_items"
+              type="number"
+              min="1"
+              max="100"
+              defaultValue={extraNumber(extra, 'max_items', 20)}
+              class={inputCls}
+            />
+          </Field>
+        </>
+      )}
+
+      {sourceType === 'reddit' && (
+        <>
+          <Field label="Subreddit" className="sm:col-span-2">
+            <input
+              name="subreddit"
+              required
+              defaultValue={extraText(extra, 'subreddit', source.name)}
+              class={inputCls}
+            />
+          </Field>
+          <Field label="Sort">
+            <select
+              name="reddit_sort"
+              class={inputCls}
+              defaultValue={extraText(extra, 'sort', 'hot')}
+            >
+              <option value="hot">Hot</option>
+              <option value="new">New</option>
+              <option value="top">Top</option>
+              <option value="rising">Rising</option>
+            </select>
+          </Field>
+          <Field label="Time filter">
+            <select
+              name="reddit_time_filter"
+              class={inputCls}
+              defaultValue={extraText(extra, 'time_filter', 'day')}
+            >
+              <option value="hour">Past hour</option>
+              <option value="day">Past 24 h</option>
+              <option value="week">Past week</option>
+              <option value="month">Past month</option>
+              <option value="year">Past year</option>
+              <option value="all">All time</option>
+            </select>
+          </Field>
+          <Field label="Min score">
+            <input
+              name="reddit_min_score"
+              type="number"
+              min="0"
+              defaultValue={extraNumber(extra, 'min_score', 10)}
+              class={inputCls}
+            />
+          </Field>
+          <Field label="Max items">
+            <input
+              name="reddit_max_items"
+              type="number"
+              min="1"
+              max="100"
+              defaultValue={extraNumber(extra, 'max_items', 20)}
+              class={inputCls}
+            />
+          </Field>
+        </>
+      )}
+
+      {sourceType === 'github_releases' && (
+        <Field label="Repository" className="sm:col-span-2">
+          <input
+            name="github_repo"
+            required
+            defaultValue={extraText(extra, 'repo')}
+            class={inputCls}
+          />
+        </Field>
+      )}
+
+      <Field label="Category">
+        <input
+          name="category"
+          defaultValue={source.category}
+          class={inputCls}
+        />
+      </Field>
+      <Field label="Priority">
+        <select
+          name="priority"
+          class={inputCls}
+          defaultValue={String(source.priority)}
+        >
+          <option value="1">1 - High</option>
+          <option value="2">2 - Normal</option>
+          <option value="3">3 - Low</option>
+          <option value="4">4 - Lower</option>
+          <option value="5">5 - Lowest</option>
+        </select>
+      </Field>
+
+      <div class="sm:col-span-2 flex items-center gap-2">
+        <Button type="submit" size="sm" loading={loading}>
+          Save changes
+        </Button>
+        <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </form>
   );
 }
 

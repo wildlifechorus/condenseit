@@ -161,6 +161,34 @@ class SourceRegistry:
     def toggle(self, source_id: int, enabled: bool) -> None:
         self.store.db["sources"].update(source_id, {"enabled": 1 if enabled else 0})
 
+    def update(
+        self,
+        source_id: int,
+        source_type: str,
+        name: str,
+        category: str,
+        priority: int,
+        url: str,
+        *,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        """Update source configuration and clear stale fetch health."""
+        self.store.db["sources"].update(
+            source_id,
+            {
+                "type": source_type,
+                "name": name,
+                "url": url,
+                "category": category,
+                "priority": priority,
+                "extra_json": json.dumps(extra or {}),
+                "last_checked_at": "",
+                "last_status": "",
+                "last_error": "",
+                "last_item_count": -1,
+            },
+        )
+
     def feeds_for_config(self) -> list[FeedConfig]:
         return [
             FeedConfig(

@@ -65,6 +65,8 @@ export interface Source {
   priority: number;
   /** 1 = enabled, 0 = disabled. Defaults to 1 for newly-added sources. */
   enabled: number;
+  /** Type-specific source settings stored by the backend as JSON text. */
+  extra_json?: string;
   last_status?: string;
   last_item_count?: number;
   last_checked_at?: string;

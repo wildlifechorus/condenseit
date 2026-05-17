@@ -71,6 +71,56 @@ def test_spa_uses_condenseit_frontend_dist_override(
     assert "override-marker" in home.text
 
 
+def test_sources_api_updates_source_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    """The source update endpoint persists editable source fields."""
+    monkeypatch.setenv("CONDENSEIT_DATA_DIR", str(tmp_path / "data"))
+    client = TestClient(create_app())
+
+    added = client.post(
+        "/api/sources",
+        headers=_AUTH,
+        json={
+            "source_type": "rss",
+            "name": "Old Feed",
+            "url": "https://example.com/old.xml",
+            "category": "Old",
+            "priority": 2,
+        },
+    )
+    assert added.status_code == 200
+
+    sources = client.get("/api/sources", headers=_AUTH).json()
+    source_id = next(s["id"] for s in sources if s["name"] == "Old Feed")
+
+    updated = client.put(
+        f"/api/sources/{source_id}",
+        headers=_AUTH,
+        json={
+            "source_type": "google_news",
+            "name": "AI News",
+            "query": "AI safety",
+            "language": "en",
+            "country": "GB",
+            "category": "Research",
+            "priority": 1,
+        },
+    )
+    assert updated.status_code == 200
+
+    rows = client.get("/api/sources", headers=_AUTH).json()
+    row = next(s for s in rows if s["id"] == source_id)
+    extra = json.loads(row["extra_json"])
+    assert row["type"] == "google_news"
+    assert row["name"] == "AI News"
+    assert row["category"] == "Research"
+    assert row["priority"] == 1
+    assert "AI+safety" in row["url"]
+    assert extra == {"query": "AI safety", "language": "en", "country": "GB"}
+
+
 def test_digest_api_returns_items(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,

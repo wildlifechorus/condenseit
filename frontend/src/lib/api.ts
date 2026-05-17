@@ -93,6 +93,8 @@ export const api = {
   listSources: () => request<Source[]>('GET', '/api/sources'),
   addSource: (data: FormData) =>
     request<{ ok: boolean }>('POST', '/api/sources', data),
+  updateSource: (id: number, data: FormData) =>
+    request<{ ok: boolean }>('PUT', `/api/sources/${id}`, data),
   deleteSource: (id: number) =>
     request<void>('DELETE', `/api/sources/${id}`),
   toggleSource: (id: number, enabled: boolean) =>

@@ -108,6 +108,75 @@ def _build_source_extra(
     return extra, feed_url
 
 
+async def _read_source_payload(request: Request) -> dict[str, Any]:
+    """Read source form or JSON payloads into one normalized shape."""
+    ct = request.headers.get("content-type", "")
+    if "multipart/form-data" in ct or "application/x-www-form-urlencoded" in ct:
+        form = await request.form()
+
+        def _fstr(key: str, default: str = "") -> str:
+            return str(form.get(key, default)).strip()
+
+        def _fint(key: str, default: int = 0) -> int:
+            try:
+                return int(form.get(key, default))  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                return default
+
+        return {
+            "source_type": _fstr("source_type", "rss"),
+            "name": _fstr("name"),
+            "url": _fstr("url"),
+            "category": _fstr("category", "General") or "General",
+            "priority": _fint("priority", 2),
+            "channel_id": _fstr("channel_id"),
+            "query": _fstr("query"),
+            "language": _fstr("language", "en") or "en",
+            "country": _fstr("country", "US") or "US",
+            "hn_feed": _fstr("hn_feed", "top") or "top",
+            "hn_max_items": _fint("hn_max_items", 20),
+            "hn_min_score": _fint("hn_min_score", 50),
+            "subreddit": _fstr("subreddit"),
+            "reddit_sort": _fstr("reddit_sort", "hot") or "hot",
+            "reddit_time_filter": _fstr("reddit_time_filter", "day") or "day",
+            "reddit_max_items": _fint("reddit_max_items", 20),
+            "reddit_min_score": _fint("reddit_min_score", 10),
+            "github_repo": _fstr("github_repo"),
+        }
+
+    body = await request.json()
+    return {
+        "source_type": str(body.get("source_type", "rss")).strip(),
+        "name": str(body.get("name", "")).strip(),
+        "url": str(body.get("url", "")).strip(),
+        "category": str(body.get("category", "General")).strip() or "General",
+        "priority": int(body.get("priority", 2)),
+        "channel_id": str(body.get("channel_id", "")).strip(),
+        "query": str(body.get("query", "")).strip(),
+        "language": str(body.get("language", "en")).strip() or "en",
+        "country": str(body.get("country", "US")).strip() or "US",
+        "hn_feed": str(body.get("hn_feed", "top")).strip() or "top",
+        "hn_max_items": int(body.get("hn_max_items", 20)),
+        "hn_min_score": int(body.get("hn_min_score", 50)),
+        "subreddit": str(body.get("subreddit", "")).strip(),
+        "reddit_sort": str(body.get("reddit_sort", "hot")).strip() or "hot",
+        "reddit_time_filter": str(body.get("reddit_time_filter", "day")).strip()
+        or "day",
+        "reddit_max_items": int(body.get("reddit_max_items", 20)),
+        "reddit_min_score": int(body.get("reddit_min_score", 10)),
+        "github_repo": str(body.get("github_repo", "")).strip(),
+    }
+
+
+def _source_payload_error(payload: dict[str, Any]) -> str | None:
+    """Return an API-facing validation message for invalid source payloads."""
+    if not payload["name"]:
+        return "name field is required"
+    if not 1 <= int(payload["priority"]) <= 5:
+        return "priority must be between 1 and 5"
+    return None
+
+
 def create_admin_router(
     config_path: str | None,
     store: ContentStore | None = None,
@@ -150,57 +219,25 @@ def create_admin_router(
 
     @router.post("/api/sources", response_model=None)
     async def api_add_source(request: Request) -> JSONResponse:
-        ct = request.headers.get("content-type", "")
-        if "multipart/form-data" in ct or "application/x-www-form-urlencoded" in ct:
-            form = await request.form()
-
-            def _fstr(key: str, default: str = "") -> str:
-                return str(form.get(key, default))
-
-            def _fint(key: str, default: int = 0) -> int:
-                try:
-                    return int(form.get(key, default))  # type: ignore[arg-type]
-                except (TypeError, ValueError):
-                    return default
-
-            source_type = _fstr("source_type", "rss")
-            name = _fstr("name")
-            url = _fstr("url")
-            category = _fstr("category", "General")
-            priority = _fint("priority", 2)
-            channel_id = _fstr("channel_id")
-            query = _fstr("query")
-            language = _fstr("language", "en")
-            country = _fstr("country", "US")
-            hn_feed = _fstr("hn_feed", "top")
-            hn_max_items = _fint("hn_max_items", 20)
-            hn_min_score = _fint("hn_min_score", 50)
-            subreddit = _fstr("subreddit")
-            reddit_sort = _fstr("reddit_sort", "hot")
-            reddit_time_filter = _fstr("reddit_time_filter", "day")
-            reddit_max_items = _fint("reddit_max_items", 20)
-            reddit_min_score = _fint("reddit_min_score", 10)
-            github_repo = _fstr("github_repo")
-        else:
-            body = await request.json()
-            source_type = str(body.get("source_type", "rss"))
-            name = str(body.get("name", ""))
-            url = str(body.get("url", ""))
-            category = str(body.get("category", "General"))
-            priority = int(body.get("priority", 2))
-            channel_id = str(body.get("channel_id", ""))
-            query = str(body.get("query", ""))
-            language = str(body.get("language", "en"))
-            country = str(body.get("country", "US"))
-            hn_feed = str(body.get("hn_feed", "top"))
-            hn_max_items = int(body.get("hn_max_items", 20))
-            hn_min_score = int(body.get("hn_min_score", 50))
-            subreddit = str(body.get("subreddit", ""))
-            reddit_sort = str(body.get("reddit_sort", "hot"))
-            reddit_time_filter = str(body.get("reddit_time_filter", "day"))
-            reddit_max_items = int(body.get("reddit_max_items", 20))
-            reddit_min_score = int(body.get("reddit_min_score", 10))
-            github_repo = str(body.get("github_repo", ""))
+        payload = await _read_source_payload(request)
+        source_type = str(payload["source_type"])
+        name = str(payload["name"])
+        url = str(payload["url"])
+        category = str(payload["category"])
+        priority = int(payload["priority"])
+        channel_id = str(payload["channel_id"])
+        query = str(payload["query"])
+        language = str(payload["language"])
+        country = str(payload["country"])
+        hn_feed = str(payload["hn_feed"])
+        hn_max_items = int(payload["hn_max_items"])
+        hn_min_score = int(payload["hn_min_score"])
+        subreddit = str(payload["subreddit"])
+        reddit_sort = str(payload["reddit_sort"])
+        reddit_time_filter = str(payload["reddit_time_filter"])
+        reddit_max_items = int(payload["reddit_max_items"])
+        reddit_min_score = int(payload["reddit_min_score"])
+        github_repo = str(payload["github_repo"])
 
         extra, feed_url = _build_source_extra(
             source_type,
@@ -221,6 +258,42 @@ def create_admin_router(
             github_repo=github_repo,
         )
         sources.add(source_type, name, category, priority, feed_url, extra=extra)
+        return JSONResponse({"ok": True})
+
+    @router.put("/api/sources/{source_id}", response_model=None)
+    async def api_update_source(source_id: int, request: Request) -> JSONResponse:
+        payload = await _read_source_payload(request)
+        error = _source_payload_error(payload)
+        if error is not None:
+            return JSONResponse({"error": error}, status_code=422)
+
+        extra, feed_url = _build_source_extra(
+            str(payload["source_type"]),
+            str(payload["url"]),
+            str(payload["channel_id"]),
+            str(payload["name"]),
+            query=str(payload["query"]),
+            language=str(payload["language"]),
+            country=str(payload["country"]),
+            hn_feed=str(payload["hn_feed"]),
+            hn_max_items=int(payload["hn_max_items"]),
+            hn_min_score=int(payload["hn_min_score"]),
+            subreddit=str(payload["subreddit"]),
+            reddit_sort=str(payload["reddit_sort"]),
+            reddit_time_filter=str(payload["reddit_time_filter"]),
+            reddit_max_items=int(payload["reddit_max_items"]),
+            reddit_min_score=int(payload["reddit_min_score"]),
+            github_repo=str(payload["github_repo"]),
+        )
+        sources.update(
+            source_id,
+            str(payload["source_type"]),
+            str(payload["name"]),
+            str(payload["category"]),
+            int(payload["priority"]),
+            feed_url,
+            extra=extra,
+        )
         return JSONResponse({"ok": True})
 
     @router.delete("/api/sources/{source_id}", response_model=None)
