@@ -192,17 +192,16 @@ class ContentStore:
         existing: dict[str, Any],
         incoming: dict[str, Any],
     ) -> None:
-        """Update last-seen time and labels when the same URL reappears unchanged.
+        """Update mutable labels when the same URL reappears unchanged.
 
-        Keeps stored body and hash so we do not treat the row as new for the
-        digest pipeline, but ``collected_at`` moves forward so UIs such as
-        ``/rate`` (ORDER BY collected_at) reflect recent runs.
+        ``collected_at`` is intentionally NOT updated here. It retains the
+        timestamp of the first time this article was collected, which keeps
+        ``articles_collected_since(today_midnight)`` scoped to articles that
+        are genuinely new today. Refreshing ``collected_at`` caused articles
+        from previous days to re-enter the same-day pool on every pipeline
+        run as long as the article was still present in the RSS feed.
         """
         row = dict(existing)
-        row["collected_at"] = incoming.get(
-            "collected_at",
-            datetime.now(UTC).isoformat(),
-        )
         row["title"] = str(incoming.get("title", row.get("title", "")))
         row["source"] = str(incoming.get("source", row.get("source", "")))
         row["category"] = str(incoming.get("category", row.get("category", "")))

@@ -318,24 +318,57 @@ class DigestPipeline:
     ) -> list[dict[str, Any]]:
         """Exclude articles the user has already marked as read.
 
-        Matching is done by both URL (exact) and title (case-insensitive).
-        The title fallback catches articles that re-appear under a different
-        URL, such as Google News opaque redirect URLs that rotate on each RSS
-        fetch, or publishers that duplicate content at multiple URL paths.
+        Three layers of matching (most to least strict):
+
+        1. Exact URL match.
+        2. Exact title match (case-insensitive) -- catches the same article
+           re-appearing under a rotated URL (e.g. Google News opaque redirects)
+           or dual URL paths on the same publisher.
+        3. Fuzzy title match via Jaccard word-set similarity >= 0.35 -- catches
+           cross-source duplicates where different publications cover the same
+           story with similar but not identical headlines (e.g. "Turla Turns
+           Kazuar Backdoor Into P2P Botnet" vs "Russian hackers turn Kazuar
+           backdoor into modular P2P botnet").
         """
         read_urls = self.store.get_read_urls()
         read_titles = self.store.get_read_titles()
         if not read_urls and not read_titles:
             return articles
 
+        # Pre-compute word sets for read titles to avoid repeated work.
+        read_title_word_sets: list[frozenset[str]] = [
+            frozenset(t.split()) for t in read_titles if t
+        ]
+
+        _JACCARD_THRESHOLD = 0.35
+
+        def _jaccard(a: frozenset[str], b: frozenset[str]) -> float:
+            union = a | b
+            if not union:
+                return 0.0
+            return len(a & b) / len(union)
+
         def _is_read(a: dict[str, Any]) -> bool:
             if a.get("url") in read_urls:
                 return True
-            if read_titles:
-                title = str(a.get("title", "")).lower().strip()
-                if title and title in read_titles:
-                    return True
-            return False
+            if not read_titles:
+                return False
+            title = str(a.get("title", "")).lower().strip()
+            if not title:
+                return False
+            # Exact match.
+            if title in read_titles:
+                return True
+            # Fuzzy match against each read title's word set.
+            words = frozenset(title.split())
+            if len(words) < 3:
+                # Too short to fuzzy-match reliably; avoid false positives.
+                return False
+            return any(
+                _jaccard(words, rws) >= _JACCARD_THRESHOLD
+                for rws in read_title_word_sets
+                if len(rws) >= 3
+            )
 
         kept = [a for a in articles if not _is_read(a)]
         dropped = len(articles) - len(kept)
