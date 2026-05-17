@@ -20,6 +20,11 @@ interface DigestCardProps {
   onReadLater?: (item: DigestItem) => void;
   /** Whether this item is currently saved to read later. */
   isReadLater?: boolean;
+  /**
+   * Called when the user dismisses this card. Typically marks the item as
+   * read so it disappears from the default (hide-read) view.
+   */
+  onDismiss?: (url: string) => void;
 }
 
 function formatDate(iso?: string): string {
@@ -48,6 +53,7 @@ export function DigestCard({
   onSelect,
   onReadLater,
   isReadLater = false,
+  onDismiss,
 }: DigestCardProps) {
   const summary = cleanSummary(item.summary);
   const metaParts: string[] = [];
@@ -105,6 +111,41 @@ export function DigestCard({
             : 'bg-teal-400 dark:bg-teal-500',
         ].join(' ')}
       />
+
+      {/* Dismiss button: top-right corner, icon-only, does not add to the
+          bottom-bar clutter and works equally well on touch devices. */}
+      {onDismiss && !isRead && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDismiss(item.url);
+          }}
+          title='Dismiss'
+          aria-label='Dismiss this item'
+          class={[
+            'absolute top-2 right-2 p-1.5 rounded-md',
+            'text-slate-300 dark:text-slate-600',
+            'hover:text-slate-500 dark:hover:text-slate-400',
+            'hover:bg-slate-100 dark:hover:bg-slate-800',
+            'transition-colors',
+          ].join(' ')}
+        >
+          <svg
+            class='w-3.5 h-3.5'
+            viewBox='0 0 24 24'
+            fill='none'
+            stroke='currentColor'
+            stroke-width='2.5'
+          >
+            <path
+              stroke-linecap='round'
+              stroke-linejoin='round'
+              d='M6 18L18 6M6 6l12 12'
+            />
+          </svg>
+        </button>
+      )}
 
       <div class="flex items-center gap-2 flex-wrap">
         <Badge variant={kindVariant(item.kind)}>{item.kind}</Badge>

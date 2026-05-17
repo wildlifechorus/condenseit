@@ -245,6 +245,7 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
                     onSelect={setSelectedItem}
                     onReadLater={handleReadLater}
                     isReadLater={readLaterUrls.has(item.url)}
+                    onDismiss={handleMarkRead}
                   />
                 );
               })}
@@ -267,6 +268,7 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
           onMarkRead={handleMarkRead}
           onReadLater={handleReadLater}
           isReadLater={readLaterUrls.has(selectedItem.url)}
+          onDismiss={handleMarkRead}
         />
       )}
     </div>

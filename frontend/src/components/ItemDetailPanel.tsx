@@ -16,6 +16,11 @@ interface ItemDetailPanelProps {
   onReadLater?: (item: DigestItem) => void;
   /** Whether this item is currently saved to read later. */
   isReadLater?: boolean;
+  /**
+   * Called when the user dismisses the item from the panel. Marks as read
+   * and closes the panel so the card disappears from the grid.
+   */
+  onDismiss?: (url: string) => void;
 }
 
 /** A single segment of parsed summary content. */
@@ -124,6 +129,7 @@ export function ItemDetailPanel({
   onMarkRead,
   onReadLater,
   isReadLater = false,
+  onDismiss,
 }: ItemDetailPanelProps) {
   /*
    * Some older items have the LLM's structured output stored as a raw JSON
@@ -371,6 +377,41 @@ export function ItemDetailPanel({
             </div>
 
             <div class="flex items-center gap-2 flex-wrap">
+              {/* Dismiss: marks as read and closes the panel so the card
+                  vanishes from the default grid view. Only shown while the
+                  item has not yet been read. */}
+              {onDismiss && !isRead && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onDismiss(item.url);
+                    onClose();
+                  }}
+                  title='Dismiss this item'
+                  class={[
+                    'flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border',
+                    'transition-colors font-medium',
+                    'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400',
+                    'hover:border-rose-300 hover:text-rose-600 dark:hover:text-rose-400',
+                  ].join(' ')}
+                >
+                  <svg
+                    class='w-3.5 h-3.5'
+                    viewBox='0 0 24 24'
+                    fill='none'
+                    stroke='currentColor'
+                    stroke-width='2.5'
+                  >
+                    <path
+                      stroke-linecap='round'
+                      stroke-linejoin='round'
+                      d='M6 18L18 6M6 6l12 12'
+                    />
+                  </svg>
+                  Dismiss
+                </button>
+              )}
+
               {onReadLater && (
                 <button
                   type="button"
