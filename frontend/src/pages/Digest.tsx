@@ -129,6 +129,26 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
     });
   }, []);
 
+  /**
+   * Dismiss an article: records a mild negative implicit signal on the
+   * backend (distinct from "mark as read") and marks the item as read
+   * locally so it disappears from the grid view.
+   */
+  const handleDismiss = useCallback(
+    (url: string) => {
+      const item = detail?.items.find((i) => i.url === url);
+      const title = item?.title;
+      // Optimistically mark as read so the card disappears immediately.
+      setReadUrls((prev) => {
+        const next = new Set(prev);
+        next.add(url);
+        return next;
+      });
+      api.dismissArticle(url, title).catch(() => undefined);
+    },
+    [detail],
+  );
+
   const handleFiltered = useCallback((items: DigestItem[]) => {
     setFiltered(items);
   }, []);
@@ -245,7 +265,7 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
                     onSelect={setSelectedItem}
                     onReadLater={handleReadLater}
                     isReadLater={readLaterUrls.has(item.url)}
-                    onDismiss={handleMarkRead}
+                    onDismiss={handleDismiss}
                   />
                 );
               })}
@@ -268,7 +288,7 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
           onMarkRead={handleMarkRead}
           onReadLater={handleReadLater}
           isReadLater={readLaterUrls.has(selectedItem.url)}
-          onDismiss={handleMarkRead}
+          onDismiss={handleDismiss}
         />
       )}
     </div>

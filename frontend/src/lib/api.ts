@@ -11,6 +11,7 @@ import type {
   PasswordInfo,
   PreferenceProfile,
   RatingArticle,
+  RankingWeights,
   ReadLaterItem,
   RunLog,
   RunLogSummary,
@@ -71,12 +72,22 @@ export const api = {
   markRead: (url: string, isRead: boolean) =>
     request<void>('POST', '/api/read', { url, read: isRead }),
 
+  // Dismiss (negative implicit signal + mark as read)
+  dismissArticle: (url: string, title?: string) =>
+    request<void>('POST', '/api/dismiss', { url, title: title ?? '' }),
+
   // Ratings
   getRatings: () => request<RatingArticle[]>('GET', '/api/ratings'),
   submitRating: (url: string, rating: number) =>
     request<void>('POST', '/api/ratings', { url, rating }),
   getPreferenceProfile: () =>
     request<PreferenceProfile>('GET', '/api/preferences/profile'),
+
+  // Ranking weights (admin-tunable)
+  getRankingWeights: () =>
+    request<RankingWeights>('GET', '/api/preferences/weights'),
+  saveRankingWeights: (data: Partial<RankingWeights>) =>
+    request<void>('PUT', '/api/preferences/weights', data),
 
   // Sources
   listSources: () => request<Source[]>('GET', '/api/sources'),

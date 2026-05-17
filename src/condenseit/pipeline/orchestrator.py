@@ -55,6 +55,8 @@ class DigestPipeline:
             self.config.relevance.category_preference_weight,
             self.config.relevance.source_preference_weight,
             self.config.relevance.rating_decay_half_life_days,
+            self.config.relevance.implicit_signal_weight,
+            self.config.relevance.topic_synonyms,
         )
         self.digest_md = ""
         self.digest_html = ""

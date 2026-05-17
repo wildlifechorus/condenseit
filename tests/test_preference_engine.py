@@ -1,5 +1,6 @@
 """Tests for PreferenceEngine: category/source scoring, time decay, stop-words,
-profile_summary, and edge cases."""
+profile_summary, score breakdown, bigrams, implicit signals, dismiss, and edge
+cases."""
 
 from __future__ import annotations
 
@@ -12,6 +13,7 @@ import pytest
 from condenseit.learning.preference_engine import (
     _STOP_WORDS,
     PreferenceEngine,
+    _bigrams,
     _time_decay,
     _tokenize,
 )
@@ -493,6 +495,439 @@ def test_profile_summary_earliest_latest_dates(store: ContentStore) -> None:
     summary = eng.profile_summary()
     assert summary["earliest_rating"] != ""
     assert summary["latest_rating"] != ""
+
+
+# ---------------------------------------------------------------------------
+# Edge cases
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Score breakdown
+# ---------------------------------------------------------------------------
+
+
+def test_rank_articles_returns_score_breakdown(store: ContentStore) -> None:
+    """Every ranked article must include a non-None score_breakdown dict."""
+    for i in range(5):
+        url = f"https://a.test/{i}"
+        _save_article(store, url, f"CVE story {i}", "cve exploit kernel", "Infosec", "Feed")
+        _rate(store, url, 5)
+
+    eng = _engine(store, min_ratings=5, tfidf_weight=0.35)
+    art = {
+        "url": "https://new.test/",
+        "title": "New CVE exploit",
+        "content": "cve exploit kernel",
+        "category": "Infosec",
+        "source": "Feed",
+    }
+    ranked = eng.rank_articles([art])
+    assert "score_breakdown" in ranked[0]
+    bd = ranked[0]["score_breakdown"]
+    assert isinstance(bd, dict)
+    expected_keys = {
+        "keyword_high", "keyword_medium", "term_overlap", "bigram_overlap",
+        "tfidf_cosine", "category", "source",
+        "implicit_content", "implicit_category", "implicit_source",
+        "synonym_boost",
+    }
+    assert expected_keys == set(bd.keys())
+
+
+def test_score_breakdown_keyword_high_contributes(store: ContentStore) -> None:
+    """High-priority keyword match should appear in the breakdown."""
+    eng = _engine(store, min_ratings=1)
+    art = {
+        "url": "https://k.test/",
+        "title": "Kubernetes vulnerability",
+        "content": "kubernetes cluster",
+        "category": "Tech",
+        "source": "Feed",
+    }
+    ranked = eng.rank_articles([art], keyword_high={"kubernetes"})
+    assert ranked[0]["score_breakdown"]["keyword_high"] == pytest.approx(2.0)
+
+
+def test_score_breakdown_sums_to_preference_score(store: ContentStore) -> None:
+    """The sum of all breakdown values must equal preference_score."""
+    for i in range(5):
+        url = f"https://b.test/{i}"
+        _save_article(store, url, f"Python tips {i}", "python async coroutine", "Dev", "Feed")
+        _rate(store, url, 5)
+
+    eng = _engine(store, min_ratings=5, tfidf_weight=0.35)
+    art = {
+        "url": "https://c.test/",
+        "title": "Async Python patterns",
+        "content": "python async coroutine",
+        "category": "Dev",
+        "source": "Feed",
+    }
+    ranked = eng.rank_articles([art])
+    bd = ranked[0]["score_breakdown"]
+    total = round(sum(bd.values()), 3)
+    assert total == pytest.approx(ranked[0]["preference_score"], abs=0.01)
+
+
+# ---------------------------------------------------------------------------
+# Bigrams
+# ---------------------------------------------------------------------------
+
+
+def test_bigrams_extracted_from_title() -> None:
+    """Bigrams should be consecutive stop-word-filtered word pairs."""
+    result = _bigrams("supply chain attack vulnerability")
+    assert "supply chain" in result
+    assert "chain attack" in result
+
+
+def test_bigrams_skips_stop_words() -> None:
+    """Stop words must not appear in bigrams."""
+    result = _bigrams("the kubernetes vulnerability")
+    # 'the' is a stop word; 'kubernetes' and 'vulnerability' are both kept
+    assert all("the" not in bg.split() for bg in result)
+
+
+def test_bigrams_empty_string() -> None:
+    assert _bigrams("") == []
+
+
+def test_bigrams_single_word() -> None:
+    assert _bigrams("kubernetes") == []
+
+
+def test_liked_bigrams_boost_score(store: ContentStore) -> None:
+    """Articles with bigrams matching liked-article titles rank higher."""
+    for i in range(5):
+        url = f"https://sc.test/{i}"
+        _save_article(
+            store, url, "supply chain vulnerability", "attack supply chain", "Infosec", "Feed"
+        )
+        _rate(store, url, 5)
+
+    eng = _engine(store, min_ratings=5, tfidf_weight=0.0, category_weight=0.0)
+    eng.learn_from_ratings()
+    assert len(eng._liked_bigrams) > 0, "Expected bigrams in liked_bigrams"
+
+    high = {
+        "url": "https://n.test/1",
+        "title": "supply chain compromise found",
+        "content": "supply chain attack",
+        "category": "Other",
+        "source": "OtherFeed",
+    }
+    low = {
+        "url": "https://n.test/2",
+        "title": "Recipe for pasta",
+        "content": "pasta tomato recipe",
+        "category": "Other",
+        "source": "OtherFeed",
+    }
+    ranked = eng.rank_articles([low, high])
+    assert ranked[0]["url"] == high["url"]
+
+
+# ---------------------------------------------------------------------------
+# 3-char token support
+# ---------------------------------------------------------------------------
+
+
+def test_cve_three_char_token_included() -> None:
+    """'CVE' (3 chars) must now appear in tokenized output."""
+    tokens = _tokenize("CVE-2024-1234 critical vulnerability")
+    assert "cve" in tokens
+
+
+def test_api_three_char_token_included() -> None:
+    """'API' (3 chars) must now appear in tokenized output."""
+    tokens = _tokenize("API authentication bypass")
+    assert "api" in tokens
+
+
+def test_llm_three_char_token_included() -> None:
+    """'LLM' (3 chars) must now appear in tokenized output."""
+    tokens = _tokenize("LLM jailbreak technique")
+    assert "llm" in tokens
+
+
+# ---------------------------------------------------------------------------
+# Implicit signals
+# ---------------------------------------------------------------------------
+
+
+def _dismiss(store: ContentStore, url: str, days_ago: int = 0) -> None:
+    """Record a dismiss for a URL, optionally back-dating it."""
+    dismissed_at = (datetime.now(UTC) - timedelta(days=days_ago)).isoformat()
+    store.db["dismissed_articles"].upsert(
+        {"url": url, "title": "", "dismissed_at": dismissed_at},
+        pk="url",
+    )
+
+
+def _save_read(store: ContentStore, url: str, days_ago: int = 0) -> None:
+    """Mark URL as read, optionally back-dating it."""
+    read_at = (datetime.now(UTC) - timedelta(days=days_ago)).isoformat()
+    store.db["read_articles"].upsert(
+        {"url": url, "read_at": read_at, "title": ""},
+        pk="url",
+    )
+
+
+def test_dismissed_articles_table_created(store: ContentStore) -> None:
+    """dismissed_articles table must exist after store initialisation."""
+    assert "dismissed_articles" in store.db.table_names()
+
+
+def test_dismiss_article_store_method(store: ContentStore) -> None:
+    """dismiss_article() must record the URL and also mark as read."""
+    _save_article(store, "https://d.test/1", "Article", "content", "Tech", "Feed")
+    store.dismiss_article("https://d.test/1", title="Article")
+    assert "https://d.test/1" in store.get_dismissed_urls()
+    assert "https://d.test/1" in store.get_read_urls()
+
+
+def test_dismissed_count(store: ContentStore) -> None:
+    for i in range(3):
+        url = f"https://dis.test/{i}"
+        _save_article(store, url, f"Art {i}", "content", "Tech", "Feed")
+        store.dismiss_article(url)
+    assert store.dismissed_count() == 3
+
+
+def test_implicit_dismissed_lowers_score(store: ContentStore) -> None:
+    """Dismissing articles from a category should lower its implicit score."""
+    for i in range(5):
+        url = f"https://dis-cat.test/{i}"
+        _save_article(
+            store, url, f"Recipe {i}", "cooking pasta kitchen recipe", "Lifestyle", "LifeFeed"
+        )
+        _rate(store, url, 3)  # neutral explicit rating
+
+    # Dismiss several articles from Lifestyle.
+    for i in range(3):
+        _dismiss(store, f"https://dis-cat.test/{i}")
+
+    eng = PreferenceEngine(
+        store, min_ratings=1, tfidf_weight=0.0,
+        category_weight=0.6, source_weight=0.0,
+        implicit_signal_weight=0.8,
+    )
+    eng.learn_from_ratings()
+
+    # The implicit category score for Lifestyle should be negative (< 0).
+    imp_score = eng._implicit_category_scores.get("Lifestyle", 0.0)
+    assert imp_score < 0, (
+        f"Expected negative implicit score for dismissed category, got {imp_score}"
+    )
+
+
+def test_implicit_saved_boosts_score(store: ContentStore) -> None:
+    """Saving articles for later should produce a positive implicit signal."""
+    for i in range(5):
+        url = f"https://rl.test/{i}"
+        _save_article(
+            store, url, f"Infosec {i}", "security exploit cve", "Infosec", "SecFeed"
+        )
+        _rate(store, url, 3)  # neutral explicit
+        store.db["read_later"].upsert(
+            {
+                "url": url, "title": f"Infosec {i}", "summary": "security exploit cve",
+                "tldr": "", "key_takeaways": "[]", "source": "SecFeed",
+                "category": "Infosec", "kind": "article", "published_at": "",
+                "saved_at": datetime.now(UTC).isoformat(),
+            },
+            pk="url",
+        )
+
+    eng = PreferenceEngine(
+        store, min_ratings=1, tfidf_weight=0.0,
+        category_weight=0.6, source_weight=0.0,
+        implicit_signal_weight=0.8,
+    )
+    eng.learn_from_ratings()
+
+    imp_score = eng._implicit_category_scores.get("Infosec", 0.0)
+    assert imp_score > 0, (
+        f"Expected positive implicit score for saved category, got {imp_score}"
+    )
+
+
+def test_implicit_disabled_when_weight_zero(store: ContentStore) -> None:
+    """With implicit_signal_weight=0, implicit profiles must stay empty."""
+    _save_article(store, "https://z.test/1", "Article", "content", "Tech", "Feed")
+    _rate(store, "https://z.test/1", 5)
+    _dismiss(store, "https://z.test/1")
+
+    eng = PreferenceEngine(store, min_ratings=1, implicit_signal_weight=0.0)
+    eng.learn_from_ratings()
+    assert len(eng._implicit_category_scores) == 0
+    assert len(eng._implicit_liked_terms) == 0
+    assert len(eng._implicit_disliked_terms) == 0
+
+
+# ---------------------------------------------------------------------------
+# Topic synonyms
+# ---------------------------------------------------------------------------
+
+
+def test_synonym_boost_applies_when_synonym_present(store: ContentStore) -> None:
+    """An article containing 'k8s' should benefit from profile weight for
+    'kubernetes' when they are in the same synonym group."""
+    for i in range(5):
+        url = f"https://k8s.test/{i}"
+        _save_article(
+            store, url, f"Kubernetes deploy {i}", "kubernetes cluster deployment", "Dev", "Feed"
+        )
+        _rate(store, url, 5)
+
+    synonyms = {"kube": ["kubernetes", "k8s", "kubectl", "helm"]}
+    eng = PreferenceEngine(
+        store, min_ratings=5, tfidf_weight=0.0,
+        category_weight=0.0, source_weight=0.0,
+        implicit_signal_weight=0.0,
+        topic_synonyms=synonyms,
+    )
+
+    with_syn = {
+        "url": "https://new.test/1",
+        "title": "k8s performance tips",
+        "content": "k8s cluster configuration",
+        "category": "Other",
+        "source": "OtherFeed",
+    }
+    without_syn = {
+        "url": "https://new.test/2",
+        "title": "pasta recipe today",
+        "content": "pasta tomato kitchen",
+        "category": "Other",
+        "source": "OtherFeed",
+    }
+
+    ranked = eng.rank_articles([without_syn, with_syn])
+    assert ranked[0]["url"] == with_syn["url"]
+    assert ranked[0]["score_breakdown"]["synonym_boost"] > 0
+
+
+# ---------------------------------------------------------------------------
+# Profile summary new fields
+# ---------------------------------------------------------------------------
+
+
+def test_profile_summary_includes_new_fields(store: ContentStore) -> None:
+    """profile_summary must include all new fields added in this overhaul."""
+    eng = _engine(store, min_ratings=5)
+    summary = eng.profile_summary()
+
+    for field in (
+        "rating_distribution",
+        "implicit_read_count",
+        "implicit_saved_count",
+        "implicit_dismissed_count",
+        "implicit_learning_active",
+        "oldest_rating_decay",
+        "decay_half_life_days",
+        "top_liked_bigrams",
+        "top_disliked_bigrams",
+    ):
+        assert field in summary, f"Missing field: {field}"
+
+
+def test_profile_summary_rating_distribution_structure(
+    store: ContentStore,
+) -> None:
+    """rating_distribution must have keys '1'-'5' with integer counts."""
+    for i in range(5):
+        url = f"https://rd.test/{i}"
+        _save_article(store, url, f"A {i}", "content", "Tech", "Feed")
+        _rate(store, url, 4)
+
+    eng = _engine(store, min_ratings=5)
+    dist = eng.profile_summary()["rating_distribution"]
+    assert set(dist.keys()) == {"1", "2", "3", "4", "5"}
+    assert dist["4"] == 5
+    assert dist["1"] == 0
+
+
+# ---------------------------------------------------------------------------
+# API endpoints (dismiss, weights)
+# ---------------------------------------------------------------------------
+
+
+def test_api_dismiss_endpoint(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """POST /api/dismiss must record the URL in dismissed_articles."""
+    from fastapi.testclient import TestClient
+    from condenseit.web.app import create_app
+
+    data_root = tmp_path / "appdata"
+    data_root.mkdir()
+    monkeypatch.setenv("CONDENSEIT_DATA_DIR", str(data_root))
+
+    store_local = ContentStore(db_path=data_root / "condenseit.db")
+    _save_article(
+        store_local, "https://dis.test/a", "Some Article", "content", "Tech", "Feed"
+    )
+
+    _auth = {"Authorization": "Bearer condenseit"}
+    client = TestClient(create_app())
+    resp = client.post(
+        "/api/dismiss",
+        json={"url": "https://dis.test/a", "title": "Some Article"},
+        headers=_auth,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+
+
+def test_api_ranking_weights_get(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """GET /api/preferences/weights must return a dict with all weight keys."""
+    from fastapi.testclient import TestClient
+    from condenseit.web.app import create_app
+
+    monkeypatch.setenv("CONDENSEIT_DATA_DIR", str(tmp_path / "data"))
+    _auth = {"Authorization": "Bearer condenseit"}
+    client = TestClient(create_app())
+    resp = client.get("/api/preferences/weights", headers=_auth)
+    assert resp.status_code == 200
+    data = resp.json()
+    for key in (
+        "tfidf_preference_weight",
+        "category_preference_weight",
+        "source_preference_weight",
+        "implicit_signal_weight",
+        "rating_decay_half_life_days",
+        "min_ratings_for_learning",
+    ):
+        assert key in data
+
+
+def test_api_ranking_weights_put(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """PUT /api/preferences/weights must persist values and be read back."""
+    from fastapi.testclient import TestClient
+    from condenseit.web.app import create_app
+
+    monkeypatch.setenv("CONDENSEIT_DATA_DIR", str(tmp_path / "wdata"))
+    _auth = {"Authorization": "Bearer condenseit"}
+    client = TestClient(create_app())
+
+    resp = client.put(
+        "/api/preferences/weights",
+        json={"tfidf_preference_weight": 0.75, "rating_decay_half_life_days": 60},
+        headers=_auth,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+
+    resp2 = client.get("/api/preferences/weights", headers=_auth)
+    data = resp2.json()
+    assert data["tfidf_preference_weight"] == pytest.approx(0.75)
+    assert data["rating_decay_half_life_days"] == 60
 
 
 # ---------------------------------------------------------------------------

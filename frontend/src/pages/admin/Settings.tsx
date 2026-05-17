@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { api } from '../../lib/api';
-import type { DigestConfig } from '../../lib/types';
+import type { DigestConfig, RankingWeights } from '../../lib/types';
 import { Card, CardHeader } from '../../components/Card';
 import { Button } from '../../components/Button';
 import { Spinner } from '../../components/Spinner';
@@ -178,6 +178,9 @@ export function SettingsPage() {
     null,
   );
 
+  const [weights, setWeights] = useState<RankingWeights | null>(null);
+  const [savingWeights, setSavingWeights] = useState(false);
+
   useEffect(() => {
     api
       .getDigestConfig()
@@ -189,6 +192,11 @@ export function SettingsPage() {
         );
       })
       .finally(() => setLoading(false));
+
+    api
+      .getRankingWeights()
+      .then(setWeights)
+      .catch(() => undefined);
   }, []);
 
   function showFlash(text: string, ok = true) {
@@ -207,6 +215,23 @@ export function SettingsPage() {
       showFlash(err instanceof Error ? err.message : 'Save failed.', false);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleSaveWeights(e: Event) {
+    e.preventDefault();
+    if (!weights) return;
+    setSavingWeights(true);
+    try {
+      await api.saveRankingWeights(weights);
+      showFlash('Ranking weights saved.');
+    } catch (err) {
+      showFlash(
+        err instanceof Error ? err.message : 'Failed to save weights.',
+        false,
+      );
+    } finally {
+      setSavingWeights(false);
     }
   }
 
@@ -466,6 +491,210 @@ export function SettingsPage() {
           </Button>
         </div>
       </form>
+
+      {weights && (
+        <form onSubmit={handleSaveWeights} class="space-y-5 mt-8">
+          <div>
+            <h2 class="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+              Ranking weights
+            </h2>
+            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Fine-tune how the preference engine blends signals when ordering
+              articles. Changes take effect on the next digest run.
+            </p>
+          </div>
+
+          <Card>
+            <CardHeader
+              title="Explicit ratings"
+              description="Weights applied to signals derived from your star ratings."
+            />
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Field
+                label="TF-IDF content weight"
+                hint="How much term-level content similarity influences ranking (0 = off, 1 = strong)."
+              >
+                <input
+                  type="number"
+                  class={INPUT}
+                  min={0}
+                  max={5}
+                  step={0.05}
+                  required
+                  value={weights.tfidf_preference_weight}
+                  onInput={(e) =>
+                    setWeights((w) =>
+                      w
+                        ? {
+                            ...w,
+                            tfidf_preference_weight:
+                              parseFloat(
+                                (e.target as HTMLInputElement).value,
+                              ) || 0,
+                          }
+                        : w,
+                    )
+                  }
+                />
+              </Field>
+
+              <Field
+                label="Category weight"
+                hint="Influence of per-category mean rating deviation (0 = off)."
+              >
+                <input
+                  type="number"
+                  class={INPUT}
+                  min={0}
+                  max={5}
+                  step={0.05}
+                  required
+                  value={weights.category_preference_weight}
+                  onInput={(e) =>
+                    setWeights((w) =>
+                      w
+                        ? {
+                            ...w,
+                            category_preference_weight:
+                              parseFloat(
+                                (e.target as HTMLInputElement).value,
+                              ) || 0,
+                          }
+                        : w,
+                    )
+                  }
+                />
+              </Field>
+
+              <Field
+                label="Source weight"
+                hint="Influence of per-feed/source mean rating deviation (0 = off)."
+              >
+                <input
+                  type="number"
+                  class={INPUT}
+                  min={0}
+                  max={5}
+                  step={0.05}
+                  required
+                  value={weights.source_preference_weight}
+                  onInput={(e) =>
+                    setWeights((w) =>
+                      w
+                        ? {
+                            ...w,
+                            source_preference_weight:
+                              parseFloat(
+                                (e.target as HTMLInputElement).value,
+                              ) || 0,
+                          }
+                        : w,
+                    )
+                  }
+                />
+              </Field>
+
+              <Field
+                label="Min ratings to activate"
+                hint="Number of star ratings needed before the engine starts learning."
+              >
+                <input
+                  type="number"
+                  class={INPUT}
+                  min={1}
+                  max={1000}
+                  required
+                  value={weights.min_ratings_for_learning}
+                  onInput={(e) =>
+                    setWeights((w) =>
+                      w
+                        ? {
+                            ...w,
+                            min_ratings_for_learning:
+                              parseInt(
+                                (e.target as HTMLInputElement).value,
+                                10,
+                              ) || 1,
+                          }
+                        : w,
+                    )
+                  }
+                />
+              </Field>
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader
+              title="Implicit signals"
+              description="How much engagement signals (read, saved, dismissed) influence ranking relative to explicit ratings."
+            />
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Field
+                label="Implicit signal weight"
+                hint="0 = disabled; 0.5 = half the influence of explicit ratings; 1.0 = equal influence."
+              >
+                <input
+                  type="number"
+                  class={INPUT}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  required
+                  value={weights.implicit_signal_weight}
+                  onInput={(e) =>
+                    setWeights((w) =>
+                      w
+                        ? {
+                            ...w,
+                            implicit_signal_weight:
+                              parseFloat(
+                                (e.target as HTMLInputElement).value,
+                              ) || 0,
+                          }
+                        : w,
+                    )
+                  }
+                />
+              </Field>
+
+              <Field
+                label="Decay half-life (days)"
+                hint="Older ratings count less. After this many days a rating is worth half as much."
+              >
+                <input
+                  type="number"
+                  class={INPUT}
+                  min={1}
+                  max={3650}
+                  required
+                  value={weights.rating_decay_half_life_days}
+                  onInput={(e) =>
+                    setWeights((w) =>
+                      w
+                        ? {
+                            ...w,
+                            rating_decay_half_life_days:
+                              parseInt(
+                                (e.target as HTMLInputElement).value,
+                                10,
+                              ) || 30,
+                          }
+                        : w,
+                    )
+                  }
+                />
+              </Field>
+            </div>
+          </Card>
+
+          <div>
+            <Button type="submit" loading={savingWeights}>
+              Save ranking weights
+            </Button>
+          </div>
+        </form>
+      )}
     </div>
   );
 }

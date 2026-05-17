@@ -165,6 +165,15 @@ class ContentStore:
                 },
                 pk="url",
             )
+        if "dismissed_articles" not in self.db.table_names():
+            self.db["dismissed_articles"].create(
+                {
+                    "url": str,
+                    "title": str,
+                    "dismissed_at": str,
+                },
+                pk="url",
+            )
 
     def get_setting(self, key: str, default: str = "") -> str:
         if "settings" not in self.db.table_names():
@@ -350,6 +359,38 @@ class ContentStore:
             },
             pk="url",
         )
+
+    def dismiss_article(self, url: str, title: str | None = None) -> None:
+        """Record that the user dismissed ``url`` (not interested, no read intent).
+
+        Also marks the article as read so it is excluded from future digests.
+        The dismiss signal is stored separately so the ranking engine can treat
+        it as a mild negative implicit signal, distinct from an explicit low
+        star rating.
+        """
+        row: dict[str, Any] = {
+            "url": url,
+            "dismissed_at": datetime.now(UTC).isoformat(),
+        }
+        if title:
+            row["title"] = title.strip()
+        else:
+            row["title"] = ""
+        self.db["dismissed_articles"].upsert(row, pk="url")
+        # Also mark as read so the pipeline excludes it from future digests.
+        self.mark_article_read(url, title=title)
+
+    def get_dismissed_urls(self) -> set[str]:
+        """Return the set of all URLs the user has dismissed."""
+        if "dismissed_articles" not in self.db.table_names():
+            return set()
+        return {str(row["url"]) for row in self.db["dismissed_articles"].rows}
+
+    def dismissed_count(self) -> int:
+        """Return the total number of dismissed articles."""
+        if "dismissed_articles" not in self.db.table_names():
+            return 0
+        return self.db["dismissed_articles"].count
 
     def mark_article_read(self, url: str, title: str | None = None) -> None:
         """Record that the user has read the article at ``url``.

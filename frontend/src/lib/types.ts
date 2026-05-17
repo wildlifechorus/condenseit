@@ -1,5 +1,23 @@
 /** All shared TypeScript interfaces for CondenseIt UI. */
 
+/**
+ * Per-signal breakdown of how an article's preference_score was composed.
+ * All values are signed floats (positive = good, negative = penalised).
+ */
+export interface ScoreBreakdown {
+  keyword_high: number;
+  keyword_medium: number;
+  term_overlap: number;
+  bigram_overlap: number;
+  tfidf_cosine: number;
+  category: number;
+  source: number;
+  implicit_content: number;
+  implicit_category: number;
+  implicit_source: number;
+  synonym_boost: number;
+}
+
 export interface DigestItem {
   url: string;
   title: string;
@@ -14,6 +32,10 @@ export interface DigestItem {
   published_at?: string;
   /** Saved star rating (1-5) or null/undefined when not yet rated. */
   rating?: number | null;
+  /** Total preference score used for ranking (higher = ranked higher). */
+  preference_score?: number;
+  /** Per-signal breakdown of the preference_score. */
+  score_breakdown?: ScoreBreakdown;
 }
 
 export interface DigestEntry {
@@ -103,10 +125,35 @@ export interface PreferenceProfile {
   latest_rating: string;
   min_ratings_threshold: number;
   learning_active: boolean;
+  /** Distribution of star ratings: keys are '1'-'5', values are counts. */
+  rating_distribution: Record<string, number>;
+  /** Number of articles that were marked as read (implicit positive signal). */
+  implicit_read_count: number;
+  /** Number of articles currently saved for later (implicit strong positive). */
+  implicit_saved_count: number;
+  /** Number of articles the user has dismissed (implicit negative signal). */
+  implicit_dismissed_count: number;
+  /** Whether implicit learning is active (implicit_signal_weight > 0). */
+  implicit_learning_active: boolean;
+  /** How much weight the oldest rating carries after decay (0-1). */
+  oldest_rating_decay: number;
+  /** Decay half-life in days used for this profile. */
+  decay_half_life_days: number;
   top_liked_terms: PreferenceTerm[];
   top_disliked_terms: PreferenceTerm[];
+  top_liked_bigrams: PreferenceTerm[];
+  top_disliked_bigrams: PreferenceTerm[];
   category_preferences: PreferenceCategoryScore[];
   source_preferences: PreferenceSourceScore[];
+}
+
+export interface RankingWeights {
+  tfidf_preference_weight: number;
+  category_preference_weight: number;
+  source_preference_weight: number;
+  implicit_signal_weight: number;
+  rating_decay_half_life_days: number;
+  min_ratings_for_learning: number;
 }
 
 // ---------- Budget -------------------------------------------------------

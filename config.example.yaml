@@ -89,10 +89,23 @@ relevance:
   # Exponential time-decay half-life in days (e.g. 30 = rating from 30 days
   # ago contributes half as much as one made today).
   rating_decay_half_life_days: 30
+  # How strongly implicit engagement signals (read, saved for later, dismissed)
+  # influence ranking relative to explicit star ratings.
+  # 0 = disabled; 0.5 = half the weight of star ratings; 1.0 = equal weight.
+  # All six relevance weights can also be overridden live in Admin > Settings.
+  implicit_signal_weight: 0.5
 
   initial_keywords:
     high: ["kubernetes", "CVE", "security", "breaking change", "cursor", "llm"]
     medium: ["docker", "github", "python", "go", "rust", "fpv", "drone"]
+
+  # Optional synonym groups: terms in the same group propagate profile weight
+  # to each other during scoring. Keys are arbitrary labels; values are
+  # lists of equivalent lowercase terms.
+  # topic_synonyms:
+  #   kubernetes: ["k8s", "helm", "kubectl"]
+  #   security:   ["infosec", "cybersecurity", "appsec"]
+  #   ai:         ["llm", "gpt", "generative"]
 
 output:
   format: "both"

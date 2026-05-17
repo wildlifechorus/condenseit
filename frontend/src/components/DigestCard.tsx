@@ -2,8 +2,92 @@ import { useState, useEffect } from 'preact/hooks';
 import { Badge, kindVariant } from './Badge';
 import { RatingStars } from './RatingStars';
 import { cleanSummary } from '../lib/clean-summary';
-import type { DigestItem } from '../lib/types';
+import type { DigestItem, ScoreBreakdown } from '../lib/types';
 import { api } from '../lib/api';
+
+/** Human-readable labels for each score signal. */
+const SIGNAL_LABELS: Record<keyof ScoreBreakdown, string> = {
+  keyword_high: 'Keyword (high)',
+  keyword_medium: 'Keyword (medium)',
+  term_overlap: 'Topic terms',
+  bigram_overlap: 'Topic phrases',
+  tfidf_cosine: 'Content similarity',
+  category: 'Category',
+  source: 'Source',
+  implicit_content: 'Read/saved content',
+  implicit_category: 'Read/saved category',
+  implicit_source: 'Read/saved source',
+  synonym_boost: 'Related topics',
+};
+
+/** Collapsible score breakdown panel shown at the bottom of each card. */
+function ScoreBreakdownPanel({ breakdown }: { breakdown: ScoreBreakdown }) {
+  const [open, setOpen] = useState(false);
+  const nonZero = (
+    Object.entries(breakdown) as [keyof ScoreBreakdown, number][]
+  ).filter(([, v]) => Math.abs(v) > 0.001);
+
+  if (nonZero.length === 0) return null;
+
+  const maxAbs = Math.max(...nonZero.map(([, v]) => Math.abs(v)), 0.1);
+
+  return (
+    <div class="pt-1">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((o) => !o);
+        }}
+        class="flex items-center gap-1 text-xs text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+      >
+        <svg
+          class={`w-3 h-3 transition-transform ${open ? 'rotate-90' : ''}`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2.5"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M8.25 4.5l7.5 7.5-7.5 7.5"
+          />
+        </svg>
+        Why ranked here?
+      </button>
+      {open && (
+        <div class="mt-2 space-y-1.5">
+          {nonZero.map(([key, val]) => {
+            const pct = (Math.abs(val) / maxAbs) * 100;
+            const isPos = val >= 0;
+            return (
+              <div key={key} class="flex items-center gap-2">
+                <span class="text-xs text-slate-500 dark:text-slate-400 w-32 flex-shrink-0 truncate">
+                  {SIGNAL_LABELS[key]}
+                </span>
+                <div class="flex-1 flex items-center gap-1">
+                  <div class="flex-1 bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                    <div
+                      class={`h-1.5 rounded-full ${isPos ? 'bg-teal-400 dark:bg-teal-500' : 'bg-rose-400 dark:bg-rose-500'}`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <span
+                    class={`text-xs font-mono w-10 text-right flex-shrink-0 ${isPos ? 'text-teal-600 dark:text-teal-400' : 'text-rose-500 dark:text-rose-400'}`}
+                  >
+                    {isPos ? '+' : ''}
+                    {val.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface DigestCardProps {
   item: DigestItem;
@@ -201,6 +285,10 @@ export function DigestCard({
         >
           {summary}
         </p>
+      )}
+
+      {item.score_breakdown && (
+        <ScoreBreakdownPanel breakdown={item.score_breakdown} />
       )}
 
       {item.url && (

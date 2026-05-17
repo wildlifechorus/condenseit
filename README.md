@@ -3,7 +3,8 @@
 > Self-hosted AI news digest. Collect RSS feeds, YouTube channels, website
 > diffs, Google News searches, Hacker News, Reddit, and GitHub Releases,
 > summarize with a local LLM (Ollama) or OpenRouter, learn your preferences
-> via star ratings, and read a daily digest in the browser.
+> from star ratings and engagement signals, and read a daily digest in the
+> browser.
 
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License MIT](https://img.shields.io/badge/license-MIT-green)
@@ -26,9 +27,23 @@ Both modes use the same unified web UI: digest reader and admin panel.
 ## What it does
 
 CondenseIt pulls from the sources you configure, scores and summarizes each
-article with a local or cloud LLM, ranks articles by your learned preferences
-(star ratings feed a TF-IDF cosine preference engine), and produces a daily
-digest you can read in the browser.
+article with a local or cloud LLM, ranks articles by your learned preferences,
+and produces a daily digest you can read in the browser.
+
+The ranking engine learns from multiple signals:
+
+| Signal | Type | Effect |
+|--------|------|--------|
+| **Star rating 4-5** | Explicit positive | Boosts matched terms, category, and source |
+| **Star rating 1-2** | Explicit negative | Penalises matched terms, category, and source |
+| **Mark as read** | Implicit mild positive | Mild boost to category and content profile |
+| **Save for later** | Implicit strong positive | Strong boost to category and content profile |
+| **Dismiss** | Implicit mild negative | Mild penalty to category and content profile |
+
+Scores are additive across eleven named signals (keywords, term overlap, bigram
+phrases, TF-IDF cosine, category, source, three implicit channels, and synonym
+boost). Every article card shows a collapsible "Why ranked here?" breakdown so
+you can see exactly what drove its position.
 
 **Supported source types** (all configured from Admin > Sources, no API keys needed):
 
@@ -50,8 +65,8 @@ digest you can read in the browser.
 | **LLM** | Provider, model, OpenRouter cheapest-model option, Ollama pull/delete |
 | **API keys** | OpenRouter key storage, encrypted at rest in SQLite |
 | **Schedule** | Enable/disable automatic digest runs, set daily run times, and view the next scheduled run |
-| **Digest** | Article limits, category balance, article age cutoff, language filter, and summary format |
-| **Profile** | Read-only learning profile built from your star ratings |
+| **Settings** | Article limits, category balance, article age cutoff, language filter, summary format, and **ranking weights** |
+| **Preferences** | Learning profile: rating distribution, liked/disliked terms and phrases, category and source scores, implicit signal counts, and time-decay info |
 | **Security** | Change the admin password and warn when the default password is still active |
 | **Budget** | OpenRouter account usage, local pipeline cost tracking, and daily/monthly budget limits |
 | **Logs** | Full output captured from recent digest runs |
@@ -179,9 +194,67 @@ Settings also editable live in the admin panel (stored in SQLite, no restart nee
 - **Digest** - `max_articles_per_digest`, `balance_digest_categories`,
   `max_articles_per_category`, `max_article_age_hours`,
   `preferred_languages`, `max_key_takeaways`, `max_summary_paragraphs`
+- **Ranking weights** - `tfidf_preference_weight`, `category_preference_weight`,
+  `source_preference_weight`, `implicit_signal_weight`,
+  `rating_decay_half_life_days`, `min_ratings_for_learning`
 - **LLM** - provider, model, OpenRouter model, cheapest-model selection
 - **Budget** - OpenRouter daily and monthly budget limits
 - **Security** - admin password
+
+---
+
+## Preference learning
+
+The ranking engine builds a preference profile from everything you do in the
+digest reader. No minimum setup is required; it activates automatically once
+you have at least 5 star ratings (configurable via `min_ratings_for_learning`).
+
+**Explicit ratings (1-5 stars)**
+
+- Ratings 4-5 add to the liked term profile, bigram profile, category average,
+  and source average.
+- Ratings 1-2 penalise those same signals.
+- Rating 3 is neutral for terms but still contributes to category/source means.
+- All rating rows decay exponentially over time (default half-life: 30 days) so
+  stale preferences fade and recent tastes dominate.
+
+**Implicit signals**
+
+Three engagement actions contribute automatically without requiring a star rating:
+
+- **Read** (mark as read): treated as a mild positive (equivalent to ~3.8 stars).
+- **Save for later**: treated as a strong positive (~4.5 stars).
+- **Dismiss**: treated as a mild negative (~1.5 stars), distinct from "mark as
+  read". Dismiss tells the engine you saw the article and were not interested,
+  which penalises the article's terms, category, and source in future ranking.
+
+Implicit contributions are scaled by `implicit_signal_weight` (default `0.5`)
+so they always have less influence than explicit star ratings.
+
+**Topic synonyms**
+
+Optional synonym groups let the engine propagate profile weight across related
+terms without retraining. For example, rating a "kubernetes" article highly will
+also boost articles mentioning "k8s" or "helm" when they are in the same
+synonym group:
+
+```yaml
+relevance:
+  topic_synonyms:
+    kubernetes: ["k8s", "helm", "kubectl"]
+    security:   ["infosec", "cybersecurity", "appsec"]
+```
+
+**Score transparency**
+
+Every article card in the digest shows a collapsible "Why ranked here?" panel
+listing each contributing signal as a proportional bar. The **Admin > Preferences**
+page shows the full learned profile: rating distribution histogram, liked/disliked
+terms sized by weight, category and source bars, bigram phrases, implicit signal
+counts, and the current decay weight of your oldest rating.
+
+All ranking weights are adjustable live in **Admin > Settings > Ranking weights**
+without restarting the server.
 
 ---
 

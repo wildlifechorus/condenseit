@@ -121,6 +121,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
         relevance.category_preference_weight,
         relevance.source_preference_weight,
         relevance.rating_decay_half_life_days,
+        relevance.implicit_signal_weight,
+        relevance.topic_synonyms,
     )
 
     def _get_schedule_times() -> list[str]:
@@ -487,6 +489,25 @@ def create_app(config_path: str | None = None) -> FastAPI:
         store.rate_article(url, rating)
         return JSONResponse({"ok": True})
 
+    # --- Dismiss tracking ----------------------------------------------
+
+    @app.post("/api/dismiss", response_model=None)
+    async def api_dismiss(body: dict[str, Any]) -> JSONResponse:
+        """Mark an article as dismissed: mild negative signal + mark as read.
+
+        The dismiss action is distinct from ``POST /api/read``: it records that
+        the user saw the article but was not interested, giving the ranking
+        engine a negative implicit signal for the article's terms, category,
+        and source. The article is also marked as read so it is excluded from
+        future digests.
+        """
+        url = str(body.get("url", "")).strip()
+        if not url:
+            return JSONResponse({"error": "Missing url"}, status_code=422)
+        title = str(body.get("title", "")).strip() or None
+        store.dismiss_article(url, title=title)
+        return JSONResponse({"ok": True})
+
     # --- Read tracking -------------------------------------------------
 
     @app.get("/api/read", response_model=None)
@@ -552,6 +573,65 @@ def create_app(config_path: str | None = None) -> FastAPI:
     @app.get("/api/preferences/profile", response_model=None)
     async def api_preferences_profile() -> JSONResponse:
         return JSONResponse(preferences.profile_summary())
+
+    # --- Ranking weights (admin-tunable) --------------------------------
+
+    _WEIGHT_FLOAT_KEYS = {
+        "tfidf_preference_weight": (0.0, 5.0),
+        "category_preference_weight": (0.0, 5.0),
+        "source_preference_weight": (0.0, 5.0),
+        "implicit_signal_weight": (0.0, 1.0),
+    }
+    _WEIGHT_INT_KEYS = {
+        "rating_decay_half_life_days": (1, 3650),
+        "min_ratings_for_learning": (1, 1000),
+    }
+
+    @app.get("/api/preferences/weights", response_model=None)
+    async def api_get_ranking_weights() -> JSONResponse:
+        """Return the current effective ranking weights (DB overrides + defaults)."""
+        merged = apply_db_settings(load_config(config_path), store)
+        rel = merged.relevance
+        return JSONResponse({
+            "tfidf_preference_weight": rel.tfidf_preference_weight,
+            "category_preference_weight": rel.category_preference_weight,
+            "source_preference_weight": rel.source_preference_weight,
+            "implicit_signal_weight": rel.implicit_signal_weight,
+            "rating_decay_half_life_days": rel.rating_decay_half_life_days,
+            "min_ratings_for_learning": rel.min_ratings_for_learning,
+        })
+
+    @app.put("/api/preferences/weights", response_model=None)
+    async def api_save_ranking_weights(body: dict[str, Any]) -> JSONResponse:
+        """Persist ranking weight overrides to the settings table."""
+        errors: list[str] = []
+        for key, (lo, hi) in _WEIGHT_FLOAT_KEYS.items():
+            if key in body:
+                try:
+                    val = float(body[key])
+                    if lo <= val <= hi:
+                        store.set_setting(key, str(val))
+                    else:
+                        errors.append(
+                            f"{key} must be between {lo} and {hi}, got {val}"
+                        )
+                except (ValueError, TypeError):
+                    errors.append(f"{key} must be a number")
+        for key, (lo, hi) in _WEIGHT_INT_KEYS.items():
+            if key in body:
+                try:
+                    val = int(body[key])
+                    if lo <= val <= hi:
+                        store.set_setting(key, str(val))
+                    else:
+                        errors.append(
+                            f"{key} must be between {lo} and {hi}, got {val}"
+                        )
+                except (ValueError, TypeError):
+                    errors.append(f"{key} must be an integer")
+        if errors:
+            return JSONResponse({"errors": errors}, status_code=422)
+        return JSONResponse({"ok": True})
 
     # ==================================================================
     # Legacy Jinja2 HTML routes (kept during transition)

@@ -125,12 +125,68 @@ set in `config.yaml`:
 - `preferred_languages`: ISO 639-1 codes (e.g. `["en", "pt"]`). Leave empty to
   accept all languages. Language detection uses `langdetect`.
 
-## Preferences
+## Preferences and ranking
 
-- `relevance.tfidf_preference_weight`: blend of cosine similarity between article
-  tokens and a profile built from your star ratings (set `0` to disable).
-- The learned preference profile (category scores, source scores, liked/disliked
-  topics) is visible in **Admin > Preferences**.
+The ranking engine learns from both explicit star ratings and implicit engagement
+signals. All weights can be adjusted live in **Admin > Settings > Ranking weights**
+without restarting the server.
+
+### Explicit ratings
+
+Each article you rate 4-5 stars contributes positively to the term-level profile,
+category preference, and source preference. Articles rated 1-2 stars contribute
+negatively. 3-star ratings are neutral for terms but still influence category/source
+averages. After `min_ratings_for_learning` ratings, the engine becomes active.
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `relevance.min_ratings_for_learning` | `5` | Ratings needed before learning activates |
+| `relevance.tfidf_preference_weight` | `0.35` | Term-level cosine similarity weight (set `0` to disable) |
+| `relevance.category_preference_weight` | `0.6` | Per-category mean-rating weight |
+| `relevance.source_preference_weight` | `0.3` | Per-source mean-rating weight |
+| `relevance.rating_decay_half_life_days` | `30` | Older ratings decay exponentially; this is the half-life in days |
+
+### Implicit signals
+
+Beyond explicit ratings, the engine learns from three engagement signals:
+
+| Signal | Interpretation | Virtual rating equivalent |
+|--------|---------------|--------------------------|
+| Mark as read | Mild positive interest (you engaged with it) | 3.8 stars |
+| Save for later | Strong positive interest | 4.5 stars |
+| Dismiss | Mild disinterest (you saw it, not interested) | 1.5 stars |
+
+- `relevance.implicit_signal_weight` (default `0.5`): scales the total contribution
+  of implicit signals relative to explicit ratings. Set to `0` to disable implicit
+  learning entirely.
+
+### Score breakdown
+
+Every ranked article receives a `score_breakdown` dict stored in `digest_items`.
+The digest card in the admin UI shows a collapsible "Why ranked here?" section
+listing each contributing signal (keyword hits, term overlap, TF-IDF, category,
+source, implicit content/category/source, synonym boost).
+
+### Topic synonyms
+
+Optional synonym groups let the engine propagate profile weight across related
+terms. Defined in `config.yaml` under `relevance.topic_synonyms`:
+
+```yaml
+relevance:
+  topic_synonyms:
+    kubernetes: ["k8s", "helm", "kubectl"]
+    security:   ["infosec", "cybersecurity", "appsec"]
+```
+
+When an article mentions `k8s`, the engine checks the profile for `kubernetes` and
+vice versa, boosting or penalising the article accordingly.
+
+### Learning profile
+
+The full learned profile (category scores, source scores, liked/disliked topics
+and phrases, rating distribution, implicit signal counts, decay info) is visible
+in **Admin > Preferences**.
 
 ## Scheduling
 

@@ -83,6 +83,14 @@ class RelevanceConfig(BaseModel):
     category_preference_weight: float = 0.6
     source_preference_weight: float = 0.3
     rating_decay_half_life_days: int = 30
+    # Weight applied to implicit engagement signals (read, read-later, dismiss).
+    # Values in (0, 1]; 0.5 means implicit signals count half as much as explicit
+    # star ratings. Set to 0 to disable implicit learning entirely.
+    implicit_signal_weight: float = 0.5
+    # Synonym groups: terms in the same group propagate profile weight to each
+    # other during scoring. Keys are arbitrary group labels; values are lists of
+    # equivalent terms (all lowercase). E.g. kubernetes: [k8s, helm, kubectl].
+    topic_synonyms: dict[str, list[str]] = Field(default_factory=dict)
 
 
 class OutputConfig(BaseModel):

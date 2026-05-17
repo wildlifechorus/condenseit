@@ -127,4 +127,33 @@ def apply_db_settings(config: AppConfig, store: ContentStore) -> AppConfig:
         except ValueError:
             pass
 
+    # Ranking / preference engine weights
+    for key, attr, lo, hi in [
+        ("tfidf_preference_weight", "tfidf_preference_weight", 0.0, 5.0),
+        ("category_preference_weight", "category_preference_weight", 0.0, 5.0),
+        ("source_preference_weight", "source_preference_weight", 0.0, 5.0),
+        ("implicit_signal_weight", "implicit_signal_weight", 0.0, 1.0),
+    ]:
+        raw = store.get_setting(key, "")
+        if raw:
+            try:
+                val_f = float(raw)
+                if lo <= val_f <= hi:
+                    setattr(config.relevance, attr, val_f)
+            except ValueError:
+                pass
+
+    for key, attr, lo, hi in [
+        ("rating_decay_half_life_days", "rating_decay_half_life_days", 1, 3650),
+        ("min_ratings_for_learning", "min_ratings_for_learning", 1, 1000),
+    ]:
+        raw = store.get_setting(key, "")
+        if raw:
+            try:
+                val_i = int(raw)
+                if lo <= val_i <= hi:
+                    setattr(config.relevance, attr, val_i)
+            except ValueError:
+                pass
+
     return config
