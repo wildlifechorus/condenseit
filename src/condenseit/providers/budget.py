@@ -13,10 +13,12 @@ class BudgetTracker:
         store: ContentStore,
         daily_limit: float,
         monthly_limit: float,
+        digest_run_id: str = "",
     ) -> None:
         self.store = store
         self.daily_limit = daily_limit
         self.monthly_limit = monthly_limit
+        self.digest_run_id = digest_run_id
 
     @property
     def today_spend(self) -> float:
@@ -49,5 +51,6 @@ class BudgetTracker:
                 "model": model,
                 "tokens": tokens,
                 "recorded_at": datetime.now(UTC).isoformat(),
+                "digest_run_id": self.digest_run_id,
             },
         )

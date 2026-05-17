@@ -422,23 +422,14 @@ def create_app(config_path: str | None = None) -> FastAPI:
             d_at = str(digest.get("created_at", ""))
             stats_raw = digest.get("stats_json", "") or ""
             articles = 0
+            stats: dict[str, Any] = {}
             try:
-                stats = json.loads(stats_raw)
+                parsed_stats = json.loads(stats_raw)
+                stats = parsed_stats if isinstance(parsed_stats, dict) else {}
                 articles = int(stats.get("articles_count", 0))
-            except (json.JSONDecodeError, TypeError):
+            except (json.JSONDecodeError, TypeError, ValueError):
                 pass
-            cost = 0.0
-            if d_at and "spending" in store.db.table_names():
-                try:
-                    rows2 = list(store.db.query(
-                        "SELECT SUM(amount_usd) as total FROM spending"
-                        " WHERE recorded_at >= ?"
-                        " AND recorded_at <= datetime(?, '+10 minutes')",
-                        [d_at[:16], d_at[:16]],
-                    ))
-                    cost = float(rows2[0]["total"] or 0) if rows2 else 0.0
-                except Exception:
-                    pass
+            cost = _digest_cost_usd(store, d_id, d_at, stats)
             recent_digests.append({
                 "digest_id": d_id,
                 "created_at": d_at,
@@ -645,6 +636,90 @@ def _sum_spending(store: ContentStore, where: str) -> float:
         return float(rows[0]["total"] or 0) if rows else 0.0
     except Exception:
         return 0.0
+
+
+def _digest_cost_usd(
+    store: ContentStore,
+    digest_id: Any,
+    created_at: str,
+    stats: dict[str, Any],
+) -> float:
+    stats_cost = _stats_cost_usd(stats)
+    if stats_cost > 0:
+        return stats_cost
+
+    if not created_at or "spending" not in store.db.table_names():
+        return 0.0
+
+    try:
+        parsed_digest_id = int(digest_id)
+    except (TypeError, ValueError):
+        parsed_digest_id = 0
+
+    explicit_cost = _explicit_digest_cost_usd(store, parsed_digest_id)
+    if explicit_cost > 0:
+        return explicit_cost
+
+    return _historical_digest_cost_usd(store, parsed_digest_id, created_at)
+
+
+def _stats_cost_usd(stats: dict[str, Any]) -> float:
+    try:
+        return float(stats.get("cost_usd", 0) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _explicit_digest_cost_usd(store: ContentStore, digest_id: int) -> float:
+    if digest_id <= 0 or not _spending_has_column(store, "digest_id"):
+        return 0.0
+    try:
+        rows = list(store.db.query(
+            "SELECT SUM(amount_usd) as total FROM spending WHERE digest_id = ?",
+            [digest_id],
+        ))
+        return float(rows[0]["total"] or 0) if rows else 0.0
+    except Exception:
+        return 0.0
+
+
+def _historical_digest_cost_usd(
+    store: ContentStore,
+    digest_id: int,
+    created_at: str,
+) -> float:
+    try:
+        previous_rows = list(store.db.query(
+            "SELECT created_at FROM digests"
+            " WHERE id < ? ORDER BY id DESC LIMIT 1",
+            [digest_id],
+        ))
+        previous_created_at = (
+            str(previous_rows[0]["created_at"] or "")
+            if previous_rows else ""
+        )
+        where = "recorded_at <= ?"
+        params: list[Any] = [created_at]
+        if previous_created_at:
+            where = f"recorded_at > ? AND {where}"
+            params.insert(0, previous_created_at)
+        rows = list(store.db.query(
+            f"SELECT SUM(amount_usd) as total FROM spending WHERE {where}",
+            params,
+        ))
+        return float(rows[0]["total"] or 0) if rows else 0.0
+    except Exception:
+        return 0.0
+
+
+def _spending_has_column(store: ContentStore, column: str) -> bool:
+    try:
+        return any(
+            row[1] == column
+            for row in store.db.execute("PRAGMA table_info(spending)").fetchall()
+        )
+    except Exception:
+        return False
 
 
 def _build_digest_detail(

@@ -13,7 +13,11 @@ from condenseit.store.database import ContentStore
 from condenseit.store.secure_keys import SecureKeyStore
 
 
-def build_summarizer(config: AppConfig, store: ContentStore) -> SummarizerProvider:
+def build_summarizer(
+    config: AppConfig,
+    store: ContentStore,
+    digest_run_id: str = "",
+) -> SummarizerProvider:
     keys = SecureKeyStore(store)
     provider = config.llm.provider.lower()
     model = config.model
@@ -36,6 +40,7 @@ def build_summarizer(config: AppConfig, store: ContentStore) -> SummarizerProvid
         store,
         config.llm.openrouter_daily_budget_usd,
         config.llm.openrouter_monthly_budget_usd,
+        digest_run_id=digest_run_id,
     )
     or_model = config.llm.openrouter_model or model
     if config.llm.openrouter_pick_cheapest:

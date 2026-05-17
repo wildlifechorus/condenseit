@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from condenseit.store.database import ContentStore
-from condenseit.web.app import create_app
+from condenseit.web.app import _digest_cost_usd, create_app
 
 # All API routes now require auth. Use the built-in default password via Bearer token.
 _AUTH = {"Authorization": "Bearer condenseit"}
@@ -111,6 +111,83 @@ def test_digest_api_returns_items(
     # Summary should have LLM prefix stripped
     assert not item["summary"].startswith("Here is")
     assert "Summary text" in item["summary"]
+
+
+def test_digest_cost_uses_explicit_spending_link(tmp_path) -> None:
+    """Digest-linked spend rows should be preferred over timestamp inference."""
+    store = ContentStore(db_path=tmp_path / "test.db")
+    digest_id = store.save_digest(
+        "# Costed",
+        "<p>Costed</p>",
+        json.dumps({"articles_count": 1}),
+    )
+    store.db["spending"].insert(
+        {
+            "amount_usd": 0.1234,
+            "model": "openrouter/test",
+            "tokens": 100,
+            "recorded_at": "2026-05-17T07:00:00+00:00",
+            "digest_id": digest_id,
+            "digest_run_id": "run-1",
+        },
+    )
+
+    cost = _digest_cost_usd(
+        store,
+        digest_id,
+        "2026-05-17T07:05:00+00:00",
+        {},
+    )
+
+    assert cost == pytest.approx(0.1234)
+
+
+def test_digest_cost_falls_back_to_previous_digest_window(tmp_path) -> None:
+    """Old spend rows without digest IDs are grouped by digest boundaries."""
+    store = ContentStore(db_path=tmp_path / "test.db")
+    first_id = store.save_digest(
+        "# First",
+        "<p>First</p>",
+        json.dumps({"articles_count": 1}),
+    )
+    store.db.execute(
+        "UPDATE digests SET created_at = ? WHERE id = ?",
+        ["2026-05-17T07:00:00+00:00", first_id],
+    )
+    second_id = store.save_digest(
+        "# Second",
+        "<p>Second</p>",
+        json.dumps({"articles_count": 1}),
+    )
+    store.db.execute(
+        "UPDATE digests SET created_at = ? WHERE id = ?",
+        ["2026-05-17T07:10:00+00:00", second_id],
+    )
+    store.db["spending"].insert_all(
+        [
+            {
+                "amount_usd": 0.01,
+                "model": "openrouter/test",
+                "tokens": 10,
+                "recorded_at": "2026-05-17T07:05:00+00:00",
+            },
+            {
+                "amount_usd": 0.02,
+                "model": "openrouter/test",
+                "tokens": 20,
+                "recorded_at": "2026-05-17T07:09:00+00:00",
+            },
+        ],
+    )
+
+    cost = _digest_cost_usd(
+        store,
+        second_id,
+        "2026-05-17T07:10:00+00:00",
+        {},
+    )
+
+    assert cost == pytest.approx(0.03)
 
 
 def test_ratings_api_prefers_digest_items(

@@ -77,9 +77,26 @@ class ContentStore:
                     "model": str,
                     "tokens": int,
                     "recorded_at": str,
+                    "digest_id": int,
+                    "digest_run_id": str,
                 },
                 pk="id",
             )
+        else:
+            existing_cols = {
+                row[1]
+                for row in self.db.execute(
+                    "PRAGMA table_info(spending)"
+                ).fetchall()
+            }
+            if "digest_id" not in existing_cols:
+                self.db.execute(
+                    "ALTER TABLE spending ADD COLUMN digest_id INTEGER"
+                )
+            if "digest_run_id" not in existing_cols:
+                self.db.execute(
+                    "ALTER TABLE spending ADD COLUMN digest_run_id TEXT"
+                )
         if "api_keys" not in self.db.table_names():
             self.db["api_keys"].create(
                 {
@@ -253,6 +270,32 @@ class ContentStore:
         }
         self.db["digests"].insert(row)
         return int(self.db.execute("SELECT last_insert_rowid()").fetchone()[0])
+
+    def update_digest_stats(self, digest_id: int, stats_json: str) -> None:
+        self.db.execute(
+            "UPDATE digests SET stats_json = ? WHERE id = ?",
+            [stats_json, digest_id],
+        )
+
+    def attach_spending_to_digest(
+        self,
+        digest_run_id: str,
+        digest_id: int,
+    ) -> None:
+        """Associate OpenRouter spend rows from one pipeline run with a digest."""
+        if not digest_run_id:
+            return
+        self.db.execute(
+            "UPDATE spending SET digest_id = ? WHERE digest_run_id = ?",
+            [digest_id, digest_run_id],
+        )
+
+    def sum_spending_for_digest(self, digest_id: int) -> float:
+        row = self.db.execute(
+            "SELECT COALESCE(SUM(amount_usd), 0) FROM spending WHERE digest_id = ?",
+            [digest_id],
+        ).fetchone()
+        return float(row[0] or 0)
 
     def latest_digest(self) -> dict[str, Any] | None:
         rows = list(

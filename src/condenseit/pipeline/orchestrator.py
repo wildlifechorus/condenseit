@@ -6,6 +6,7 @@ import json
 import logging
 import shutil
 import time
+import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -41,7 +42,12 @@ class DigestPipeline:
         self.config = apply_db_settings(self.config, self.store)
         self.sources = SourceRegistry(self.store)
         self.sources.seed_from_config(self.config)
-        self.summarizer: SummarizerProvider = build_summarizer(self.config, self.store)
+        self.digest_run_id = uuid.uuid4().hex
+        self.summarizer: SummarizerProvider = build_summarizer(
+            self.config,
+            self.store,
+            digest_run_id=self.digest_run_id,
+        )
         self.preferences = PreferenceEngine(
             self.store,
             self.config.relevance.min_ratings_for_learning,
@@ -189,6 +195,9 @@ class DigestPipeline:
             keyword_high={k.lower() for k in keywords.get("high", [])},
             keyword_medium={k.lower() for k in keywords.get("medium", [])},
         )
+        # Deduplicate after ranking so the highest-scoring version of each
+        # story cluster is the one that survives.
+        ranked = self._deduplicate_stories(ranked)
         max_n = self.config.max_articles_per_digest
         if self.config.balance_digest_categories:
             ranked = select_balanced_digest_articles(
@@ -259,14 +268,21 @@ class DigestPipeline:
             "processing_time": f"{elapsed:.0f}s",
             "model": self.summarizer.model_name,
             "dry_run": dry_run,
+            "cost_usd": 0.0,
             "digest_items": digest_items,
         }
         self._save_outputs()
-        self.store.save_digest(
+        digest_id = self.store.save_digest(
             self.digest_md,
             self.digest_html,
             json.dumps(self.stats),
         )
+        if not dry_run:
+            self.store.attach_spending_to_digest(self.digest_run_id, digest_id)
+            self.stats["cost_usd"] = self.store.sum_spending_for_digest(
+                digest_id
+            )
+            self.store.update_digest_stats(digest_id, json.dumps(self.stats))
         logger.info("Digest complete in %s", self.stats["processing_time"])
         return self.stats
 
@@ -472,6 +488,57 @@ class DigestPipeline:
                 ' %r, %d remaining',
                 dropped,
                 raw_phrases,
+                len(kept),
+            )
+        return kept
+
+    def _deduplicate_stories(
+        self, articles: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Remove cross-source duplicates from an already-ranked article list.
+
+        When multiple publishers cover the same event they produce articles
+        with similar but not identical headlines.  This step iterates through
+        the ranked list and skips any article whose title is too similar
+        (Jaccard word-set similarity >= 0.35) to a story already kept.
+        Because the input is ranked, the highest-scoring version of each
+        story cluster is always the one that survives.
+
+        Titles shorter than 3 words are never fuzzy-matched to avoid
+        false-positive suppression of genuinely distinct short headlines.
+        """
+        if not articles:
+            return articles
+
+        _THRESHOLD = 0.35
+
+        def _jaccard(a: frozenset[str], b: frozenset[str]) -> float:
+            union = a | b
+            return len(a & b) / len(union) if union else 0.0
+
+        kept: list[dict[str, Any]] = []
+        kept_word_sets: list[frozenset[str]] = []
+        dropped = 0
+
+        for art in articles:
+            title = str(art.get('title') or '').lower().strip()
+            words = frozenset(title.split())
+            if len(words) >= 3 and any(
+                _jaccard(words, existing) >= _THRESHOLD
+                for existing in kept_word_sets
+                if len(existing) >= 3
+            ):
+                dropped += 1
+                continue
+            kept.append(art)
+            kept_word_sets.append(words)
+
+        if dropped:
+            logger.info(
+                'Story dedup: removed %d near-duplicate article(s)'
+                ' (Jaccard >= %.2f), %d remaining',
+                dropped,
+                _THRESHOLD,
                 len(kept),
             )
         return kept
