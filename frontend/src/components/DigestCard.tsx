@@ -163,88 +163,92 @@ export function DigestCard({
       )}
 
       {item.url && (
-        <div class="flex items-center justify-between gap-2 mt-1 pt-2 border-t border-slate-100 dark:border-slate-800">
-          <div class="flex items-center gap-2">
-            <RatingStars
-              value={localRating}
-              onChange={handleRate}
-              disabled={saving}
-            />
-            {savedFlash && (
-              <span class="text-xs text-teal-600 dark:text-teal-400 font-medium">
-                Saved
-              </span>
-            )}
-          </div>
-
-          <div class="flex items-center gap-1.5 shrink-0">
-            {onReadLater && (
-              <button
-                type="button"
-                onClick={() => {
-                  onReadLater(item);
-                  if (!isReadLater) {
-                    setReadLaterFlash(true);
-                    setTimeout(() => setReadLaterFlash(false), 2000);
+        <div class="mt-1 pt-2 border-t border-slate-100 dark:border-slate-800 overflow-x-auto pb-1">
+          <div class="flex w-max min-w-full items-center gap-2">
+            <div class="flex items-center gap-1.5 shrink-0">
+              {onReadLater && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onReadLater(item);
+                    if (!isReadLater) {
+                      setReadLaterFlash(true);
+                      setTimeout(() => setReadLaterFlash(false), 2000);
+                    }
+                  }}
+                  title={
+                    isReadLater ? 'Remove from Read Later' : 'Save to Read Later'
                   }
-                }}
-                title={isReadLater ? 'Remove from Read Later' : 'Save to Read Later'}
-                class={[
-                  'flex items-center gap-1 text-xs px-2 py-1 rounded-md border',
-                  'transition-colors',
-                  isReadLater
-                    ? 'border-amber-200 dark:border-amber-800 text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20'
-                    : readLaterFlash
-                      ? 'border-amber-300 text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20'
-                      : 'border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:border-amber-300 hover:text-amber-600 dark:hover:text-amber-400',
-                ].join(' ')}
-              >
-                <svg
-                  class="w-3 h-3"
-                  fill={isReadLater ? 'currentColor' : 'none'}
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  stroke-width="2"
+                  class={[
+                    'flex items-center gap-1 text-xs px-2 py-1 rounded-md border',
+                    'transition-colors',
+                    isReadLater
+                      ? 'border-amber-200 dark:border-amber-800 text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20'
+                      : readLaterFlash
+                        ? 'border-amber-300 text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20'
+                        : 'border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:border-amber-300 hover:text-amber-600 dark:hover:text-amber-400',
+                  ].join(' ')}
                 >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z"
-                  />
-                </svg>
-                {isReadLater ? 'Saved' : 'Read later'}
-              </button>
-            )}
+                  <svg
+                    class="w-3 h-3"
+                    fill={isReadLater ? 'currentColor' : 'none'}
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z"
+                    />
+                  </svg>
+                  {isReadLater ? 'Saved' : 'Read later'}
+                </button>
+              )}
 
-            {onMarkRead && (
-              <button
-                type="button"
-                onClick={() => onMarkRead(item.url)}
-                title={isRead ? 'Mark as unread' : 'Mark as read'}
-                class={[
-                  'flex items-center gap-1 text-xs px-2 py-1 rounded-md border',
-                  'transition-colors',
-                  isRead
-                    ? 'border-teal-200 dark:border-teal-800 text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/20'
-                    : 'border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:border-teal-300 hover:text-teal-600 dark:hover:text-teal-400',
-                ].join(' ')}
-              >
-                <svg
-                  class="w-3 h-3"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  stroke-width="2.5"
+              {onMarkRead && (
+                <button
+                  type="button"
+                  onClick={() => onMarkRead(item.url)}
+                  title={isRead ? 'Mark as unread' : 'Mark as read'}
+                  class={[
+                    'flex items-center gap-1 text-xs px-2 py-1 rounded-md border',
+                    'transition-colors',
+                    isRead
+                      ? 'border-teal-200 dark:border-teal-800 text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/20'
+                      : 'border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:border-teal-300 hover:text-teal-600 dark:hover:text-teal-400',
+                  ].join(' ')}
                 >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M4.5 12.75l6 6 9-13.5"
-                  />
-                </svg>
-                {isRead ? 'Read' : 'Mark read'}
-              </button>
-            )}
+                  <svg
+                    class="w-3 h-3"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M4.5 12.75l6 6 9-13.5"
+                    />
+                  </svg>
+                  {isRead ? 'Read' : 'Mark read'}
+                </button>
+              )}
+            </div>
+
+            <div class="ml-auto flex items-center gap-2 shrink-0">
+              <RatingStars
+                value={localRating}
+                onChange={handleRate}
+                disabled={saving}
+              />
+              {savedFlash && (
+                <span class="text-xs text-teal-600 dark:text-teal-400 font-medium">
+                  Saved
+                </span>
+              )}
+            </div>
           </div>
         </div>
       )}

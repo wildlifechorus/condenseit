@@ -15,7 +15,7 @@ export function RatingStars({
   disabled = false,
 }: RatingStarsProps) {
   return (
-    <div class="flex gap-1" role="group" aria-label="Rating">
+    <div class="flex shrink-0 gap-1" role="group" aria-label="Rating">
       {STARS.map((n) => {
         const active = (value ?? 0) >= n;
         return (
