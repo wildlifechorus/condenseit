@@ -176,6 +176,7 @@ around each run.
 make serve            # Start web UI locally
 make run              # Run digest once
 make dry-run          # Collect without LLM
+make setup            # One-time local setup (alias for native-setup)
 make native-setup     # One-time local setup
 make native-serve     # Start web UI (builds frontend if missing)
 make run-with-ollama  # Full digest with local Ollama

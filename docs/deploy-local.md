@@ -61,7 +61,9 @@ cp .env.example .env
 Edit `config.yaml`:
 - Add your RSS feeds, YouTube channels, or watched URLs under the relevant
   sections.
-- Set `llm.provider` to `"ollama"` (default) or `"openrouter"`.
+- `llm.provider` defaults to `"openrouter"` in the example file. Change it
+  to `"ollama"` if you installed Ollama in Step 2, or leave it as
+  `"openrouter"` and set `OPENROUTER_API_KEY` in `.env`.
 
 Edit `.env`:
 - Set `OLLAMA_HOST` if Ollama is not on the default port.

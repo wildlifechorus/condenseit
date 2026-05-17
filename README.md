@@ -105,7 +105,9 @@ cd frontend && npm ci && npm run build && cd ..
 # Copy and edit config
 cp config.example.yaml config.yaml
 cp .env.example .env
-# Edit config.yaml: add your feeds, set llm.provider to "ollama" or "openrouter"
+# Edit config.yaml: add your feeds under the feeds/youtube_channels sections.
+# The example defaults to llm.provider: "openrouter" (requires OPENROUTER_API_KEY in .env).
+# Change llm.provider to "ollama" if you installed Ollama above.
 
 # Start the web UI
 condenseit serve --port 8899

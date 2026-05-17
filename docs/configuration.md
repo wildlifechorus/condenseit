@@ -124,6 +124,10 @@ set in `config.yaml`:
   hours. Set to `0` to disable the age gate.
 - `balance_digest_categories` (default `true`): reserve a slot per category before
   filling remaining slots by rank.
+- `max_key_takeaways` (default `5`, range 1-10): number of bullet-point
+  takeaways the LLM generates per article.
+- `max_summary_paragraphs` (default `5`, range 1-10): number of paragraphs in
+  the LLM-generated article summary.
 - `preferred_languages`: ISO 639-1 codes (e.g. `["en", "pt"]`). Leave empty to
   accept all languages. Language detection uses `langdetect`.
 
@@ -165,9 +169,9 @@ Beyond explicit ratings, the engine learns from three engagement signals:
 ### Score breakdown
 
 Every ranked article receives a `score_breakdown` dict stored in `digest_items`.
-The digest card in the admin UI shows a collapsible "Why ranked here?" section
-listing each contributing signal (keyword hits, term overlap, TF-IDF, category,
-source, implicit content/category/source, synonym boost).
+Every article card in the digest reader shows a collapsible "Why ranked here?"
+section listing each contributing signal (keyword hits, term overlap, TF-IDF,
+category, source, implicit content/category/source, synonym boost).
 
 ### Topic synonyms
 

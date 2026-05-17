@@ -240,7 +240,7 @@ Expected output ends with:
 Smoke check:
 
 ```bash
-curl -sf http://your.domain/api/health
+curl -sf http://your.domain/health
 # Expected: {"status":"ok"}
 ```
 
@@ -257,7 +257,7 @@ ssh digest-vps 'sudo certbot --nginx -d your.domain --non-interactive --agree-to
 Wait for Certbot to succeed. Verify HTTPS:
 
 ```bash
-curl -sf https://your.domain/api/health
+curl -sf https://your.domain/health
 # Expected: {"status":"ok"}
 ```
 
@@ -292,7 +292,8 @@ Click **Run digest** in the header or:
 ```bash
 curl -sf -X POST https://your.domain/api/digest/run \
   -H "Authorization: Bearer your-password"
-# Expected: {"status":"started"}
+# Expected: {"ok":true,"message":"Digest started.","job":{...}}
+# If a run is already in progress: {"ok":false,"message":"...","job":{...}} (HTTP 409)
 ```
 
 Monitor logs:

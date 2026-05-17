@@ -25,15 +25,16 @@ Run each check. If a tool is missing, install it before continuing.
 ```bash
 # gcloud CLI
 gcloud version
-# Expected: Google Cloud SDK 455.x.x or newer
+# Expected: Google Cloud SDK (any recent version; 455+ required for Cloud Run
+# volume mounts - gcloud will warn if an update is needed during deploy)
 
 # firebase CLI
 firebase --version
-# Expected: 13.x.x or newer
+# Expected: any recent 13.x.x or newer
 
 # Docker
 docker --version
-# Expected: Docker version 24.x or newer
+# Expected: Docker Desktop or Engine (24.x or newer recommended)
 
 # Node.js
 node --version
@@ -178,11 +179,15 @@ Expected final output:
 
 ### 4.1 Health check
 
-```bash
-HOSTING_URL="https://YOUR_PROJECT.web.app"
+The `/health` endpoint is on the Cloud Run service, not on the Firebase
+Hosting URL (Hosting only proxies `/api/**`). Use the Cloud Run URL printed
+by the deploy script:
 
-curl -sf "$HOSTING_URL/api/health"
-# Expected: {"status":"ok"} or similar JSON
+```bash
+CLOUD_RUN_URL="https://condenseit-api-HASH-uc.a.run.app"  # from deploy output
+
+curl -sf "$CLOUD_RUN_URL/health"
+# Expected: {"status":"ok"}
 ```
 
 ### 4.2 Auth check
@@ -212,7 +217,8 @@ Alternatively:
 ```bash
 curl -sf -X POST "$HOSTING_URL/api/digest/run" \
   -H "Authorization: Bearer your-password"
-# Expected: {"status":"started"} or similar
+# Expected: {"ok":true,"message":"Digest started.","job":{...}}
+# If a run is already in progress: {"ok":false,"message":"...","job":{...}} (HTTP 409)
 ```
 
 Check logs:
@@ -226,10 +232,15 @@ gcloud run services logs read condenseit-api --region us-central1 --limit 50
 ## Phase 5: configure the built-in scheduler (optional)
 
 The scheduler is enabled by default (`CONDENSEIT_SCHEDULER_ENABLED=1`). It
-runs digests at the times set in `config.schedule.times` (default `07:00` and
-`18:00`). No extra setup is needed.
+runs digests at the times configured in **Admin > Schedule** (stored in the
+database, takes effect immediately without a redeploy). The default times are
+`07:00` and `18:00` UTC.
 
-To change the schedule, edit `config.yaml` and redeploy. To disable:
+To change run times, open the web UI, go to **Admin > Schedule**, and update
+them there. Alternatively, set `config.schedule.times` in `config.yaml` as the
+initial default before the first run.
+
+To disable:
 
 ```
 CONDENSEIT_SCHEDULER_ENABLED=0

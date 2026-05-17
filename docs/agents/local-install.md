@@ -70,7 +70,7 @@ Verify:
 
 ```bash
 uv run condenseit --help
-# Expected: usage text with commands: run, serve, ratings-import, read-import, status
+# Expected: usage text with commands: run, serve, status
 ```
 
 ---
@@ -107,8 +107,9 @@ cp .env.example .env
 
 At minimum:
 - Add at least one feed to the `feeds:` section (examples are already there).
-- Verify `llm.provider` is `"ollama"` (or change to `"openrouter"` if skipped
-  Phase 3).
+- The example defaults to `llm.provider: "openrouter"`. Change it to
+  `"ollama"` if you completed Phase 3, or leave it as `"openrouter"` and
+  supply `OPENROUTER_API_KEY` in `.env`.
 
 For OpenRouter, also set:
 
@@ -188,10 +189,18 @@ cd /path/to/condenseit
 uv run condenseit run
 ```
 
-Expected output shows feed collection, LLM summarization, and finishes with:
+Expected output shows feed collection, LLM summarization, and finishes with a
+CondenseIt panel containing "Digest complete." and article/video/time/model
+counts, for example:
 
 ```
-[condenseit] Digest complete. X articles.
+╭─────────── CondenseIt ────────────╮
+│ Digest complete.                  │
+│ Articles: 42                      │
+│ Videos: 3                         │
+│ Time: 18.4s                       │
+│ Model: llama3.2:3b                │
+╰───────────────────────────────────╯
 ```
 
 Return to the browser. The digest should appear in the left sidebar.
@@ -206,7 +215,7 @@ and `18:00`). Verify the scheduler is active:
 
 ```bash
 curl -sf http://localhost:8899/api/scheduler/status
-# Expected: {"enabled":true,"next_run":"..."}
+# Expected: {"enabled":true,"next_run_utc":"...","schedule_times":["07:00","18:00"]}
 ```
 
 No cron or launchd entry is needed when using the built-in scheduler.
@@ -220,15 +229,16 @@ For manual cron scheduling instead, see `docs/scheduling.md`.
 ### 9.1 Health endpoint
 
 ```bash
-curl -sf http://localhost:8899/api/health
+curl -sf http://localhost:8899/health
 # Expected: {"status":"ok"}
 ```
 
-### 9.2 Admin sources
+### 9.2 Sources
 
 ```bash
-curl -sf http://localhost:8899/api/admin/sources
+curl -sf http://localhost:8899/api/sources
 # Expected: JSON array of configured sources
+# (add -H "Authorization: Bearer <password>" if auth is enabled)
 ```
 
 ### 9.3 Ratings (empty on fresh install)
