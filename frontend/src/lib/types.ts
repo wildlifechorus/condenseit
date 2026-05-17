@@ -32,6 +32,8 @@ export interface DigestItem {
   published_at?: string;
   /** Saved star rating (1-5) or null/undefined when not yet rated. */
   rating?: number | null;
+  /** OG or media thumbnail URL extracted during collection, if available. */
+  image_url?: string;
   /** Total preference score used for ranking (higher = ranked higher). */
   preference_score?: number;
   /** Per-signal breakdown of the preference_score. */

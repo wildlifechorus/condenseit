@@ -57,9 +57,9 @@ def test_collect_feed_falls_back_to_urllib_on_403(
         self: RSSCollector,
         url: str,
         entry: object,
-    ) -> str:
+    ) -> tuple[str, str | None]:
         assert url == article_url
-        return "Recovered summary"
+        return "Recovered summary", None
 
     collector = RSSCollector([FeedConfig(url=feed_url, category="Test")])
     collector.client = FakeClient()

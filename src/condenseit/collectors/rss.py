@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from urllib.error import URLError
@@ -19,6 +20,28 @@ from condenseit.store.database import ContentStore
 
 logger = logging.getLogger(__name__)
 
+# Matches og:image or twitter:image meta tags in any attribute order.
+# Group 1 captures the content value.
+_OG_IMAGE_RE = re.compile(
+    r'<meta\b[^>]*\bproperty=["\']og:image["\'][^>]*\bcontent=["\']([^"\']+)["\']'
+    r'|<meta\b[^>]*\bcontent=["\']([^"\']+)["\'][^>]*\bproperty=["\']og:image["\']'
+    r'|<meta\b[^>]*\bname=["\']twitter:image["\'][^>]*\bcontent=["\']([^"\']+)["\']'
+    r'|<meta\b[^>]*\bcontent=["\']([^"\']+)["\'][^>]*\bname=["\']twitter:image["\']',
+    re.IGNORECASE,
+)
+
+
+def _extract_og_image(html_text: str) -> str | None:
+    """Return the first og:image or twitter:image URL found in ``html_text``."""
+    match = _OG_IMAGE_RE.search(html_text)
+    if not match:
+        return None
+    # Return whichever capture group matched.
+    for group in match.groups():
+        if group:
+            return group.strip()
+    return None
+
 
 @dataclass
 class CollectedArticle:
@@ -29,8 +52,9 @@ class CollectedArticle:
     category: str
     published_at: str
     content_hash: str
+    image_url: str | None = field(default=None)
 
-    def to_dict(self) -> dict[str, str]:
+    def to_dict(self) -> dict[str, str | None]:
         return {
             "url": self.url,
             "title": self.title,
@@ -40,6 +64,7 @@ class CollectedArticle:
             "content_hash": self.content_hash,
             "published_at": self.published_at,
             "collected_at": datetime.now(UTC).isoformat(),
+            "image_url": self.image_url,
         }
 
 
@@ -83,7 +108,7 @@ class RSSCollector:
             if not link:
                 continue
             title = entry.get("title", "Untitled")
-            content = self._extract_content(link, entry)
+            content, image_url = self._extract_content(link, entry)
             if not content.strip():
                 continue
             published = self._parse_published(entry)
@@ -96,6 +121,7 @@ class RSSCollector:
                     category=feed.category,
                     published_at=published,
                     content_hash=ContentStore.content_hash(content),
+                    image_url=image_url,
                 ),
             )
         return items
@@ -125,20 +151,31 @@ class RSSCollector:
             raise original_exc from exc
         return body.decode(encoding, errors="replace")
 
-    def _extract_content(self, url: str, entry: feedparser.FeedParserDict) -> str:
+    def _extract_content(
+        self,
+        url: str,
+        entry: feedparser.FeedParserDict,
+    ) -> tuple[str, str | None]:
+        """Fetch the article page and return ``(text_content, image_url)``.
+
+        ``image_url`` is the first ``og:image`` or ``twitter:image`` found on
+        the page, or ``None`` when unavailable.
+        """
         try:
             page = self.client.get(url)
             page.raise_for_status()
+            image_url = _extract_og_image(page.text)
             extracted = trafilatura.extract(
                 page.text,
                 include_comments=False,
             )
             if extracted:
-                return extracted
+                return extracted, image_url
         except Exception:
             logger.debug("article fetch failed for %s", url, exc_info=True)
         summary = entry.get("summary", "")
-        return summary if isinstance(summary, str) else str(summary)
+        content = summary if isinstance(summary, str) else str(summary)
+        return content, None
 
     @staticmethod
     def _parse_published(entry: feedparser.FeedParserDict) -> str:

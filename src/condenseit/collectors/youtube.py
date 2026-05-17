@@ -5,7 +5,7 @@ from __future__ import annotations
 import html
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
@@ -33,8 +33,9 @@ class VideoItem:
     channel: str
     category: str
     body: str
+    image_url: str | None = field(default=None)
 
-    def to_dict(self) -> dict[str, str]:
+    def to_dict(self) -> dict[str, str | None]:
         return {
             "url": self.url,
             "title": self.title,
@@ -44,6 +45,7 @@ class VideoItem:
             "content_hash": ContentStore.content_hash(self.body),
             "published_at": datetime.now(UTC).isoformat(),
             "collected_at": datetime.now(UTC).isoformat(),
+            "image_url": self.image_url,
         }
 
 
@@ -111,6 +113,7 @@ class YouTubeCollector:
                     vid,
                 )
             title = entry.get("title", vid)
+            thumbnail = _extract_video_thumbnail(entry, vid)
             items.append(
                 VideoItem(
                     video_id=vid,
@@ -119,6 +122,7 @@ class YouTubeCollector:
                     channel=label,
                     category=ch.category,
                     body=body[:_MAX_BODY_CHARS],
+                    image_url=thumbnail,
                 ),
             )
             self._mark_processed(vid)
@@ -171,6 +175,20 @@ class YouTubeCollector:
         plain = html.unescape(plain)
         plain = re.sub(r"\s+", " ", plain).strip()
         return plain[:_MAX_BODY_CHARS]
+
+
+def _extract_video_thumbnail(entry: Any, video_id: str) -> str:
+    """Return the best available thumbnail URL for a YouTube feed entry.
+
+    Prefers ``media:thumbnail`` from the feed (highest quality available).
+    Falls back to the standard YouTube HQ thumbnail URL when absent.
+    """
+    thumbnails = entry.get("media_thumbnail") or []
+    if thumbnails and isinstance(thumbnails, list):
+        url = thumbnails[0].get("url", "")
+        if url:
+            return url
+    return f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
 
 
 def _extract_video_id(url: str) -> str | None:

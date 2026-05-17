@@ -240,40 +240,56 @@ export function DigestCard({
         )}
       </div>
 
-      <h3 class="text-sm font-semibold text-slate-900 dark:text-slate-100 leading-snug">
-        {/*
-         * When a detail panel is available, left-click opens it.
-         * The href is still present so right-click / middle-click opens the
-         * source URL directly in a new tab.
-         */}
-        <a
-          href={item.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={
-            onSelect
-              ? (e) => {
-                  e.preventDefault();
-                  onSelect(item);
-                }
-              : undefined
-          }
-          class={[
-            'transition-colors',
-            onSelect
-              ? 'cursor-pointer hover:text-teal-600 dark:hover:text-teal-400'
-              : 'hover:text-teal-600 dark:hover:text-teal-400',
-          ].join(' ')}
-        >
-          {item.title || 'Untitled'}
-        </a>
-      </h3>
+      <div class="flex items-start gap-3">
+        <div class="flex-1 min-w-0">
+          <h3 class="text-sm font-semibold text-slate-900 dark:text-slate-100 leading-snug">
+            {/*
+             * When a detail panel is available, left-click opens it.
+             * The href is still present so right-click / middle-click opens the
+             * source URL directly in a new tab.
+             */}
+            <a
+              href={item.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={
+                onSelect
+                  ? (e) => {
+                      e.preventDefault();
+                      onSelect(item);
+                    }
+                  : undefined
+              }
+              class={[
+                'transition-colors',
+                onSelect
+                  ? 'cursor-pointer hover:text-teal-600 dark:hover:text-teal-400'
+                  : 'hover:text-teal-600 dark:hover:text-teal-400',
+              ].join(' ')}
+            >
+              {item.title || 'Untitled'}
+            </a>
+          </h3>
 
-      {metaParts.length > 0 && (
-        <p class="text-xs text-slate-400 dark:text-slate-500">
-          {metaParts.join(' · ')}
-        </p>
-      )}
+          {metaParts.length > 0 && (
+            <p class="mt-1 text-xs text-slate-400 dark:text-slate-500">
+              {metaParts.join(' · ')}
+            </p>
+          )}
+        </div>
+
+        {item.image_url && (
+          <img
+            src={item.image_url}
+            alt=""
+            loading="lazy"
+            class="flex-shrink-0 w-20 h-20 rounded-md object-cover bg-slate-100 dark:bg-slate-800"
+            onError={(e) => {
+              (e.currentTarget as HTMLImageElement).style.display = 'none';
+            }}
+          />
+        )}
+      </div>
 
       {summary && (
         <p

@@ -228,6 +228,7 @@ class DigestPipeline:
                     "kind": "video" if is_video else "article",
                     "preference_score": art.get("preference_score"),
                     "score_breakdown": art.get("score_breakdown"),
+                    "image_url": art.get("image_url"),
                 }
                 if is_video:
                     video_summaries.append(entry)
@@ -617,6 +618,7 @@ class DigestPipeline:
                     "kind": "video" if u in video_urls else "article",
                     "preference_score": art.get("preference_score"),
                     "score_breakdown": art.get("score_breakdown"),
+                    "image_url": art.get("image_url"),
                 },
             )
         base = len(items)

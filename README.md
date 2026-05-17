@@ -15,6 +15,8 @@
 
 ![CondenseIt walkthrough with demo data](docs/assets/demo/walkthrough.gif)
 
+![Digest page showing articles with ranking breakdown](docs/assets/demo/desktop-digest.png)
+
 ---
 
 ## Two modes
@@ -55,8 +57,8 @@ you can see exactly what drove its position.
 
 | Type | What it collects |
 |------|-----------------|
-| **RSS / Atom** | Any RSS or Atom feed URL |
-| **YouTube** | Transcripts from channel videos via the public channel RSS feed |
+| **RSS / Atom** | Any RSS or Atom feed URL; extracts `og:image` thumbnails from article pages |
+| **YouTube** | Transcripts from channel videos via the public channel RSS feed; attaches video thumbnail |
 | **Website watch** | Detects meaningful changes on any web page |
 | **Google News search** | Google News RSS search with operator support (`site:`, `when:`, `intitle:`, `source:`) |
 | **Hacker News** | Top/best/new/ask/show stories via the public Firebase JSON API |

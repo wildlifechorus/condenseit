@@ -62,6 +62,17 @@ class ContentStore:
                 },
                 pk="url",
             )
+        # Migration: add image_url column to existing articles tables.
+        articles_cols = {
+            row[1]
+            for row in self.db.execute(
+                "PRAGMA table_info(articles)"
+            ).fetchall()
+        }
+        if "image_url" not in articles_cols:
+            self.db.execute(
+                "ALTER TABLE articles ADD COLUMN image_url TEXT"
+            )
         if "digests" not in self.db.table_names():
             self.db["digests"].create(
                 {
@@ -188,6 +199,17 @@ class ContentStore:
                 },
                 pk="url",
             )
+        # Migration: add image_url column to existing read_later tables.
+        read_later_cols = {
+            row[1]
+            for row in self.db.execute(
+                "PRAGMA table_info(read_later)"
+            ).fetchall()
+        }
+        if "image_url" not in read_later_cols:
+            self.db.execute(
+                "ALTER TABLE read_later ADD COLUMN image_url TEXT"
+            )
         if "dismissed_articles" not in self.db.table_names():
             self.db["dismissed_articles"].create(
                 {
@@ -257,6 +279,9 @@ class ContentStore:
         row["published_at"] = str(
             incoming.get("published_at", row.get("published_at", "")),
         )
+        # Preserve a newly-extracted image_url when the article re-appears.
+        if incoming.get("image_url"):
+            row["image_url"] = incoming["image_url"]
         self.save_article(row)
 
     def articles_collected_since(self, cutoff: datetime) -> list[dict[str, Any]]:
@@ -478,6 +503,7 @@ class ContentStore:
                 "category": str(item.get("category", "")),
                 "kind": str(item.get("kind", "article")),
                 "published_at": str(item.get("published_at", "") or ""),
+                "image_url": str(item.get("image_url") or ""),
                 "saved_at": datetime.now(UTC).isoformat(),
             },
             pk="url",

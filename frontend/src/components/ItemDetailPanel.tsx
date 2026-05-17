@@ -259,6 +259,19 @@ export function ItemDetailPanel({
           </a>
         </div>
 
+        {/* Hero image (if available) */}
+        {item.image_url && (
+          <img
+            src={item.image_url}
+            alt=""
+            loading="lazy"
+            class="w-full max-h-64 object-cover bg-slate-100 dark:bg-slate-800"
+            onError={(e) => {
+              (e.currentTarget as HTMLImageElement).style.display = 'none';
+            }}
+          />
+        )}
+
         {/* Content */}
         <div class="flex-1 px-6 py-6 space-y-5">
 
