@@ -2,6 +2,7 @@ import { useState } from 'preact/hooks';
 
 import type { JSX } from 'preact';
 
+import { ThemeToggle } from '../components/ThemeToggle';
 import { login } from '../lib/auth';
 
 interface LoginPageProps {
@@ -40,7 +41,16 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   }
 
   return (
-    <div class='min-h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 px-4'>
+    <div
+      class={[
+        'relative min-h-screen flex flex-col items-center justify-center',
+        'bg-slate-50 dark:bg-slate-950 px-4',
+      ].join(' ')}
+    >
+      <div class='absolute right-4 top-4'>
+        <ThemeToggle />
+      </div>
+
       {/* Card */}
       <div class='w-full max-w-sm bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 p-8'>
         {/* Brand */}

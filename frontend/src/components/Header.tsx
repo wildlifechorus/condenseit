@@ -1,5 +1,7 @@
 import { Link, useLocation } from 'wouter';
+
 import { JobBanner } from './JobBanner';
+import { ThemeToggle } from './ThemeToggle';
 
 interface NavLink {
   href: string;
@@ -78,6 +80,7 @@ export function Header({
           </nav>
 
           <JobBanner />
+          <ThemeToggle />
           <RefreshButton />
         </div>
       </header>
