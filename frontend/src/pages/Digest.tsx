@@ -52,8 +52,17 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
         ? api.getDigest(requestedId)
         : api.getLatestDigest();
 
-    load
-      .then((d) => {
+    // Fetch all three in parallel so setLoading(false) only fires once every
+    // request has resolved. Previously getReadUrls / getReadLaterUrls were
+    // fired inside .then() without being awaited, causing a race where the
+    // page rendered with an empty readUrls set (showing all items) before
+    // the read state arrived, making dismissed/read items flash back on refresh.
+    Promise.all([
+      load,
+      api.getReadUrls().catch((): { urls: string[] } => ({ urls: [] })),
+      api.getReadLaterUrls().catch((): { urls: string[] } => ({ urls: [] })),
+    ])
+      .then(([d, { urls: fetchedReadUrls }, { urls: fetchedReadLaterUrls }]) => {
         setDetail(d);
         setFiltered(d?.items ?? []);
         onDigestLoaded?.(d?.meta.id ?? null);
@@ -67,17 +76,10 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
         }
         setRatings(initial);
 
-        // Fetch read state from server.
-        api
-          .getReadUrls()
-          .then(({ urls }) => setReadUrls(new Set(urls)))
-          .catch(() => {});
-
-        // Fetch read-later URLs from server.
-        api
-          .getReadLaterUrls()
-          .then(({ urls }) => setReadLaterUrls(new Set(urls)))
-          .catch(() => {});
+        // Apply read / read-later state together with the digest so the
+        // first paint already has the correct visibility.
+        setReadUrls(new Set(fetchedReadUrls));
+        setReadLaterUrls(new Set(fetchedReadLaterUrls));
       })
       .catch((e: unknown) => {
         setError(e instanceof Error ? e.message : 'Failed to load digest.');
@@ -93,18 +95,30 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
   /**
    * Toggle the read state for a URL.
    * Calls the server so the next digest pipeline can exclude articles
-   * the user has already read.
+   * the user has already read. If the request fails, the optimistic
+   * update is rolled back so the UI stays consistent with the DB.
    */
   const handleMarkRead = useCallback((url: string) => {
     setReadUrls((prev) => {
+      const nowRead = !prev.has(url);
       const next = new Set(prev);
-      const nowRead = !next.has(url);
       if (nowRead) {
         next.add(url);
       } else {
         next.delete(url);
       }
-      api.markRead(url, nowRead).catch(() => undefined);
+      api.markRead(url, nowRead).catch(() => {
+        // Roll back the optimistic update if the server call fails.
+        setReadUrls((current) => {
+          const rolled = new Set(current);
+          if (nowRead) {
+            rolled.delete(url);
+          } else {
+            rolled.add(url);
+          }
+          return rolled;
+        });
+      });
       return next;
     });
   }, []);
@@ -132,7 +146,8 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
   /**
    * Dismiss an article: records a mild negative implicit signal on the
    * backend (distinct from "mark as read") and marks the item as read
-   * locally so it disappears from the grid view.
+   * locally so it disappears from the grid view. If the request fails,
+   * the optimistic update is rolled back so the card reappears.
    */
   const handleDismiss = useCallback(
     (url: string) => {
@@ -144,7 +159,14 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
         next.add(url);
         return next;
       });
-      api.dismissArticle(url, title).catch(() => undefined);
+      api.dismissArticle(url, title).catch(() => {
+        // Roll back the optimistic update if the server call fails.
+        setReadUrls((current) => {
+          const rolled = new Set(current);
+          rolled.delete(url);
+          return rolled;
+        });
+      });
     },
     [detail],
   );
