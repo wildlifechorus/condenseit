@@ -176,6 +176,8 @@ if [[ "$SYNC_DB" == true ]]; then
     info "Syncing SQLite DB to VPS..."
     VPS_DATA_DIR_REAL="$(ssh "$SSH_HOST" "echo $VPS_DATA_DIR")"
     ssh "$SSH_HOST" "mkdir -p '$VPS_DATA_DIR_REAL'"
+    # Only sync the main DB file; never copy -journal, -wal, or -shm
+    # artifacts which would corrupt the remote DB state.
     rsync -avz "$LOCAL_DB" "$SSH_HOST:$VPS_DATA_DIR_REAL/condenseit.db"
   else
     warn "Local DB not found at $LOCAL_DB; skipping DB rsync."

@@ -20,8 +20,17 @@ class ContentStore:
 
             db_path = get_data_dir() / "condenseit.db"
         self.db_path = db_path
-        conn = sqlite3.connect(str(db_path), check_same_thread=False)
+        # timeout=30 makes SQLite retry for up to 30 s before raising
+        # "database is locked". This prevents spurious 500s when the
+        # digest background thread and the web server both write
+        # concurrently (e.g. /api/dismiss during a running digest).
+        conn = sqlite3.connect(str(db_path), check_same_thread=False, timeout=30)
         self.db = sqlite_utils.Database(conn)
+        # WAL mode allows concurrent readers alongside a single writer,
+        # eliminating the lock contention that causes 500s on write
+        # endpoints while the digest pipeline is committing data.
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=30000")
         self._ensure_schema()
 
     def _ensure_schema(self) -> None:
