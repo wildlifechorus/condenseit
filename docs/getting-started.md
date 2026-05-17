@@ -16,6 +16,11 @@ Quick path:
 5. Run a digest: use **Run digest** in the header, or `uv run condenseit run`
    (or `condenseit run` if your shell uses the project venv).
 
+The web UI gives you the digest reader, rating controls, read-later actions,
+and admin pages in one place. This screenshot uses generated demo data.
+
+![Desktop digest reader with demo data](assets/demo/desktop-digest.png)
+
 See [configuration.md](configuration.md) for YAML and environment variables.
 
 For **Docker UI + host digest**, dry runs, and what each script does, see

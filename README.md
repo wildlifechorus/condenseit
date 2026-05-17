@@ -11,6 +11,23 @@
 
 ---
 
+## Preview
+
+![CondenseIt walkthrough with demo data](docs/assets/demo/walkthrough.gif)
+
+The screenshots below use generated demo data, not a real feed list, account,
+or reading history.
+
+![Desktop digest reader with ranking breakdowns](docs/assets/demo/desktop-digest.png)
+
+![Article detail panel](docs/assets/demo/desktop-detail.png)
+
+![Mobile digest reader](docs/assets/demo/mobile-digest.png)
+
+![Admin sources page](docs/assets/demo/desktop-admin-sources.png)
+
+---
+
 ## Two modes
 
 | | Local | Remote |

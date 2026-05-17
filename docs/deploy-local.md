@@ -87,6 +87,11 @@ uv run condenseit serve
 
 Open [http://localhost:8899](http://localhost:8899).
 
+The mobile layout keeps the same digest actions available for narrow screens.
+This screenshot uses generated demo data.
+
+![Mobile digest reader with generated demo data](assets/demo/mobile-digest.png)
+
 ### 6. Run a digest
 
 From the web UI header, click **Run digest**. Or from a second terminal:

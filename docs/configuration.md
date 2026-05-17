@@ -15,6 +15,8 @@
 All sources are managed from **Admin > Sources** in the web UI. Changes take effect
 on the next digest run with no restart needed. The following source types are supported.
 
+![Admin sources page with generated demo data](assets/demo/desktop-admin-sources.png)
+
 ### RSS / Atom
 
 Any public RSS or Atom feed URL. Most news sites, blogs, and podcasts publish one.
@@ -187,6 +189,8 @@ vice versa, boosting or penalising the article accordingly.
 The full learned profile (category scores, source scores, liked/disliked topics
 and phrases, rating distribution, implicit signal counts, decay info) is visible
 in **Admin > Preferences**.
+
+![Learning profile page with generated demo data](assets/demo/desktop-preferences.png)
 
 ## Scheduling
 
