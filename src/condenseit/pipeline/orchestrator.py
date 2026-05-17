@@ -235,6 +235,8 @@ class DigestPipeline:
                     "category": category,
                     "published_at": str(art.get("published_at") or ""),
                     "kind": "video" if is_video else "article",
+                    "preference_score": art.get("preference_score"),
+                    "score_breakdown": art.get("score_breakdown"),
                 }
                 if is_video:
                     video_summaries.append(entry)
@@ -622,6 +624,8 @@ class DigestPipeline:
                     "category": str(art.get("category", "General")),
                     "published_at": str(art.get("published_at") or ""),
                     "kind": "video" if u in video_urls else "article",
+                    "preference_score": art.get("preference_score"),
+                    "score_breakdown": art.get("score_breakdown"),
                 },
             )
         base = len(items)
