@@ -32,7 +32,7 @@ def apply_db_settings(config: AppConfig, store: ContentStore) -> AppConfig:
             times = json.loads(schedule_raw)
             if isinstance(times, list):
                 config.schedule["times"] = [str(t) for t in times]
-        except Exception:
+        except (json.JSONDecodeError, TypeError):
             pass
 
     # Digest pipeline settings
@@ -76,7 +76,7 @@ def apply_db_settings(config: AppConfig, store: ContentStore) -> AppConfig:
             langs = json.loads(langs_raw)
             if isinstance(langs, list):
                 config.preferred_languages = [str(language) for language in langs]
-        except Exception:
+        except (json.JSONDecodeError, TypeError):
             pass
 
     # Keyword exclusions
@@ -86,7 +86,7 @@ def apply_db_settings(config: AppConfig, store: ContentStore) -> AppConfig:
             kw_list = json.loads(kw_raw)
             if isinstance(kw_list, list):
                 config.exclude_keywords = [str(k) for k in kw_list]
-        except Exception:
+        except (json.JSONDecodeError, TypeError):
             pass
 
     # OpenRouter budget limits

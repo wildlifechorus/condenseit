@@ -62,6 +62,18 @@ class DigestPipeline:
         self.digest_html = ""
         self.stats: dict[str, Any] = {}
 
+    def _record_health(
+        self,
+        health: list[tuple[str, str | None, int]],
+    ) -> None:
+        for url, err, count in health:
+            self.sources.record_health(
+                url,
+                status="ok" if err is None else "error",
+                error=err,
+                item_count=count,
+            )
+
     def run(self, *, dry_run: bool = False) -> dict[str, Any]:
         start = time.time()
         logger.info("Starting digest pipeline")
@@ -77,8 +89,7 @@ class DigestPipeline:
         rss = RSSCollector(feeds)
         articles: list[dict[str, Any]] = []
         for _feed, items, err in rss.collect_feed_results():
-            for a in items:
-                articles.append(a.to_dict())
+            articles.extend(a.to_dict() for a in items)
             self.sources.record_health(
                 _feed.url,
                 status="ok" if err is None else "error",
@@ -88,81 +99,40 @@ class DigestPipeline:
 
         yt = YouTubeCollector(youtube, self.store)
         videos, yt_health = yt.collect_new_videos_with_health()
-        for rss_url, err, count in yt_health:
-            self.sources.record_health(
-                rss_url,
-                status="ok" if err is None else "error",
-                error=err,
-                item_count=count,
-            )
+        self._record_health(yt_health)
 
         changes, web_health = check_website_changes_with_health(watch, self.store)
-        for url, err, nbytes in web_health:
-            self.sources.record_health(
-                url,
-                status="ok" if err is None else "error",
-                error=err,
-                item_count=nbytes,
-            )
+        self._record_health(web_health)
 
         if gnews:
             gnews_articles, gnews_health = GoogleNewsCollector(
                 gnews,
             ).collect_all_with_health()
-            for item in gnews_articles:
-                articles.append(item)
-            for url, err, count in gnews_health:
-                self.sources.record_health(
-                    url,
-                    status="ok" if err is None else "error",
-                    error=err,
-                    item_count=count,
-                )
+            articles.extend(gnews_articles)
+            self._record_health(gnews_health)
 
         if hackernews:
             hn_articles, hn_health = HackerNewsCollector(
                 hackernews,
             ).collect_all_with_health()
-            for item in hn_articles:
-                articles.append(item)
-            for url, err, count in hn_health:
-                self.sources.record_health(
-                    url,
-                    status="ok" if err is None else "error",
-                    error=err,
-                    item_count=count,
-                )
+            articles.extend(hn_articles)
+            self._record_health(hn_health)
 
         if reddit:
             reddit_articles, reddit_health = RedditCollector(
                 reddit,
             ).collect_all_with_health()
-            for item in reddit_articles:
-                articles.append(item)
-            for url, err, count in reddit_health:
-                self.sources.record_health(
-                    url,
-                    status="ok" if err is None else "error",
-                    error=err,
-                    item_count=count,
-                )
+            articles.extend(reddit_articles)
+            self._record_health(reddit_health)
 
         if github_releases:
             gh_articles, gh_health = GitHubReleasesCollector(
                 github_releases,
             ).collect_all_with_health()
-            for item in gh_articles:
-                articles.append(item)
-            for url, err, count in gh_health:
-                self.sources.record_health(
-                    url,
-                    status="ok" if err is None else "error",
-                    error=err,
-                    item_count=count,
-                )
+            articles.extend(gh_articles)
+            self._record_health(gh_health)
 
-        for v in videos:
-            articles.append(v.to_dict())
+        articles.extend(v.to_dict() for v in videos)
 
         # Persist new articles and identify the truly fresh subset.
         fresh = self.store.deduplicate(articles)

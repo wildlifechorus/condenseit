@@ -39,7 +39,6 @@ export function AppLayout({
         mobileMenuOpen={menuOpen}
       />
 
-      {/* Default password warning banner */}
       {usingDefaultPassword && (
         <div class="flex items-center justify-between gap-3 px-4 py-2 bg-amber-500 dark:bg-amber-600 text-white text-xs font-medium">
           <span>
@@ -62,7 +61,6 @@ export function AppLayout({
         </div>
       )}
 
-      {/* Mobile overlay */}
       {menuOpen && (
         <div
           class="fixed inset-0 z-30 bg-black/40 lg:hidden"
@@ -70,9 +68,7 @@ export function AppLayout({
         />
       )}
 
-      {/* Body */}
       <div class="flex flex-1 min-h-0">
-        {/* Sidebar - desktop always, mobile slide-in */}
         <div
           class={[
             'fixed lg:static inset-y-0 left-0 z-30 w-60 transition-transform duration-200',
@@ -88,7 +84,6 @@ export function AppLayout({
           />
         </div>
 
-        {/* Main content */}
         <main class="flex-1 min-w-0 p-5 lg:pl-5 overflow-auto">
           <div class="max-w-5xl mx-auto">{children}</div>
         </main>

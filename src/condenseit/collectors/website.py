@@ -15,7 +15,7 @@ from condenseit.store.database import ContentStore
 logger = logging.getLogger(__name__)
 
 
-def _fetch_text(url: str, selector: str | None = None) -> str:
+def _fetch_text(url: str) -> str:
     response = httpx.get(
         url,
         timeout=30.0,
@@ -59,7 +59,7 @@ def check_website_changes_with_health(
     health: list[tuple[str, str | None, int]] = []
     for item in watch_urls:
         try:
-            current = _fetch_text(item.url, item.selector)
+            current = _fetch_text(item.url)
             previous = store.get_snapshot(item.url)
             if previous is None:
                 store.save_snapshot(item.url, current)

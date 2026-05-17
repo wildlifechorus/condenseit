@@ -111,7 +111,6 @@ def _build_source_extra(
 def create_admin_router(
     config_path: str | None,
     store: ContentStore | None = None,
-    get_schedule_times: Any = None,
 ) -> APIRouter:
     router = APIRouter()
     config = load_config(config_path)

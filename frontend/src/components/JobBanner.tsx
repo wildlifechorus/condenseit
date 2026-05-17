@@ -26,7 +26,7 @@ function stopPolling() {
   }
 }
 
-/** Header "Run digest" button. Used in AppLayout. */
+/** "Run digest" button rendered inside the Header. */
 export function JobBanner() {
   const loading = useSignal(false);
   const job = useComputed(() => jobSignal.value);

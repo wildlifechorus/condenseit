@@ -195,13 +195,6 @@ def create_app(config_path: str | None = None) -> FastAPI:
             return db_pw
         return _env_auth_password if _env_auth_password else default_auth_password
 
-    def _password_source() -> str:
-        if store.get_setting("auth_password", ""):
-            return "db"
-        if _env_auth_password:
-            return "env"
-        return "default"
-
     @app.get("/api/auth/check", response_model=None)
     async def api_auth_check(request: Request) -> JSONResponse:
         session: dict[str, Any] = getattr(request, "session", {})
