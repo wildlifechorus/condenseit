@@ -15,8 +15,6 @@
 
 ![CondenseIt walkthrough with demo data](docs/assets/demo/walkthrough.gif)
 
-![Digest page showing articles with ranking breakdown](docs/assets/demo/desktop-digest.png)
-
 ---
 
 ## Two modes
