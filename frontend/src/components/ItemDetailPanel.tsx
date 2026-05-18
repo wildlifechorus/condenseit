@@ -462,7 +462,10 @@ export function ItemDetailPanel({
               {onMarkRead && (
                 <button
                   type="button"
-                  onClick={() => onMarkRead(item.url)}
+                  onClick={() => {
+                    onMarkRead(item.url);
+                    if (!isRead) onClose();
+                  }}
                   title={isRead ? 'Mark as unread' : 'Mark as read'}
                   class={[
                     'flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border',
