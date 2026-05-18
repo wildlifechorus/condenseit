@@ -16,6 +16,7 @@ import markdown
 from condenseit.collectors.github_releases import GitHubReleasesCollector
 from condenseit.collectors.google_news import GoogleNewsCollector
 from condenseit.collectors.hackernews import HackerNewsCollector
+from condenseit.collectors.podcast import PodcastCollector
 from condenseit.collectors.reddit import RedditCollector
 from condenseit.collectors.rss import RSSCollector
 from condenseit.collectors.website import check_website_changes_with_health
@@ -66,7 +67,7 @@ class DigestPipeline:
     # Context-manager support
     # ------------------------------------------------------------------
 
-    def __enter__(self) -> "DigestPipeline":
+    def __enter__(self) -> DigestPipeline:
         return self
 
     def __exit__(self, *args: object) -> None:
@@ -106,6 +107,7 @@ class DigestPipeline:
         hackernews = self.sources.hackernews_for_config()
         reddit = self.sources.reddit_for_config()
         github_releases = self.sources.github_releases_for_config()
+        podcasts = self.sources.podcast_sources_for_config()
 
         rss = RSSCollector(feeds)
         articles: list[dict[str, Any]] = []
@@ -152,6 +154,13 @@ class DigestPipeline:
             ).collect_all_with_health()
             articles.extend(gh_articles)
             self._record_health(gh_health)
+
+        if podcasts:
+            pod_articles, pod_health = PodcastCollector(
+                podcasts,
+            ).collect_all_with_health()
+            articles.extend(pod_articles)
+            self._record_health(pod_health)
 
         articles.extend(v.to_dict() for v in videos)
 
@@ -216,6 +225,9 @@ class DigestPipeline:
                 category = str(art.get("category", "General"))
                 result = self.summarizer.summarize_article(art)
                 is_video = art["url"] in video_urls
+                entry_kind = (
+                    "video" if is_video else str(art.get("kind") or "article")
+                )
                 entry = {
                     "title": art["title"],
                     "url": art["url"],
@@ -225,7 +237,7 @@ class DigestPipeline:
                     "source": str(art.get("source", "")),
                     "category": category,
                     "published_at": str(art.get("published_at") or ""),
-                    "kind": "video" if is_video else "article",
+                    "kind": entry_kind,
                     "preference_score": art.get("preference_score"),
                     "score_breakdown": art.get("score_breakdown"),
                     "image_url": art.get("image_url"),
@@ -352,7 +364,7 @@ class DigestPipeline:
             frozenset(t.split()) for t in read_titles if t
         ]
 
-        _JACCARD_THRESHOLD = 0.35
+        _jaccard_threshold = 0.35
 
         def _jaccard(a: frozenset[str], b: frozenset[str]) -> float:
             union = a | b
@@ -377,7 +389,7 @@ class DigestPipeline:
                 # Too short to fuzzy-match reliably; avoid false positives.
                 return False
             return any(
-                _jaccard(words, rws) >= _JACCARD_THRESHOLD
+                _jaccard(words, rws) >= _jaccard_threshold
                 for rws in read_title_word_sets
                 if len(rws) >= 3
             )
@@ -506,7 +518,7 @@ class DigestPipeline:
         if not articles:
             return articles
 
-        _THRESHOLD = 0.35
+        _threshold = 0.35
 
         def _jaccard(a: frozenset[str], b: frozenset[str]) -> float:
             union = a | b
@@ -520,7 +532,7 @@ class DigestPipeline:
             title = str(art.get('title') or '').lower().strip()
             words = frozenset(title.split())
             if len(words) >= 3 and any(
-                _jaccard(words, existing) >= _THRESHOLD
+                _jaccard(words, existing) >= _threshold
                 for existing in kept_word_sets
                 if len(existing) >= 3
             ):
@@ -534,7 +546,7 @@ class DigestPipeline:
                 'Story dedup: removed %d near-duplicate article(s)'
                 ' (Jaccard >= %.2f), %d remaining',
                 dropped,
-                _THRESHOLD,
+                _threshold,
                 len(kept),
             )
         return kept
@@ -604,6 +616,9 @@ class DigestPipeline:
         items: list[dict[str, Any]] = []
         for i, art in enumerate(ranked):
             u = str(art.get("url", ""))
+            item_kind = (
+                "video" if u in video_urls else str(art.get("kind") or "article")
+            )
             items.append(
                 {
                     "id": i,
@@ -615,7 +630,7 @@ class DigestPipeline:
                     "source": str(art.get("source", "")),
                     "category": str(art.get("category", "General")),
                     "published_at": str(art.get("published_at") or ""),
-                    "kind": "video" if u in video_urls else "article",
+                    "kind": item_kind,
                     "preference_score": art.get("preference_score"),
                     "score_breakdown": art.get("score_breakdown"),
                     "image_url": art.get("image_url"),

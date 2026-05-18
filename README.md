@@ -1,7 +1,7 @@
 # CondenseIt
 
 > Self-hosted AI news digest. Collect RSS feeds, YouTube channels, website
-> diffs, Google News searches, Hacker News, Reddit, and GitHub Releases,
+> diffs, Google News searches, Hacker News, Reddit, GitHub Releases, and podcasts,
 > summarize with a local LLM (Ollama) or OpenRouter, learn your preferences
 > from star ratings and engagement signals, and read a daily digest in the
 > browser.
@@ -62,6 +62,7 @@ you can see exactly what drove its position.
 | **Hacker News** | Top/best/new/ask/show stories via the public Firebase JSON API |
 | **Reddit** | Posts from any public subreddit (hot/new/top/rising, configurable score threshold) |
 | **GitHub Releases** | Release notes from any public repository's Atom feed |
+| **Podcasts** | New episodes from podcast RSS feeds, with iTunes search to find feed URLs |
 
 ### Admin panel
 

@@ -19,7 +19,7 @@ on the next digest run with no restart needed. The following source types are su
 
 ### RSS / Atom
 
-Any public RSS or Atom feed URL. Most news sites, blogs, and podcasts publish one.
+Any public RSS or Atom feed URL. Most news sites and blogs publish one.
 
 ```yaml
 feeds:
@@ -104,6 +104,15 @@ Tracks new releases for any public GitHub repository via its public Atom feed
 (`https://github.com/{owner}/{repo}/releases.atom`). No authentication required.
 
 Enter the repository in `owner/repo` format, e.g. `astral-sh/uv` or `ollama/ollama`.
+
+### Podcasts
+
+Tracks new podcast episodes from a public podcast RSS feed. The Add Source form
+can search the iTunes podcast catalog and auto-fill the feed URL, or you can paste
+the feed URL directly. No API key is required.
+
+Episode summaries are generated from the podcast show notes in the RSS feed.
+Episode or channel artwork is used when the feed provides it.
 
 ## LLM
 

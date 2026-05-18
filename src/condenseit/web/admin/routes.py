@@ -105,6 +105,10 @@ def _build_source_extra(
         extra = {"repo": repo}
         feed_url = f"https://github.com/{repo}/releases.atom"
 
+    elif source_type == "podcast":
+        extra = {"feed_url": url, "name": name}
+        feed_url = url
+
     return extra, feed_url
 
 

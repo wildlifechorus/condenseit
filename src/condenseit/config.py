@@ -74,6 +74,15 @@ class GitHubReleasesConfig(BaseModel):
     priority: int = 2
 
 
+class PodcastConfig(BaseModel):
+    """A podcast tracked via its RSS/Atom feed URL."""
+
+    feed_url: str
+    name: str = ""
+    category: str = "General"
+    priority: int = 2
+
+
 class RelevanceConfig(BaseModel):
     initial_keywords: dict[str, list[str]] = Field(
         default_factory=lambda: {"high": [], "medium": []},

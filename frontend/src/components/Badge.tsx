@@ -9,6 +9,7 @@ type BadgeVariant =
   | 'hackernews'
   | 'reddit'
   | 'github_releases'
+  | 'podcast'
   | 'ok'
   | 'error'
   | 'default';
@@ -40,6 +41,8 @@ const COLORS: Record<BadgeVariant, string> = {
     'bg-orange-100 dark:bg-orange-900/40 text-orange-800 dark:text-orange-200',
   github_releases:
     'bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300',
+  podcast:
+    'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300',
   ok:
     'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300',
   error:
@@ -61,6 +64,7 @@ export function kindVariant(kind: string): BadgeVariant {
   if (k === 'hackernews') return 'hackernews';
   if (k === 'reddit') return 'reddit';
   if (k === 'github_releases') return 'github_releases';
+  if (k === 'podcast') return 'podcast';
   if (k === 'ok') return 'ok';
   if (k === 'error' || k === 'err') return 'error';
   return 'default';

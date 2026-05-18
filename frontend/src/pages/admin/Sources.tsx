@@ -28,6 +28,13 @@ const PRIORITY_COLORS: Record<number, string> = {
   5: 'bg-slate-50 text-slate-400 dark:bg-slate-800/50 dark:text-slate-500',
 };
 
+interface ITunesResult {
+  collectionName: string;
+  artistName: string;
+  feedUrl: string;
+  artworkUrl100: string;
+}
+
 type SourceExtra = Record<string, string | number | boolean | null>;
 
 function parseSourceExtra(source: Source): SourceExtra {
@@ -62,6 +69,13 @@ function extraNumber(
   return Number.isFinite(value) ? value : fallback;
 }
 
+async function searchITunesPodcasts(query: string): Promise<ITunesResult[]> {
+  const url = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=podcast&entity=podcast&limit=10`;
+  const res = await fetch(url);
+  const data = (await res.json()) as { results?: unknown[] };
+  return (data.results ?? []) as ITunesResult[];
+}
+
 export function SourcesPage() {
   const [sources, setSources] = useState<Source[]>([]);
   const [loading, setLoading] = useState(true);
@@ -81,6 +95,11 @@ export function SourcesPage() {
   const [addFormOpen, setAddFormOpen] = useState(false);
   const [sourceType, setSourceType] = useState('rss');
   const [gnewsQuery, setGnewsQuery] = useState('');
+  const [podcastQuery, setPodcastQuery] = useState('');
+  const [podcastResults, setPodcastResults] = useState<ITunesResult[]>([]);
+  const [podcastSearching, setPodcastSearching] = useState(false);
+  const [podcastFeedUrl, setPodcastFeedUrl] = useState('');
+  const [podcastName, setPodcastName] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<string | null>(
     null,
@@ -118,6 +137,10 @@ export function SourcesPage() {
       form.reset();
       setSourceType('rss');
       setGnewsQuery('');
+      setPodcastQuery('');
+      setPodcastResults([]);
+      setPodcastFeedUrl('');
+      setPodcastName('');
       setAddFormOpen(false);
       load();
       showFlash('Source added.');
@@ -223,6 +246,26 @@ export function SourcesPage() {
     }
   }
 
+  async function searchPodcasts() {
+    if (!podcastQuery.trim()) return;
+    setPodcastSearching(true);
+    setPodcastResults([]);
+    try {
+      setPodcastResults(await searchITunesPodcasts(podcastQuery));
+    } catch {
+      // leave results empty on error
+    } finally {
+      setPodcastSearching(false);
+    }
+  }
+
+  function selectPodcast(result: ITunesResult) {
+    setPodcastFeedUrl(result.feedUrl ?? '');
+    setPodcastName(result.collectionName ?? '');
+    setPodcastResults([]);
+    setPodcastQuery(result.collectionName ?? '');
+  }
+
   /** Unique categories derived from current sources. */
   const categories = useMemo(() => {
     const cats = new Set(sources.map((s) => s.category));
@@ -293,7 +336,7 @@ export function SourcesPage() {
         </div>
       </div>
       <p class="text-sm text-slate-500 dark:text-slate-400 -mt-3">
-        RSS, YouTube, website monitors, Google News searches, Hacker News, Reddit, and GitHub Releases.
+        RSS, YouTube, website monitors, Google News searches, Hacker News, Reddit, GitHub Releases, and Podcasts.
       </p>
 
       {flash && (
@@ -329,12 +372,25 @@ export function SourcesPage() {
                 <option value="hackernews">Hacker News</option>
                 <option value="reddit">Reddit</option>
                 <option value="github_releases">GitHub Releases</option>
+                <option value="podcast">Podcast</option>
               </select>
             </Field>
 
             {/* --- Name (always shown) --- */}
             <Field label="Name">
-              <input name="name" required class={inputCls} />
+              {sourceType === 'podcast' ? (
+                <input
+                  name="name"
+                  required
+                  class={inputCls}
+                  value={podcastName}
+                  onInput={(e) =>
+                    setPodcastName((e.target as HTMLInputElement).value)
+                  }
+                />
+              ) : (
+                <input name="name" required class={inputCls} />
+              )}
             </Field>
 
             {/* --- URL (RSS / YouTube / Website only) --- */}
@@ -540,6 +596,93 @@ export function SourcesPage() {
               </Field>
             )}
 
+            {/* --- Podcast search + URL --- */}
+            {sourceType === 'podcast' && (
+              <>
+                <div class="sm:col-span-2 space-y-2">
+                  <label class="flex flex-col gap-1">
+                    <span class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      Search podcasts
+                    </span>
+                    <div class="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder='e.g. "Darknet Diaries"'
+                        value={podcastQuery}
+                        onInput={(e) =>
+                          setPodcastQuery(
+                            (e.target as HTMLInputElement).value,
+                          )
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            void searchPodcasts();
+                          }
+                        }}
+                        class={`${inputCls} flex-1`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void searchPodcasts()}
+                        disabled={podcastSearching}
+                        class="px-4 py-2 text-sm font-semibold rounded-lg bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                      >
+                        {podcastSearching ? 'Searching...' : 'Search'}
+                      </button>
+                    </div>
+                  </label>
+
+                  {podcastResults.length > 0 && (
+                    <div class="rounded-lg border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
+                      {podcastResults.map((r) => (
+                        <button
+                          key={r.feedUrl}
+                          type="button"
+                          onClick={() => selectPodcast(r)}
+                          class="w-full flex items-center gap-3 px-3 py-2.5 text-left bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                        >
+                          {r.artworkUrl100 && (
+                            <img
+                              src={r.artworkUrl100}
+                              alt=""
+                              class="w-10 h-10 rounded-lg object-cover flex-shrink-0"
+                            />
+                          )}
+                          <div class="min-w-0 flex-1">
+                            <p class="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
+                              {r.collectionName}
+                            </p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400 truncate">
+                              {r.artistName}
+                            </p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <Field label="Feed URL" className="sm:col-span-2">
+                  <input
+                    name="url"
+                    required
+                    placeholder="https://feeds.example.com/podcast"
+                    class={inputCls}
+                    value={podcastFeedUrl}
+                    onInput={(e) =>
+                      setPodcastFeedUrl(
+                        (e.target as HTMLInputElement).value,
+                      )
+                    }
+                  />
+                  <span class="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                    Auto-filled from search, or paste the RSS feed URL directly
+                  </span>
+                </Field>
+              </>
+            )}
+
             {/* --- Category & priority (always shown) --- */}
             <Field label="Category">
               <input
@@ -669,7 +812,7 @@ export function SourcesPage() {
       {sources.length === 0 ? (
         <EmptyState
           title="No sources yet"
-          description="Add your first source - RSS, YouTube, Google News search, Hacker News, Reddit, or GitHub Releases."
+          description="Add your first source - RSS, YouTube, Google News search, Hacker News, Reddit, GitHub Releases, or Podcasts."
           action={
             <Button onClick={() => setAddFormOpen(true)}>
               Add source
@@ -939,6 +1082,33 @@ function SourceEditForm({
 }) {
   const extra = parseSourceExtra(source);
   const sourceType = source.type;
+  const [podcastQuery, setPodcastQuery] = useState('');
+  const [podcastResults, setPodcastResults] = useState<ITunesResult[]>([]);
+  const [podcastSearching, setPodcastSearching] = useState(false);
+  const [podcastName, setPodcastName] = useState(source.name);
+  const [podcastFeedUrl, setPodcastFeedUrl] = useState(
+    extraText(extra, 'feed_url', source.url),
+  );
+
+  async function searchPodcasts() {
+    if (!podcastQuery.trim()) return;
+    setPodcastSearching(true);
+    setPodcastResults([]);
+    try {
+      setPodcastResults(await searchITunesPodcasts(podcastQuery));
+    } catch {
+      // leave results empty on error
+    } finally {
+      setPodcastSearching(false);
+    }
+  }
+
+  function selectPodcast(result: ITunesResult) {
+    setPodcastFeedUrl(result.feedUrl ?? '');
+    setPodcastName(result.collectionName ?? '');
+    setPodcastResults([]);
+    setPodcastQuery(result.collectionName ?? '');
+  }
 
   return (
     <form
@@ -947,12 +1117,24 @@ function SourceEditForm({
     >
       <input type="hidden" name="source_type" value={sourceType} />
       <Field label="Name">
-        <input
-          name="name"
-          required
-          defaultValue={source.name}
-          class={inputCls}
-        />
+        {sourceType === 'podcast' ? (
+          <input
+            name="name"
+            required
+            value={podcastName}
+            onInput={(e) =>
+              setPodcastName((e.target as HTMLInputElement).value)
+            }
+            class={inputCls}
+          />
+        ) : (
+          <input
+            name="name"
+            required
+            defaultValue={source.name}
+            class={inputCls}
+          />
+        )}
       </Field>
 
       {(sourceType === 'rss' ||
@@ -1109,6 +1291,84 @@ function SourceEditForm({
             class={inputCls}
           />
         </Field>
+      )}
+
+      {sourceType === 'podcast' && (
+        <>
+          <div class="sm:col-span-2 space-y-2">
+            <label class="flex flex-col gap-1">
+              <span class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Search podcasts
+              </span>
+              <div class="flex gap-2">
+                <input
+                  type="text"
+                  placeholder='e.g. "Darknet Diaries"'
+                  value={podcastQuery}
+                  onInput={(e) =>
+                    setPodcastQuery((e.target as HTMLInputElement).value)
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      void searchPodcasts();
+                    }
+                  }}
+                  class={`${inputCls} flex-1`}
+                />
+                <button
+                  type="button"
+                  onClick={() => void searchPodcasts()}
+                  disabled={podcastSearching}
+                  class="px-4 py-2 text-sm font-semibold rounded-lg bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                >
+                  {podcastSearching ? 'Searching...' : 'Search'}
+                </button>
+              </div>
+            </label>
+
+            {podcastResults.length > 0 && (
+              <div class="rounded-lg border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
+                {podcastResults.map((r) => (
+                  <button
+                    key={r.feedUrl}
+                    type="button"
+                    onClick={() => selectPodcast(r)}
+                    class="w-full flex items-center gap-3 px-3 py-2.5 text-left bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                  >
+                    {r.artworkUrl100 && (
+                      <img
+                        src={r.artworkUrl100}
+                        alt=""
+                        class="w-10 h-10 rounded-lg object-cover flex-shrink-0"
+                      />
+                    )}
+                    <div class="min-w-0 flex-1">
+                      <p class="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
+                        {r.collectionName}
+                      </p>
+                      <p class="text-xs text-slate-500 dark:text-slate-400 truncate">
+                        {r.artistName}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <Field label="Feed URL" className="sm:col-span-2">
+            <input
+              name="url"
+              required
+              value={podcastFeedUrl}
+              onInput={(e) =>
+                setPodcastFeedUrl((e.target as HTMLInputElement).value)
+              }
+              class={inputCls}
+            />
+          </Field>
+        </>
       )}
 
       <Field label="Category">

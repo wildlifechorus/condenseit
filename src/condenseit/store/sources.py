@@ -12,6 +12,7 @@ from condenseit.config import (
     GitHubReleasesConfig,
     GoogleNewsSearchConfig,
     HackerNewsConfig,
+    PodcastConfig,
     RedditConfig,
     WatchUrlConfig,
     YouTubeChannelConfig,
@@ -293,6 +294,22 @@ class SourceRegistry:
             out.append(
                 GitHubReleasesConfig(
                     repo=extra.get("repo", ""),
+                    category=r["category"],
+                    priority=int(r["priority"]),
+                ),
+            )
+        return out
+
+    def podcast_sources_for_config(self) -> list[PodcastConfig]:
+        out: list[PodcastConfig] = []
+        for r in self.list_enabled():
+            if r["type"] != "podcast":
+                continue
+            extra = json.loads(r.get("extra_json") or "{}")
+            out.append(
+                PodcastConfig(
+                    feed_url=extra.get("feed_url", r.get("url", "")),
+                    name=extra.get("name", r.get("name", "")),
                     category=r["category"],
                     priority=int(r["priority"]),
                 ),
