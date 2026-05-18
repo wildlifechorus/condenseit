@@ -10,6 +10,12 @@ Scoring tiers (all additive):
   7. Implicit signals    - read (+mild), read-later (+strong), dismissed (-mild)
      broken down as implicit_category, implicit_source, implicit_content
   8. Synonym boost       - propagates profile weight across synonym groups
+  9. Embedding similarity - cosine distance to decay-weighted profile centroid
+                            (Phase 1; zero when embedding_provider is "off")
+ 10. Topic score         - LLM-extracted topic overlap with enriched rated articles
+                            (Phase 2; zero until articles have been summarized once)
+ 11. LLM rerank          - blended relevance score from a single LLM reranker call
+                            (Phase 3; added by reranker.rerank(), not this engine)
 
 All rating rows are weighted by exponential time decay so recent tastes
 matter more than stale ones. Decay factor: exp(-ln(2)/half_life * days).
@@ -20,13 +26,19 @@ Implicit signals use the same decay but are scaled by `implicit_signal_weight`
 
 from __future__ import annotations
 
+import json
 import math
 import re
 from collections import Counter
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+import numpy as np
 
 from condenseit.store.database import ContentStore
+
+if TYPE_CHECKING:
+    from condenseit.learning.embeddings import EmbeddingProvider
 
 # ---------------------------------------------------------------------------
 # Stop-words: common English + tech-digest filler that dilutes term profiles.
@@ -78,6 +90,9 @@ class PreferenceEngine:
         decay_half_life_days: int = 30,
         implicit_signal_weight: float = 0.5,
         topic_synonyms: dict[str, list[str]] | None = None,
+        embedding_provider: EmbeddingProvider | None = None,
+        embedding_weight: float = 0.5,
+        topic_score_weight: float = 0.3,
     ) -> None:
         self.store = store
         self.min_ratings = min_ratings
@@ -86,6 +101,9 @@ class PreferenceEngine:
         self.source_weight = source_weight
         self.decay_half_life_days = max(1, decay_half_life_days)
         self.implicit_signal_weight = max(0.0, min(1.0, implicit_signal_weight))
+        self._embedding_provider = embedding_provider
+        self.embedding_weight = max(0.0, embedding_weight)
+        self.topic_score_weight = max(0.0, topic_score_weight)
 
         # Build a flat synonym map: each term -> set of synonyms (including itself).
         # All lookups are lowercase.
@@ -114,6 +132,14 @@ class PreferenceEngine:
         self._implicit_category_scores: dict[str, float] = {}
         self._implicit_source_scores: dict[str, float] = {}
 
+        # --- Phase 1: Semantic embedding centroids ---
+        self._liked_centroid: np.ndarray | None = None
+        self._disliked_centroid: np.ndarray | None = None
+
+        # --- Phase 2: Topic scoring profile ---
+        self._liked_topics: Counter[str] = Counter()
+        self._disliked_topics: Counter[str] = Counter()
+
     # ------------------------------------------------------------------
     # Public interface
     # ------------------------------------------------------------------
@@ -127,8 +153,8 @@ class PreferenceEngine:
 
         rows = list(
             self.store.db.query(
-                "SELECT r.rating, r.rated_at, a.title, a.content,"
-                "       a.category, a.source"
+                "SELECT r.url, r.rating, r.rated_at, a.title, a.content,"
+                "       a.category, a.source, a.content_hash"
                 " FROM ratings r"
                 " JOIN articles a ON a.url = r.url",
             ),
@@ -191,6 +217,14 @@ class PreferenceEngine:
         if self.implicit_signal_weight > 0:
             self._learn_implicit_signals(now, lam)
 
+        # Phase 1: Semantic embedding centroids.
+        if self._embedding_provider is not None:
+            self._build_embedding_centroids(rows, now, lam)
+
+        # Phase 2: Topic scoring from article enrichment.
+        if self.topic_score_weight > 0:
+            self._build_topic_profile(rows)
+
     def rank_articles(
         self,
         articles: list[dict[str, Any]],
@@ -231,6 +265,9 @@ class PreferenceEngine:
                 "implicit_category": 0.0,
                 "implicit_source": 0.0,
                 "synonym_boost": 0.0,
+                "embedding_similarity": 0.0,
+                "topic_score": 0.0,
+                "llm_rerank": 0.0,
             }
 
             # 1. Keyword boosts from config.
@@ -354,7 +391,70 @@ class PreferenceEngine:
                         3,
                     )
 
-            total = sum(breakdown.values())
+            # 9. Semantic embedding similarity (Phase 1).
+            if (
+                self._embedding_provider is not None
+                and self.embedding_weight > 0
+                and (
+                    self._liked_centroid is not None
+                    or self._disliked_centroid is not None
+                )
+            ):
+                url = str(art.get("url", ""))
+                content_hash = str(art.get("content_hash", ""))
+                text = (
+                    f"{art.get('title', '')} {art.get('content', '')}"
+                )
+                from condenseit.learning.embeddings import (
+                    cosine_similarity,
+                    get_or_compute_embedding,
+                )
+
+                vec = get_or_compute_embedding(
+                    self._embedding_provider,
+                    self.store,
+                    url,
+                    content_hash,
+                    text,
+                )
+                if vec is not None:
+                    emb_score = 0.0
+                    if self._liked_centroid is not None:
+                        emb_score += cosine_similarity(vec, self._liked_centroid)
+                    if self._disliked_centroid is not None:
+                        emb_score -= 0.5 * cosine_similarity(
+                            vec, self._disliked_centroid
+                        )
+                    breakdown["embedding_similarity"] = round(
+                        self.embedding_weight * emb_score, 3
+                    )
+
+            # 10. Topic score from LLM enrichment (Phase 2).
+            if self.topic_score_weight > 0 and (
+                self._liked_topics or self._disliked_topics
+            ):
+                url = str(art.get("url", ""))
+                enrichment = self.store.get_enrichment(url)
+                if enrichment:
+                    try:
+                        art_topics = set(
+                            json.loads(enrichment.get("topics_json") or "[]")
+                        )
+                    except (json.JSONDecodeError, TypeError):
+                        art_topics = set()
+                    if art_topics:
+                        tscore = 0.0
+                        for topic, weight in self._liked_topics.most_common(20):
+                            if topic in art_topics:
+                                tscore += 0.15 * min(weight, 5)
+                        for topic, weight in self._disliked_topics.most_common(20):
+                            if topic in art_topics:
+                                tscore -= 0.2 * min(weight, 5)
+                        breakdown["topic_score"] = round(
+                            self.topic_score_weight * tscore, 3
+                        )
+
+            total = sum(v for k, v in breakdown.items() if k != "llm_reason")
             art = {
                 **art,
                 "preference_score": round(total, 3),
@@ -467,6 +567,17 @@ class PreferenceEngine:
                     reverse=True,
                 )
             ],
+            # Phase 1: embedding profile status.
+            "embedding_active": self._liked_centroid is not None,
+            # Phase 2: top topics from enrichment.
+            "top_liked_topics": [
+                {"term": t, "score": round(float(c), 2)}
+                for t, c in self._liked_topics.most_common(15)
+            ],
+            "top_disliked_topics": [
+                {"term": t, "score": round(float(c), 2)}
+                for t, c in self._disliked_topics.most_common(15)
+            ],
         }
 
     # ------------------------------------------------------------------
@@ -487,6 +598,10 @@ class PreferenceEngine:
         self._implicit_profile_vec.clear()
         self._implicit_category_scores.clear()
         self._implicit_source_scores.clear()
+        self._liked_centroid = None
+        self._disliked_centroid = None
+        self._liked_topics.clear()
+        self._disliked_topics.clear()
 
     def _learn_implicit_signals(self, now: datetime, lam: float) -> None:
         """Augment the profile with implicit engagement signals.
@@ -596,6 +711,98 @@ class PreferenceEngine:
             for src in imp_src_sum
             if imp_src_w.get(src, 0) > 0
         }
+
+
+    def _build_embedding_centroids(
+        self,
+        rows: list[dict[str, Any]],
+        now: datetime,
+        lam: float,
+    ) -> None:
+        """Compute liked/disliked embedding centroids from rated articles."""
+        from condenseit.learning.embeddings import (
+            get_or_compute_embedding,
+        )
+
+        liked_vecs: list[np.ndarray] = []
+        liked_weights: list[float] = []
+        disliked_vecs: list[np.ndarray] = []
+        disliked_weights: list[float] = []
+
+        for row in rows:
+            rating = int(row["rating"])
+            url = str(row.get("url", ""))
+            content_hash = str(row.get("content_hash", ""))
+            title = str(row.get("title", ""))
+            content = str(row.get("content", ""))[:2000]
+            text = f"{title} {content}"
+
+            vec = get_or_compute_embedding(
+                self._embedding_provider,  # type: ignore[arg-type]
+                self.store,
+                url,
+                content_hash,
+                text,
+            )
+            if vec is None:
+                continue
+
+            decay = _time_decay(
+                str(row.get("rated_at") or ""), now, lam
+            )
+            if rating >= 4:
+                liked_vecs.append(vec)
+                liked_weights.append(decay)
+            elif rating <= 2:
+                disliked_vecs.append(vec)
+                disliked_weights.append(decay)
+
+        if liked_vecs:
+            w = np.array(liked_weights, dtype=np.float32)
+            centroid = np.average(
+                np.stack(liked_vecs), axis=0, weights=w
+            )
+            norm = np.linalg.norm(centroid)
+            self._liked_centroid = centroid / (norm + 1e-9)
+
+        if disliked_vecs:
+            w = np.array(disliked_weights, dtype=np.float32)
+            centroid = np.average(
+                np.stack(disliked_vecs), axis=0, weights=w
+            )
+            norm = np.linalg.norm(centroid)
+            self._disliked_centroid = centroid / (norm + 1e-9)
+
+    def _build_topic_profile(self, rows: list[dict[str, Any]]) -> None:
+        """Build liked/disliked topic Counters from article enrichment data."""
+        urls = [str(row.get("url", "")) for row in rows]
+        if not urls:
+            return
+
+        enrichment_map = self.store.get_enrichment_for_urls(urls)
+        if not enrichment_map:
+            return
+
+        url_to_rating = {
+            str(row.get("url", "")): int(row["rating"]) for row in rows
+        }
+
+        for url, enrich in enrichment_map.items():
+            rating = url_to_rating.get(url, 3)
+            try:
+                topics = json.loads(enrich.get("topics_json") or "[]")
+            except (json.JSONDecodeError, TypeError):
+                topics = []
+            if not topics:
+                continue
+            for topic in topics:
+                if not isinstance(topic, str):
+                    continue
+                topic = topic.lower().strip()
+                if rating >= 4:
+                    self._liked_topics[topic] += 1.0
+                elif rating <= 2:
+                    self._disliked_topics[topic] += 1.0
 
 
 # ---------------------------------------------------------------------------

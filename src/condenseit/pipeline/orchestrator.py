@@ -7,6 +7,7 @@ import logging
 import shutil
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -22,13 +23,17 @@ from condenseit.collectors.rss import RSSCollector
 from condenseit.collectors.website import check_website_changes_with_health
 from condenseit.collectors.youtube import YouTubeCollector
 from condenseit.config import AppConfig, load_config, resolve_output_path
+from condenseit.learning.embeddings import build_embedding_provider
 from condenseit.learning.preference_engine import PreferenceEngine
+from condenseit.learning.reranker import build_profile_narrative, rerank
 from condenseit.pipeline.article_balance import select_balanced_digest_articles
 from condenseit.providers.base import SummarizerProvider
+from condenseit.providers.budget import BudgetTracker
 from condenseit.providers.factory import build_summarizer
 from condenseit.services.deploy import VpsDeployer
 from condenseit.settings_overlay import apply_db_settings
 from condenseit.store.database import ContentStore
+from condenseit.store.secure_keys import SecureKeyStore
 from condenseit.store.sources import SourceRegistry
 
 logger = logging.getLogger(__name__)
@@ -49,6 +54,30 @@ class DigestPipeline:
             self.store,
             digest_run_id=self.digest_run_id,
         )
+        _keys = SecureKeyStore(self.store)
+        self._or_key: str = (
+            _keys.get_key("openrouter") or self.config.llm.openrouter_api_key or ""
+        )
+        # Shared budget tracker for AI features (embeddings, reranker).
+        # Writes to the same spending table as the summarizer tracker so all
+        # OpenRouter costs aggregate correctly on the Budget page.
+        self._ai_budget: BudgetTracker | None = (
+            BudgetTracker(
+                self.store,
+                self.config.llm.openrouter_daily_budget_usd,
+                self.config.llm.openrouter_monthly_budget_usd,
+                digest_run_id=self.digest_run_id,
+            )
+            if self._or_key
+            else None
+        )
+        _embed_provider = build_embedding_provider(
+            self.config.relevance.embedding_provider,
+            self.config.relevance.embedding_model,
+            self.config.llm.ollama_host,
+            self._or_key,
+            budget=self._ai_budget,
+        )
         self.preferences = PreferenceEngine(
             self.store,
             self.config.relevance.min_ratings_for_learning,
@@ -58,6 +87,9 @@ class DigestPipeline:
             self.config.relevance.rating_decay_half_life_days,
             self.config.relevance.implicit_signal_weight,
             self.config.relevance.topic_synonyms,
+            embedding_provider=_embed_provider,
+            embedding_weight=self.config.relevance.embedding_preference_weight,
+            topic_score_weight=self.config.relevance.topic_score_weight,
         )
         self.digest_md = ""
         self.digest_html = ""
@@ -200,6 +232,33 @@ class DigestPipeline:
         # Deduplicate after ranking so the highest-scoring version of each
         # story cluster is the one that survives.
         ranked = self._deduplicate_stories(ranked)
+
+        # Phase 3: LLM reranker (optional, single call, fail-open).
+        if self.config.relevance.llm_rerank_enabled and not dry_run:
+            profile_narrative = build_profile_narrative(self.preferences)
+            if profile_narrative:
+                _rerank_model = (
+                    self.config.relevance.llm_rerank_model
+                    or self.summarizer.model_name
+                )
+                _api_key = self._or_key or None
+                _ollama = (
+                    self.config.llm.ollama_host
+                    if not _api_key
+                    else None
+                )
+                ranked = rerank(
+                    ranked,
+                    profile_narrative,
+                    model=_rerank_model,
+                    api_key=_api_key,
+                    ollama_host=_ollama,
+                    top_k=self.config.relevance.llm_rerank_top_k,
+                    blend=self.config.relevance.llm_rerank_blend,
+                    budget=self._ai_budget,
+                )
+                logger.info("LLM reranker applied (model=%s)", _rerank_model)
+
         max_n = self.config.max_articles_per_digest
         if self.config.balance_digest_categories:
             ranked = select_balanced_digest_articles(
@@ -221,9 +280,22 @@ class DigestPipeline:
         video_urls = {v.url for v in videos}
 
         if not dry_run:
-            for art in ranked:
+            workers = self.config.summarize_workers
+            logger.info(
+                "Summarizing %d articles with %d concurrent worker(s)",
+                len(ranked),
+                workers,
+            )
+            # Parallelize LLM API calls (the bottleneck). executor.map preserves
+            # input order so zip(ranked, summaries) pairs correctly.
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                summaries = list(
+                    pool.map(self.summarizer.summarize_article, ranked)
+                )
+
+            # Process results sequentially to keep DB writes off worker threads.
+            for art, result in zip(ranked, summaries):
                 category = str(art.get("category", "General"))
-                result = self.summarizer.summarize_article(art)
                 is_video = art["url"] in video_urls
                 entry_kind = (
                     "video" if is_video else str(art.get("kind") or "article")
@@ -241,7 +313,24 @@ class DigestPipeline:
                     "preference_score": art.get("preference_score"),
                     "score_breakdown": art.get("score_breakdown"),
                     "image_url": art.get("image_url"),
+                    # Phase 2: enrichment fields.
+                    "topics": result.get("topics") or [],
+                    "entities": result.get("entities") or [],
+                    "novelty": result.get("novelty") or 0,
+                    "relevance_to_you": result.get("relevance_to_you") or "",
                 }
+                # Persist enrichment so PreferenceEngine can use topics on next run.
+                try:
+                    self.store.save_enrichment(
+                        url=art["url"],
+                        topics=result.get("topics") or [],
+                        entities=result.get("entities") or [],
+                        novelty=result.get("novelty") or 0,
+                        signals=result.get("relevance_signals") or [],
+                        model=self.summarizer.model_name,
+                    )
+                except Exception:
+                    pass
                 if is_video:
                     video_summaries.append(entry)
                 else:

@@ -133,6 +133,9 @@ def apply_db_settings(config: AppConfig, store: ContentStore) -> AppConfig:
         ("category_preference_weight", "category_preference_weight", 0.0, 5.0),
         ("source_preference_weight", "source_preference_weight", 0.0, 5.0),
         ("implicit_signal_weight", "implicit_signal_weight", 0.0, 1.0),
+        ("embedding_preference_weight", "embedding_preference_weight", 0.0, 5.0),
+        ("topic_score_weight", "topic_score_weight", 0.0, 5.0),
+        ("llm_rerank_blend", "llm_rerank_blend", 0.0, 1.0),
     ]:
         raw = store.get_setting(key, "")
         if raw:
@@ -146,6 +149,7 @@ def apply_db_settings(config: AppConfig, store: ContentStore) -> AppConfig:
     for key, attr, lo, hi in [
         ("rating_decay_half_life_days", "rating_decay_half_life_days", 1, 3650),
         ("min_ratings_for_learning", "min_ratings_for_learning", 1, 1000),
+        ("llm_rerank_top_k", "llm_rerank_top_k", 5, 100),
     ]:
         raw = store.get_setting(key, "")
         if raw:
@@ -155,5 +159,59 @@ def apply_db_settings(config: AppConfig, store: ContentStore) -> AppConfig:
                     setattr(config.relevance, attr, val_i)
             except ValueError:
                 pass
+
+    # Feature flag overrides stored as "1"/"0" strings.
+    for key, attr in [
+        ("llm_rerank_enabled", "llm_rerank_enabled"),
+    ]:
+        raw = store.get_setting(key, "")
+        if raw == "1":
+            setattr(config.relevance, attr, True)
+        elif raw == "0":
+            setattr(config.relevance, attr, False)
+
+    for key, attr in [
+        ("embedding_provider", "embedding_provider"),
+        ("embedding_model", "embedding_model"),
+        ("llm_rerank_model", "llm_rerank_model"),
+    ]:
+        raw = store.get_setting(key, "")
+        if raw:
+            setattr(config.relevance, attr, raw)
+
+    # Phase 5: Apply cold-start bootstrap keywords when no YAML keywords are set.
+    bootstrap_raw = store.get_setting("bootstrap_initial_keywords", "")
+    if bootstrap_raw:
+        try:
+            bootstrap_kw = json.loads(bootstrap_raw)
+            if isinstance(bootstrap_kw, dict):
+                existing_high = config.relevance.initial_keywords.get("high", [])
+                existing_medium = config.relevance.initial_keywords.get("medium", [])
+                # Merge: YAML keywords take precedence; bootstrap fills gaps.
+                merged_high = list(
+                    {*existing_high, *bootstrap_kw.get("high", [])}
+                )
+                merged_medium = list(
+                    {*existing_medium, *bootstrap_kw.get("medium", [])}
+                )
+                config.relevance.initial_keywords = {
+                    "high": merged_high,
+                    "medium": merged_medium,
+                }
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    bootstrap_synonyms_raw = store.get_setting("bootstrap_synonyms", "")
+    if bootstrap_synonyms_raw:
+        try:
+            syn = json.loads(bootstrap_synonyms_raw)
+            if isinstance(syn, dict):
+                merged = dict(config.relevance.topic_synonyms)
+                for k, v in syn.items():
+                    if k not in merged:
+                        merged[k] = v
+                config.relevance.topic_synonyms = merged
+        except (json.JSONDecodeError, TypeError):
+            pass
 
     return config

@@ -36,6 +36,18 @@ _TIME_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 _GNEWS_BASE = "https://news.google.com/rss/search"
 _HN_BASE = "https://hacker-news.firebaseio.com/v0"
 
+# Reddit's JSON/RSS endpoints are blocked on most VPS IPs. Any Reddit source
+# is transparently converted to an equivalent Lemmy.world RSS feed so it still
+# works without requiring Reddit API credentials.
+_LEMMY_INSTANCE = "https://lemmy.world"
+_REDDIT_HOST_RE = re.compile(r"(?:https?://)?(?:www\.|old\.)?reddit\.com/r/([^/?#\s]+)", re.IGNORECASE)
+
+
+def _reddit_subreddit_to_lemmy_url(subreddit: str) -> str:
+    """Return a Lemmy.world RSS feed URL equivalent to r/{subreddit}."""
+    sub = subreddit.strip().lstrip("r/").lstrip("/").rstrip("/")
+    return f"{_LEMMY_INSTANCE}/feeds/c/{sub}.xml?sort=Active&type_=All"
+
 
 def _is_htmx(request: Request) -> bool:
     return request.headers.get("HX-Request", "").lower() == "true"
@@ -59,10 +71,18 @@ def _build_source_extra(
     reddit_max_items: int = 20,
     reddit_min_score: int = 10,
     github_repo: str = "",
-) -> tuple[dict[str, Any], str]:
-    """Return ``(extra_json_dict, feed_url)`` for the given source type."""
+) -> tuple[dict[str, Any], str, str, str | None]:
+    """Return ``(extra_json_dict, feed_url, effective_type, conversion_note)``
+
+    ``effective_type`` may differ from ``source_type`` when a Reddit source is
+    automatically converted to a Lemmy RSS feed. ``conversion_note`` is a
+    human-readable explanation of the conversion, or ``None`` if no conversion
+    occurred.
+    """
     extra: dict[str, Any] = {}
     feed_url = url
+    effective_type = source_type
+    conversion_note: str | None = None
 
     if source_type == "youtube" and channel_id:
         extra = {"channel_id": channel_id, "handle": name}
@@ -90,15 +110,37 @@ def _build_source_extra(
         feed_url = f"{_HN_BASE}/{feed}stories.json"
 
     elif source_type == "reddit":
+        # Reddit's API and RSS endpoints are blocked on datacenter IPs.
+        # Store the source as type="reddit" so the badge still shows "Reddit"
+        # in the UI, but point the URL at an equivalent Lemmy.world RSS feed.
+        # feeds_for_config() picks up reddit sources with a converted_from key
+        # and hands them to the RSS collector instead of the Reddit collector.
         sub = (subreddit or "").strip().lstrip("r/").lstrip("/")
-        extra = {
-            "subreddit": sub,
-            "sort": reddit_sort or "hot",
-            "time_filter": reddit_time_filter or "day",
-            "max_items": reddit_max_items,
-            "min_score": reddit_min_score,
-        }
-        feed_url = f"https://www.reddit.com/r/{sub}/"
+        # Also try to extract subreddit from a pasted Reddit URL.
+        if not sub and url:
+            m = _REDDIT_HOST_RE.search(url)
+            if m:
+                sub = m.group(1)
+        feed_url = _reddit_subreddit_to_lemmy_url(sub)
+        # Keep effective_type="reddit" so the UI badge stays "Reddit".
+        extra = {"converted_from": f"reddit:r/{sub}"}
+        conversion_note = (
+            f"r/{sub} automatically routed via Lemmy.world RSS "
+            f"(Reddit's API is blocked on most server IPs). "
+            f"Feed: {feed_url}"
+        )
+
+    elif source_type == "rss" and url and _REDDIT_HOST_RE.search(url):
+        # User pasted a reddit.com URL into the RSS URL field - convert it too.
+        m = _REDDIT_HOST_RE.search(url)
+        sub = m.group(1) if m else ""
+        if sub:
+            feed_url = _reddit_subreddit_to_lemmy_url(sub)
+            extra = {"converted_from": f"reddit:r/{sub}"}
+            conversion_note = (
+                f"Reddit URL detected and converted to a Lemmy.world RSS feed. "
+                f"Feed: {feed_url}"
+            )
 
     elif source_type == "github_releases":
         repo = (github_repo or "").strip().strip("/")
@@ -109,7 +151,7 @@ def _build_source_extra(
         extra = {"feed_url": url, "name": name}
         feed_url = url
 
-    return extra, feed_url
+    return extra, feed_url, effective_type, conversion_note
 
 
 async def _read_source_payload(request: Request) -> dict[str, Any]:
@@ -243,7 +285,7 @@ def create_admin_router(
         reddit_min_score = int(payload["reddit_min_score"])
         github_repo = str(payload["github_repo"])
 
-        extra, feed_url = _build_source_extra(
+        extra, feed_url, effective_type, conversion_note = _build_source_extra(
             source_type,
             url,
             channel_id,
@@ -261,8 +303,11 @@ def create_admin_router(
             reddit_min_score=reddit_min_score,
             github_repo=github_repo,
         )
-        sources.add(source_type, name, category, priority, feed_url, extra=extra)
-        return JSONResponse({"ok": True})
+        sources.add(effective_type, name, category, priority, feed_url, extra=extra)
+        resp: dict[str, Any] = {"ok": True}
+        if conversion_note:
+            resp["note"] = conversion_note
+        return JSONResponse(resp)
 
     @router.put("/api/sources/{source_id}", response_model=None)
     async def api_update_source(source_id: int, request: Request) -> JSONResponse:
@@ -271,7 +316,7 @@ def create_admin_router(
         if error is not None:
             return JSONResponse({"error": error}, status_code=422)
 
-        extra, feed_url = _build_source_extra(
+        extra, feed_url, effective_type, conversion_note = _build_source_extra(
             str(payload["source_type"]),
             str(payload["url"]),
             str(payload["channel_id"]),
@@ -291,14 +336,17 @@ def create_admin_router(
         )
         sources.update(
             source_id,
-            str(payload["source_type"]),
+            effective_type,
             str(payload["name"]),
             str(payload["category"]),
             int(payload["priority"]),
             feed_url,
             extra=extra,
         )
-        return JSONResponse({"ok": True})
+        resp: dict[str, Any] = {"ok": True}
+        if conversion_note:
+            resp["note"] = conversion_note
+        return JSONResponse(resp)
 
     @router.delete("/api/sources/{source_id}", response_model=None)
     async def api_delete_source(source_id: int) -> JSONResponse:
@@ -721,7 +769,7 @@ def create_admin_router(
         reddit_min_score: int = Form(10),
         github_repo: str = Form(""),
     ) -> HTMLResponse | RedirectResponse:
-        extra, feed_url = _build_source_extra(
+        extra, feed_url, effective_type, _note = _build_source_extra(
             source_type,
             url,
             channel_id,
@@ -739,7 +787,7 @@ def create_admin_router(
             reddit_min_score=reddit_min_score,
             github_repo=github_repo,
         )
-        sources.add(source_type, name, category, priority, feed_url, extra=extra)
+        sources.add(effective_type, name, category, priority, feed_url, extra=extra)
         if _is_htmx(request):
             return _sources_table_response(request)
         return RedirectResponse("/admin/sources", status_code=303)

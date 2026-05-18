@@ -4,6 +4,120 @@ import type { PreferenceProfile } from '../../lib/types';
 import { Card, CardHeader } from '../../components/Card';
 import { Spinner } from '../../components/Spinner';
 
+// ---------------------------------------------------------------------------
+// Cold-start onboarding panel (Phase 5)
+// ---------------------------------------------------------------------------
+
+function BootstrapPanel({
+  onSuccess,
+}: {
+  onSuccess: (summary: string) => void;
+}) {
+  const [text, setText] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<{
+    high_keywords: string[];
+    medium_keywords: string[];
+    profile_summary: string;
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: Event) {
+    e.preventDefault();
+    if (!text.trim() || loading) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await api.bootstrapPreferences(text.trim());
+      setResult(data);
+      onSuccess(data.profile_summary || '');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Bootstrap failed.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (result) {
+    return (
+      <Card>
+        <CardHeader
+          title="Profile seeded"
+          description="Your initial preferences have been saved. Run a digest to see them in action."
+        />
+        {result.profile_summary && (
+          <p class="text-sm text-slate-600 dark:text-slate-400 italic mb-3">
+            "{result.profile_summary}"
+          </p>
+        )}
+        <div class="flex flex-wrap gap-1.5">
+          {result.high_keywords.map((k) => (
+            <span
+              key={k}
+              class="text-xs px-2 py-0.5 rounded-full bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 font-medium"
+            >
+              {k}
+            </span>
+          ))}
+          {result.medium_keywords.map((k) => (
+            <span
+              key={k}
+              class="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
+            >
+              {k}
+            </span>
+          ))}
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        title="Personalise from scratch"
+        description="Tell the AI what you care about and it will configure your initial ranking preferences."
+      />
+      <form onSubmit={handleSubmit} class="space-y-3">
+        <textarea
+          value={text}
+          onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
+          placeholder={
+            'e.g. "I care about AI safety, open-source software, and infosec.' +
+            ' Not interested in crypto, sports, or celebrity news."'
+          }
+          rows={4}
+          class={[
+            'w-full text-sm rounded-lg px-3 py-2 resize-none',
+            'border border-slate-200 dark:border-slate-700',
+            'bg-white dark:bg-slate-900',
+            'text-slate-700 dark:text-slate-300',
+            'placeholder-slate-400 dark:placeholder-slate-600',
+            'focus:outline-none focus:ring-2 focus:ring-teal-400',
+          ].join(' ')}
+        />
+        {error && (
+          <p class="text-xs text-rose-500 dark:text-rose-400">{error}</p>
+        )}
+        <button
+          type="submit"
+          disabled={loading || !text.trim()}
+          class={[
+            'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium',
+            'bg-teal-600 dark:bg-teal-500 text-white',
+            'hover:bg-teal-700 dark:hover:bg-teal-400',
+            'disabled:opacity-50 disabled:cursor-not-allowed',
+            'transition-colors',
+          ].join(' ')}
+        >
+          {loading && <Spinner size="sm" className="text-white" />}
+          {loading ? 'Seeding preferences...' : 'Seed my preferences'}
+        </button>
+      </form>
+    </Card>
+  );
+}
+
 /** Signed score -> CSS color class. */
 const scoreColor = (score: number) =>
   score > 0
@@ -120,6 +234,8 @@ export function PreferencesPage() {
   const [profile, setProfile] = useState<PreferenceProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [bootstrapDone, setBootstrapDone] = useState(false);
+  const [showBootstrap, setShowBootstrap] = useState(false);
 
   useEffect(() => {
     api
@@ -186,6 +302,23 @@ export function PreferencesPage() {
                 {!profile.learning_active &&
                   ` — need at least ${profile.min_ratings_threshold} to activate`}
               </span>
+              {profile.embedding_active && (
+                <span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-400 font-medium">
+                  <span class="w-1.5 h-1.5 rounded-full bg-violet-500" />
+                  Semantic profile active
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowBootstrap((v) => !v)}
+                class="ml-auto text-xs text-teal-600 dark:text-teal-400 hover:underline"
+              >
+                {showBootstrap
+                  ? 'Hide'
+                  : profile.learning_active
+                    ? 'Re-seed with AI'
+                    : 'Seed with AI'}
+              </button>
             </div>
             {!profile.learning_active && (
               <p class="mt-3 text-xs text-slate-400 dark:text-slate-500">
@@ -194,6 +327,18 @@ export function PreferencesPage() {
               </p>
             )}
           </Card>
+
+          {/* Cold-start / re-seed panel */}
+          {(!profile.learning_active && !bootstrapDone
+            ? true
+            : showBootstrap) && (
+            <BootstrapPanel
+              onSuccess={() => {
+                setBootstrapDone(true);
+                setShowBootstrap(false);
+              }}
+            />
+          )}
 
           {/* Rating distribution */}
           {profile.rating_count > 0 && (
@@ -333,13 +478,13 @@ export function PreferencesPage() {
             </Card>
           )}
 
-          {/* Liked and disliked topics */}
+          {/* Liked and disliked keyword terms (TF-IDF profile) */}
           {(profile.top_liked_terms.length > 0 ||
             profile.top_disliked_terms.length > 0) && (
             <Card>
               <CardHeader
-                title="Topics"
-                description="Terms extracted from articles you rated. Badge size reflects strength."
+                title="Content terms"
+                description="Keywords and terms extracted from articles you rated. Badge size reflects strength of preference."
               />
               <div class="space-y-4">
                 {profile.top_liked_terms.length > 0 && (
@@ -389,12 +534,12 @@ export function PreferencesPage() {
             </Card>
           )}
 
-          {/* Bigrams */}
+          {/* Bigram phrases */}
           {(profile.top_liked_bigrams?.length > 0 ||
             profile.top_disliked_bigrams?.length > 0) && (
             <Card>
               <CardHeader
-                title="Topic phrases"
+                title="Keyword phrases"
                 description="Two-word phrases from article titles that most influenced ranking."
               />
               <div class="space-y-4">
@@ -426,6 +571,55 @@ export function PreferencesPage() {
                         <span
                           key={t.term}
                           class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400"
+                          title={`Score: ${t.score.toFixed(2)}`}
+                        >
+                          {t.term}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Card>
+          )}
+
+          {/* Semantic topics from AI enrichment (Phase 2) */}
+          {((profile.top_liked_topics?.length ?? 0) > 0 ||
+            (profile.top_disliked_topics?.length ?? 0) > 0) && (
+            <Card>
+              <CardHeader
+                title="AI-extracted topics"
+                description="Semantic topics the LLM identified in articles you liked or disliked."
+              />
+              <div class="space-y-4">
+                {(profile.top_liked_topics?.length ?? 0) > 0 && (
+                  <div>
+                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500 mb-2">
+                      Liked topics
+                    </p>
+                    <div class="flex flex-wrap gap-1.5">
+                      {profile.top_liked_topics!.map((t) => (
+                        <span
+                          key={t.term}
+                          class="px-2 py-0.5 rounded-full text-xs font-medium bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300"
+                          title={`Score: ${t.score.toFixed(2)}`}
+                        >
+                          {t.term}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {(profile.top_disliked_topics?.length ?? 0) > 0 && (
+                  <div>
+                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500 mb-2">
+                      Disliked topics
+                    </p>
+                    <div class="flex flex-wrap gap-1.5">
+                      {profile.top_disliked_topics!.map((t) => (
+                        <span
+                          key={t.term}
+                          class="px-2 py-0.5 rounded-full text-xs font-medium bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400"
                           title={`Score: ${t.score.toFixed(2)}`}
                         >
                           {t.term}

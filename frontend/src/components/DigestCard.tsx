@@ -6,7 +6,7 @@ import type { DigestItem, ScoreBreakdown } from '../lib/types';
 import { api } from '../lib/api';
 
 /** Human-readable labels for each score signal. */
-const SIGNAL_LABELS: Record<keyof ScoreBreakdown, string> = {
+const SIGNAL_LABELS: Record<string, string> = {
   keyword_high: 'Keyword (high)',
   keyword_medium: 'Keyword (medium)',
   term_overlap: 'Topic terms',
@@ -18,18 +18,22 @@ const SIGNAL_LABELS: Record<keyof ScoreBreakdown, string> = {
   implicit_category: 'Read/saved category',
   implicit_source: 'Read/saved source',
   synonym_boost: 'Related topics',
+  embedding_similarity: 'Semantic similarity',
+  topic_score: 'Topic match',
+  llm_rerank: 'AI relevance',
 };
 
 /** Collapsible score breakdown panel shown at the bottom of each card. */
 function ScoreBreakdownPanel({ breakdown }: { breakdown: ScoreBreakdown }) {
   const [open, setOpen] = useState(false);
-  const nonZero = (
-    Object.entries(breakdown) as [keyof ScoreBreakdown, number][]
-  ).filter(([, v]) => Math.abs(v) > 0.001);
+  const nonZero = Object.entries(breakdown).filter(
+    ([k, v]) => k !== 'llm_reason' && typeof v === 'number' && Math.abs(v as number) > 0.001,
+  ) as [string, number][];
 
   if (nonZero.length === 0) return null;
 
-  const maxAbs = Math.max(...nonZero.map(([, v]) => Math.abs(v)), 0.1);
+  const maxAbs = Math.max(...nonZero.map(([, v]) => Math.abs(v as number)), 0.1);
+  const llmReason = breakdown.llm_reason;
 
   return (
     <div class="pt-1">
@@ -61,10 +65,11 @@ function ScoreBreakdownPanel({ breakdown }: { breakdown: ScoreBreakdown }) {
           {nonZero.map(([key, val]) => {
             const pct = (Math.abs(val) / maxAbs) * 100;
             const isPos = val >= 0;
+            const label = SIGNAL_LABELS[key] ?? key;
             return (
               <div key={key} class="flex items-center gap-2">
                 <span class="text-xs text-slate-500 dark:text-slate-400 w-32 flex-shrink-0 truncate">
-                  {SIGNAL_LABELS[key]}
+                  {label}
                 </span>
                 <div class="flex-1 flex items-center gap-1">
                   <div class="flex-1 bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
@@ -83,6 +88,11 @@ function ScoreBreakdownPanel({ breakdown }: { breakdown: ScoreBreakdown }) {
               </div>
             );
           })}
+          {llmReason && (
+            <p class="text-xs text-slate-400 dark:text-slate-500 italic pt-0.5">
+              AI: {llmReason}
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -301,6 +311,30 @@ export function DigestCard({
         >
           {summary}
         </p>
+      )}
+
+      {item.relevance_to_you && (
+        <p class="text-xs text-teal-700 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/20 rounded px-2 py-1 leading-relaxed">
+          {item.relevance_to_you}
+        </p>
+      )}
+
+      {item.topics && item.topics.length > 0 && (
+        <div class="flex flex-wrap gap-1">
+          {item.topics.slice(0, 5).map((t) => (
+            <span
+              key={t}
+              class="text-xs px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400"
+            >
+              {t}
+            </span>
+          ))}
+          {item.novelty !== undefined && item.novelty >= 4 && (
+            <span class="text-xs px-1.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 font-medium">
+              novel
+            </span>
+          )}
+        </div>
       )}
 
       {item.score_breakdown && (

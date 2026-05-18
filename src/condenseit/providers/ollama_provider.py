@@ -25,6 +25,7 @@ def _build_summary_prompt(
         f'"<takeaway {i + 1}>"' for i in range(max_key_takeaways)
     )
     para_word = "paragraph" if max_summary_paragraphs == 1 else "paragraphs"
+
     return (
         "Analyze this article and respond ONLY with a JSON object — no markdown, "
         "no code fences, no extra text. All values must be written in English.\n\n"
@@ -32,7 +33,10 @@ def _build_summary_prompt(
         f"{{\n"
         f'  "tldr": "<one sentence in English: what happened and why it matters>",\n'
         f'  "key_takeaways": [{takeaway_placeholders}],\n'
-        f'  "summary": "<detailed summary in English, {max_summary_paragraphs} {para_word}>"\n'
+        f'  "summary": "<detailed summary in English, {max_summary_paragraphs} {para_word}>",\n'  # noqa: E501
+        f'  "topics": ["<topic-1>", "<topic-2>", "<topic-3>"],\n'
+        f'  "entities": ["<person-org-product-1>", "<entity-2>"],\n'
+        f'  "novelty": <integer 1-5: how surprising or novel vs mainstream coverage>\n'
         f"}}\n\n"
         f"Title: {title}\n"
         f"Content: {content}\n\n"
@@ -57,7 +61,10 @@ class OllamaSummarizer(SummarizerProvider):
     def model_name(self) -> str:
         return self.model
 
-    def summarize_article(self, article: dict[str, Any]) -> ArticleSummary:
+    def summarize_article(
+        self,
+        article: dict[str, Any],
+    ) -> ArticleSummary:
         content = (article.get("content") or "")[:4000]
         title = article.get("title", "Untitled")
         prompt = _build_summary_prompt(
@@ -69,7 +76,7 @@ class OllamaSummarizer(SummarizerProvider):
         response = self.client.generate(
             model=self.model,
             prompt=prompt,
-            options={"temperature": 0.3, "num_predict": 700},
+            options={"temperature": 0.3, "num_predict": 900},
         )
         return parse_summary_response(response["response"])
 

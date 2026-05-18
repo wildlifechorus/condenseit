@@ -46,10 +46,11 @@ The ranking engine learns from multiple signals:
 | **Save for later** | Implicit strong positive | Strong boost to category and content profile |
 | **Dismiss** | Implicit mild negative | Mild penalty to category and content profile |
 
-Scores are additive across eleven named signals (keywords, term overlap, bigram
-phrases, TF-IDF cosine, category, source, three implicit channels, and synonym
-boost). Every article card shows a collapsible "Why ranked here?" breakdown so
-you can see exactly what drove its position.
+Scores are additive across multiple named signals: keywords, term overlap,
+bigram phrases, TF-IDF cosine, category, source, three implicit channels,
+synonym boost, semantic embedding similarity, LLM-extracted topic score, and an
+optional LLM rerank pass. Every article card shows a collapsible "Why ranked
+here?" breakdown so you can see exactly what drove its position.
 
 **Supported source types** (all configured from Admin > Sources, no API keys needed):
 
@@ -205,7 +206,8 @@ Settings also editable live in the admin panel (stored in SQLite, no restart nee
   `preferred_languages`, `max_key_takeaways`, `max_summary_paragraphs`
 - **Ranking weights** - `tfidf_preference_weight`, `category_preference_weight`,
   `source_preference_weight`, `implicit_signal_weight`,
-  `rating_decay_half_life_days`, `min_ratings_for_learning`
+  `rating_decay_half_life_days`, `min_ratings_for_learning`,
+  `embedding_preference_weight`, `topic_score_weight`
 - **LLM** - provider, model, OpenRouter model, cheapest-model selection
 - **Budget** - OpenRouter daily and monthly budget limits
 - **Security** - admin password
@@ -254,16 +256,50 @@ relevance:
     security:   ["infosec", "cybersecurity", "appsec"]
 ```
 
+**AI-powered ranking (optional, incremental)**
+
+When an LLM provider is available the engine adds three additional layers on top
+of classical ranking. Each layer is independently controlled and off by default:
+
+- **Semantic embeddings** - article text and your liked/disliked articles are
+  encoded as vectors. The engine scores each candidate by cosine similarity to
+  the centroid of your liked embeddings minus disliked embeddings. Embeddings
+  are generated once and cached in SQLite (keyed by URL + content hash), so
+  subsequent digest runs are fast. Configure with `embedding_provider`
+  (`"ollama"` / `"openrouter"` / `"off"`), `embedding_model`, and
+  `embedding_preference_weight`.
+
+- **Topic/entity enrichment** - the LLM already summarizes each article; the
+  same call now also extracts `topics`, `entities`, and a `novelty` score
+  (1-5). These are persisted in an `article_enrichment` table and used to build
+  a topic profile from your ratings. Articles matching liked topics are boosted;
+  articles matching disliked topics are penalised. Weight controlled by
+  `topic_score_weight`. Topics and a "novel" badge are displayed on each card.
+
+- **LLM reranker** - after classical scoring a compact profile narrative is
+  built from your top liked/disliked terms, categories, and sources. The LLM
+  is asked to score the top-K candidates (configurable via `llm_rerank_top_k`,
+  default 30) by relevance and return a brief reason. The LLM relevance score
+  is blended with the classical score (`llm_rerank_blend`, default `0.3`). The
+  reason appears in the "Why ranked here?" panel. Enable with
+  `llm_rerank_enabled: true` in `config.yaml`.
+
+- **Cold-start bootstrap** - if you have no ratings yet, visit **Admin >
+  Preferences** and describe your interests in plain text. The LLM derives
+  initial keywords, synonyms, and a profile summary that seed the engine before
+  any ratings exist. These are stored in the DB and override YAML defaults.
+
 **Score transparency**
 
 Every article card in the digest shows a collapsible "Why ranked here?" panel
-listing each contributing signal as a proportional bar. The **Admin > Preferences**
-page shows the full learned profile: rating distribution histogram, liked/disliked
-terms sized by weight, category and source bars, bigram phrases, implicit signal
-counts, and the current decay weight of your oldest rating.
+listing each contributing signal as a proportional bar (classical + AI signals).
+The **Admin > Preferences** page shows the full learned profile: rating
+distribution histogram, liked/disliked terms sized by weight, category and
+source bars, bigram phrases, top liked/disliked LLM topics, embedding status,
+implicit signal counts, and the current decay weight of your oldest rating.
 
-All ranking weights are adjustable live in **Admin > Settings > Ranking weights**
-without restarting the server.
+All ranking weights are adjustable live in **Admin > Digest** without restarting
+the server.
 
 ---
 

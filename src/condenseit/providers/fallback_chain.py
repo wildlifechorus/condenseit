@@ -24,7 +24,10 @@ class FallbackChainProvider(SummarizerProvider):
     def model_name(self) -> str:
         return self._active.model_name
 
-    def summarize_article(self, article: dict[str, Any]) -> ArticleSummary:
+    def summarize_article(
+        self,
+        article: dict[str, Any],
+    ) -> ArticleSummary:
         for provider in (self.primary, self.fallback):
             try:
                 result = provider.summarize_article(article)

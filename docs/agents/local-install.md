@@ -116,7 +116,7 @@ For OpenRouter, also set:
 ```yaml
 llm:
   provider: "openrouter"
-  openrouter_model: "openai/gpt-4o-mini"
+  openrouter_model: "qwen/qwen3.5-flash-02-23"
   openrouter_daily_budget_usd: 0.50
 ```
 

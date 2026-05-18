@@ -83,6 +83,17 @@ export const api = {
   getPreferenceProfile: () =>
     request<PreferenceProfile>('GET', '/api/preferences/profile'),
 
+  // Phase 5: Cold-start bootstrap
+  bootstrapPreferences: (interests: string) =>
+    request<{
+      ok: boolean;
+      high_keywords: string[];
+      medium_keywords: string[];
+      dislikes: string[];
+      synonyms: Record<string, string[]>;
+      profile_summary: string;
+    }>('POST', '/api/preferences/bootstrap', { interests }),
+
   // Ranking weights (admin-tunable)
   getRankingWeights: () =>
     request<RankingWeights>('GET', '/api/preferences/weights'),

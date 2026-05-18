@@ -73,8 +73,10 @@ watch_urls: []
 # these phrases (case-insensitive substring match) are dropped before
 # ranking. Add as many entries as needed; empty list disables the filter.
 # ---------------------------------------------------------------------------
-exclude_keywords: []
-#  - "Community Forum"
+exclude_keywords:
+  - "Community Forum"
+  - "promotional code"
+  - "promotional campaign"
 #  - "sponsored"
 
 relevance:
@@ -129,12 +131,12 @@ llm:
 
   # OpenRouter (used when provider is "openrouter" or "fallback")
   # API key comes from OPENROUTER_API_KEY env var (required by default).
-  openrouter_model: "openai/gpt-4o-mini"
+  openrouter_model: "qwen/qwen3.5-flash-02-23"
   # Hard limits to prevent runaway costs. Pipeline stops if exceeded.
   openrouter_daily_budget_usd: 1.0
   openrouter_monthly_budget_usd: 10.0
   # When true, picks the cheapest available model (re-checked hourly).
-  openrouter_pick_cheapest: true
+  openrouter_pick_cheapest: false
 
 # VPS deployment (used by scripts/deploy.sh)
 # Leave host empty until you have a real SSH target.

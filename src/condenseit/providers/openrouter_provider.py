@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 import httpx
@@ -37,13 +38,17 @@ def _build_user_prompt(
         f'"<takeaway {i + 1}>"' for i in range(max_key_takeaways)
     )
     para_word = "paragraph" if max_summary_paragraphs == 1 else "paragraphs"
+
     return (
         "Analyze this article and respond with a JSON object "
         "in exactly this structure. All values must be written in English:\n"
         f"{{\n"
         f'  "tldr": "<one sentence in English: what happened and why it matters>",\n'
         f'  "key_takeaways": [{takeaway_placeholders}],\n'
-        f'  "summary": "<detailed summary in English, {max_summary_paragraphs} {para_word}>"\n'
+        f'  "summary": "<detailed summary in English, {max_summary_paragraphs} {para_word}>",\n'  # noqa: E501
+        f'  "topics": ["<topic-1>", "<topic-2>", "<topic-3>"],\n'
+        f'  "entities": ["<person-org-product-1>", "<entity-2>"],\n'
+        f'  "novelty": <integer 1-5: how surprising or novel vs mainstream coverage>\n'
         f"}}\n\n"
         f"Title: {title}\n"
         f"Content: {content}"
@@ -88,10 +93,25 @@ class OpenRouterSummarizer(SummarizerProvider):
             "HTTP-Referer": "https://github.com/condenseit/condenseit",
             "X-Title": "CondenseIt",
         }
+        _RETRY_WAITS = [5, 15, 30]
+        resp: httpx.Response | None = None
         with httpx.Client(timeout=120.0) as client:
-            resp = client.post(OPENROUTER_URL, json=payload, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
+            for attempt in range(len(_RETRY_WAITS) + 1):
+                resp = client.post(OPENROUTER_URL, json=payload, headers=headers)
+                if resp.status_code != 429:
+                    resp.raise_for_status()
+                    break
+                if attempt >= len(_RETRY_WAITS):
+                    resp.raise_for_status()
+                wait = int(resp.headers.get("Retry-After") or _RETRY_WAITS[attempt])
+                logger.warning(
+                    "OpenRouter 429 rate limit; retrying in %ds (attempt %d/%d)",
+                    wait,
+                    attempt + 1,
+                    len(_RETRY_WAITS),
+                )
+                time.sleep(wait)
+        data = resp.json()  # type: ignore[union-attr]
 
         usage = data.get("usage", {})
         cost = float(data.get("usage", {}).get("cost", 0) or 0)
@@ -107,7 +127,10 @@ class OpenRouterSummarizer(SummarizerProvider):
             return ""
         return str(choices[0]["message"]["content"]).strip()
 
-    def summarize_article(self, article: dict[str, Any]) -> ArticleSummary:
+    def summarize_article(
+        self,
+        article: dict[str, Any],
+    ) -> ArticleSummary:
         content = (article.get("content") or "")[:4000]
         title = article.get("title", "Untitled")
         messages = [
@@ -122,7 +145,7 @@ class OpenRouterSummarizer(SummarizerProvider):
                 ),
             },
         ]
-        raw = self._chat(messages, max_tokens=700)
+        raw = self._chat(messages, max_tokens=900)
         return parse_summary_response(raw)
 
     def generate_digest(

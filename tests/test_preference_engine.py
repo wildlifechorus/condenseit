@@ -511,7 +511,9 @@ def test_rank_articles_returns_score_breakdown(store: ContentStore) -> None:
     """Every ranked article must include a non-None score_breakdown dict."""
     for i in range(5):
         url = f"https://a.test/{i}"
-        _save_article(store, url, f"CVE story {i}", "cve exploit kernel", "Infosec", "Feed")
+        _save_article(
+            store, url, f"CVE story {i}", "cve exploit kernel", "Infosec", "Feed"
+        )
         _rate(store, url, 5)
 
     eng = _engine(store, min_ratings=5, tfidf_weight=0.35)
@@ -526,13 +528,17 @@ def test_rank_articles_returns_score_breakdown(store: ContentStore) -> None:
     assert "score_breakdown" in ranked[0]
     bd = ranked[0]["score_breakdown"]
     assert isinstance(bd, dict)
-    expected_keys = {
+    # Core classical keys must always be present.
+    expected_core_keys = {
         "keyword_high", "keyword_medium", "term_overlap", "bigram_overlap",
         "tfidf_cosine", "category", "source",
         "implicit_content", "implicit_category", "implicit_source",
         "synonym_boost",
     }
-    assert expected_keys == set(bd.keys())
+    # New AI-signal keys are also always present (default 0.0 when disabled).
+    expected_ai_keys = {"embedding_similarity", "topic_score", "llm_rerank"}
+    assert expected_core_keys.issubset(set(bd.keys()))
+    assert expected_ai_keys.issubset(set(bd.keys()))
 
 
 def test_score_breakdown_keyword_high_contributes(store: ContentStore) -> None:
@@ -553,7 +559,9 @@ def test_score_breakdown_sums_to_preference_score(store: ContentStore) -> None:
     """The sum of all breakdown values must equal preference_score."""
     for i in range(5):
         url = f"https://b.test/{i}"
-        _save_article(store, url, f"Python tips {i}", "python async coroutine", "Dev", "Feed")
+        _save_article(
+            store, url, f"Python tips {i}", "python async coroutine", "Dev", "Feed"
+        )
         _rate(store, url, 5)
 
     eng = _engine(store, min_ratings=5, tfidf_weight=0.35)
@@ -566,8 +574,10 @@ def test_score_breakdown_sums_to_preference_score(store: ContentStore) -> None:
     }
     ranked = eng.rank_articles([art])
     bd = ranked[0]["score_breakdown"]
-    total = round(sum(bd.values()), 3)
-    assert total == pytest.approx(ranked[0]["preference_score"], abs=0.01)
+    numeric_total = round(
+        sum(v for v in bd.values() if isinstance(v, (int, float))), 3
+    )
+    assert numeric_total == pytest.approx(ranked[0]["preference_score"], abs=0.01)
 
 
 # ---------------------------------------------------------------------------
@@ -602,7 +612,9 @@ def test_liked_bigrams_boost_score(store: ContentStore) -> None:
     for i in range(5):
         url = f"https://sc.test/{i}"
         _save_article(
-            store, url, "supply chain vulnerability", "attack supply chain", "Infosec", "Feed"
+            store, url,
+            "supply chain vulnerability", "attack supply chain",
+            "Infosec", "Feed",
         )
         _rate(store, url, 5)
 
@@ -700,7 +712,9 @@ def test_implicit_dismissed_lowers_score(store: ContentStore) -> None:
     for i in range(5):
         url = f"https://dis-cat.test/{i}"
         _save_article(
-            store, url, f"Recipe {i}", "cooking pasta kitchen recipe", "Lifestyle", "LifeFeed"
+            store, url,
+            f"Recipe {i}", "cooking pasta kitchen recipe",
+            "Lifestyle", "LifeFeed",
         )
         _rate(store, url, 3)  # neutral explicit rating
 
@@ -777,7 +791,9 @@ def test_synonym_boost_applies_when_synonym_present(store: ContentStore) -> None
     for i in range(5):
         url = f"https://k8s.test/{i}"
         _save_article(
-            store, url, f"Kubernetes deploy {i}", "kubernetes cluster deployment", "Dev", "Feed"
+            store, url,
+            f"Kubernetes deploy {i}", "kubernetes cluster deployment",
+            "Dev", "Feed",
         )
         _rate(store, url, 5)
 
@@ -859,6 +875,7 @@ def test_api_dismiss_endpoint(
 ) -> None:
     """POST /api/dismiss must record the URL in dismissed_articles."""
     from fastapi.testclient import TestClient
+
     from condenseit.web.app import create_app
 
     data_root = tmp_path / "appdata"
@@ -886,6 +903,7 @@ def test_api_ranking_weights_get(
 ) -> None:
     """GET /api/preferences/weights must return a dict with all weight keys."""
     from fastapi.testclient import TestClient
+
     from condenseit.web.app import create_app
 
     monkeypatch.setenv("CONDENSEIT_DATA_DIR", str(tmp_path / "data"))
@@ -910,6 +928,7 @@ def test_api_ranking_weights_put(
 ) -> None:
     """PUT /api/preferences/weights must persist values and be read back."""
     from fastapi.testclient import TestClient
+
     from condenseit.web.app import create_app
 
     monkeypatch.setenv("CONDENSEIT_DATA_DIR", str(tmp_path / "wdata"))

@@ -219,6 +219,30 @@ class ContentStore:
                 },
                 pk="url",
             )
+        if "article_embeddings" not in self.db.table_names():
+            self.db["article_embeddings"].create(
+                {
+                    "url": str,
+                    "model": str,
+                    "content_hash": str,
+                    "vector": bytes,
+                    "embedded_at": str,
+                },
+                pk=["url", "model"],
+            )
+        if "article_enrichment" not in self.db.table_names():
+            self.db["article_enrichment"].create(
+                {
+                    "url": str,
+                    "topics_json": str,
+                    "entities_json": str,
+                    "novelty": int,
+                    "signals_json": str,
+                    "model": str,
+                    "generated_at": str,
+                },
+                pk="url",
+            )
 
     def get_setting(self, key: str, default: str = "") -> str:
         if "settings" not in self.db.table_names():
@@ -581,3 +605,99 @@ class ContentStore:
             )
         )
         return dict(rows[0]) if rows else None
+
+    # ------------------------------------------------------------------
+    # Embedding cache
+    # ------------------------------------------------------------------
+
+    def get_embedding(
+        self, url: str, model: str, content_hash: str
+    ) -> bytes | None:
+        """Return the cached raw vector BLOB or None if stale/missing."""
+        if "article_embeddings" not in self.db.table_names():
+            return None
+        rows = list(
+            self.db.query(
+                "SELECT vector, content_hash FROM article_embeddings"
+                " WHERE url = ? AND model = ?",
+                [url, model],
+            )
+        )
+        if not rows:
+            return None
+        row = rows[0]
+        if str(row.get("content_hash", "")) != content_hash:
+            return None
+        return row["vector"]
+
+    def save_embedding(
+        self,
+        url: str,
+        model: str,
+        content_hash: str,
+        vector_blob: bytes,
+    ) -> None:
+        """Upsert an embedding BLOB for the given article and model."""
+        self.db["article_embeddings"].upsert(
+            {
+                "url": url,
+                "model": model,
+                "content_hash": content_hash,
+                "vector": vector_blob,
+                "embedded_at": datetime.now(UTC).isoformat(),
+            },
+            pk=["url", "model"],
+        )
+
+    # ------------------------------------------------------------------
+    # Article enrichment (LLM-extracted topics/entities/novelty)
+    # ------------------------------------------------------------------
+
+    def get_enrichment(self, url: str) -> dict[str, Any] | None:
+        """Return the enrichment row for a URL, or None if not found."""
+        if "article_enrichment" not in self.db.table_names():
+            return None
+        rows = list(
+            self.db.query(
+                "SELECT * FROM article_enrichment WHERE url = ?", [url]
+            )
+        )
+        return dict(rows[0]) if rows else None
+
+    def save_enrichment(
+        self,
+        url: str,
+        topics: list[str],
+        entities: list[str],
+        novelty: int,
+        signals: list[str],
+        model: str,
+    ) -> None:
+        """Upsert enrichment data extracted from a summarization call."""
+        self.db["article_enrichment"].upsert(
+            {
+                "url": url,
+                "topics_json": json.dumps(topics),
+                "entities_json": json.dumps(entities),
+                "novelty": novelty,
+                "signals_json": json.dumps(signals),
+                "model": model,
+                "generated_at": datetime.now(UTC).isoformat(),
+            },
+            pk="url",
+        )
+
+    def get_enrichment_for_urls(
+        self, urls: list[str]
+    ) -> dict[str, dict[str, Any]]:
+        """Return enrichment rows keyed by URL for a batch of URLs."""
+        if not urls or "article_enrichment" not in self.db.table_names():
+            return {}
+        placeholders = ", ".join("?" * len(urls))
+        rows = list(
+            self.db.query(
+                f"SELECT * FROM article_enrichment WHERE url IN ({placeholders})",
+                urls,
+            )
+        )
+        return {str(r["url"]): dict(r) for r in rows}

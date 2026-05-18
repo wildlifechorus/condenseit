@@ -191,15 +191,30 @@ class SourceRegistry:
         )
 
     def feeds_for_config(self) -> list[FeedConfig]:
-        return [
-            FeedConfig(
-                url=r["url"],
-                category=r["category"],
-                priority=int(r["priority"]),
-            )
-            for r in self.list_enabled()
-            if r["type"] == "rss"
-        ]
+        out: list[FeedConfig] = []
+        for r in self.list_enabled():
+            if r["type"] == "rss":
+                out.append(
+                    FeedConfig(
+                        url=r["url"],
+                        category=r["category"],
+                        priority=int(r["priority"]),
+                    )
+                )
+            elif r["type"] == "reddit":
+                # Reddit sources that were auto-converted to Lemmy RSS have a
+                # "converted_from" key in extra_json. Route them through the
+                # RSS collector using the stored Lemmy URL.
+                extra = json.loads(r.get("extra_json") or "{}")
+                if extra.get("converted_from"):
+                    out.append(
+                        FeedConfig(
+                            url=r["url"],
+                            category=r["category"],
+                            priority=int(r["priority"]),
+                        )
+                    )
+        return out
 
     def youtube_for_config(self) -> list[YouTubeChannelConfig]:
         out: list[YouTubeChannelConfig] = []
@@ -272,6 +287,10 @@ class SourceRegistry:
             if r["type"] != "reddit":
                 continue
             extra = json.loads(r.get("extra_json") or "{}")
+            # Skip sources that were auto-converted to Lemmy RSS - they are
+            # handled by feeds_for_config() / the RSS collector instead.
+            if extra.get("converted_from"):
+                continue
             out.append(
                 RedditConfig(
                     subreddit=extra.get("subreddit", r["name"]),

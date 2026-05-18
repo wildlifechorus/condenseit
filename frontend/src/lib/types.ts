@@ -16,6 +16,14 @@ export interface ScoreBreakdown {
   implicit_category: number;
   implicit_source: number;
   synonym_boost: number;
+  /** Phase 1: cosine similarity to the decay-weighted embedding centroid. */
+  embedding_similarity: number;
+  /** Phase 2: overlap with LLM-extracted topic profile. */
+  topic_score: number;
+  /** Phase 3: blended score component from the LLM reranker. */
+  llm_rerank: number;
+  /** Phase 3: human-readable reason from the LLM reranker (may be absent). */
+  llm_reason?: string;
 }
 
 export interface DigestItem {
@@ -38,6 +46,14 @@ export interface DigestItem {
   preference_score?: number;
   /** Per-signal breakdown of the preference_score. */
   score_breakdown?: ScoreBreakdown;
+  /** Phase 2: LLM-extracted semantic topics (kebab-case). */
+  topics?: string[];
+  /** Phase 2: Named entities (people, orgs, products) mentioned. */
+  entities?: string[];
+  /** Phase 2: Novelty score 1-5 (how surprising vs mainstream). */
+  novelty?: number;
+  /** Phase 4: One-sentence relevance note for this reader. */
+  relevance_to_you?: string;
 }
 
 export interface DigestEntry {
@@ -149,6 +165,12 @@ export interface PreferenceProfile {
   top_disliked_bigrams: PreferenceTerm[];
   category_preferences: PreferenceCategoryScore[];
   source_preferences: PreferenceSourceScore[];
+  /** Phase 1: true when an embedding profile centroid has been built. */
+  embedding_active?: boolean;
+  /** Phase 2: top semantic topics extracted from liked articles. */
+  top_liked_topics?: PreferenceTerm[];
+  /** Phase 2: top semantic topics extracted from disliked articles. */
+  top_disliked_topics?: PreferenceTerm[];
 }
 
 export interface RankingWeights {
@@ -158,6 +180,22 @@ export interface RankingWeights {
   implicit_signal_weight: number;
   rating_decay_half_life_days: number;
   min_ratings_for_learning: number;
+  /** Phase 1: weight of the embedding cosine-similarity signal. */
+  embedding_preference_weight: number;
+  /** Phase 1: embedding provider selection. */
+  embedding_provider: 'off' | 'ollama' | 'openrouter';
+  /** Phase 1: model used to generate embeddings. */
+  embedding_model: string;
+  /** Phase 2: weight of the LLM topic overlap signal. */
+  topic_score_weight: number;
+  /** Phase 3: enable LLM reranker pass. */
+  llm_rerank_enabled: boolean;
+  /** Phase 3: model used for reranking (empty = use summarizer model). */
+  llm_rerank_model: string;
+  /** Phase 3: number of top candidates sent to the reranker. */
+  llm_rerank_top_k: number;
+  /** Phase 3: blend weight between LLM score and classical score (0-1). */
+  llm_rerank_blend: number;
 }
 
 // ---------- Budget -------------------------------------------------------

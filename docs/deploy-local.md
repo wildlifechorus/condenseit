@@ -204,7 +204,7 @@ If you do not have a GPU or Ollama installed:
    ```yaml
    llm:
      provider: "openrouter"
-     openrouter_model: "openai/gpt-4o-mini"
+     openrouter_model: "qwen/qwen3.5-flash-02-23"
      openrouter_daily_budget_usd: 0.50
      openrouter_monthly_budget_usd: 5.0
    ```

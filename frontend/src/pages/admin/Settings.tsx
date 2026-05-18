@@ -688,6 +688,273 @@ export function SettingsPage() {
             </div>
           </Card>
 
+          {/* ---- AI Ranking ---- */}
+          <div class="pt-2">
+            <h3 class="text-base font-semibold text-slate-900 dark:text-slate-100">
+              AI ranking
+            </h3>
+            <p class="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+              Optional AI layers on top of classical ranking. Each feature is
+              independent and off by default.
+            </p>
+          </div>
+
+          <Card>
+            <CardHeader
+              title="Semantic embeddings"
+              description="Encode articles as vectors and score them against a centroid built from your liked content. Embeddings are cached in SQLite after the first run."
+            />
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Field
+                label="Embedding provider"
+                hint="off = disabled. ollama = free local. openrouter = cloud (fractions of a cent per run)."
+              >
+                <select
+                  class={INPUT}
+                  value={weights.embedding_provider}
+                  onChange={(e) => {
+                    const provider = (e.target as HTMLSelectElement)
+                      .value as 'off' | 'ollama' | 'openrouter';
+                    const defaultModel =
+                      provider === 'ollama'
+                        ? 'nomic-embed-text'
+                        : provider === 'openrouter'
+                          ? 'openai/text-embedding-3-small'
+                          : '';
+                    setWeights((w) =>
+                      w
+                        ? {
+                            ...w,
+                            embedding_provider: provider,
+                            embedding_model:
+                              w.embedding_model &&
+                              w.embedding_model !== 'nomic-embed-text' &&
+                              w.embedding_model !==
+                                'openai/text-embedding-3-small'
+                                ? w.embedding_model
+                                : defaultModel,
+                          }
+                        : w,
+                    );
+                  }}
+                >
+                  <option value="off">off</option>
+                  <option value="ollama">ollama</option>
+                  <option value="openrouter">openrouter</option>
+                </select>
+              </Field>
+
+              {weights.embedding_provider !== 'off' && (
+                <Field
+                  label="Embedding model"
+                  hint={
+                    weights.embedding_provider === 'openrouter'
+                      ? 'openai/text-embedding-3-small is cheapest ($0.02/1M tokens, high quality).'
+                      : 'nomic-embed-text is free and works well for news content.'
+                  }
+                >
+                  <input
+                    type="text"
+                    class={INPUT}
+                    value={weights.embedding_model}
+                    placeholder={
+                      weights.embedding_provider === 'openrouter'
+                        ? 'openai/text-embedding-3-small'
+                        : 'nomic-embed-text'
+                    }
+                    onInput={(e) =>
+                      setWeights((w) =>
+                        w
+                          ? {
+                              ...w,
+                              embedding_model: (e.target as HTMLInputElement)
+                                .value,
+                            }
+                          : w,
+                      )
+                    }
+                  />
+                </Field>
+              )}
+
+              {weights.embedding_provider !== 'off' && (
+                <Field
+                  label="Embedding similarity weight"
+                  hint="How strongly the embedding cosine similarity score influences ranking (0 = off)."
+                >
+                  <input
+                    type="number"
+                    class={INPUT}
+                    min={0}
+                    max={5}
+                    step={0.05}
+                    value={weights.embedding_preference_weight}
+                    onInput={(e) =>
+                      setWeights((w) =>
+                        w
+                          ? {
+                              ...w,
+                              embedding_preference_weight:
+                                parseFloat(
+                                  (e.target as HTMLInputElement).value,
+                                ) || 0,
+                            }
+                          : w,
+                      )
+                    }
+                  />
+                </Field>
+              )}
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader
+              title="Topic enrichment"
+              description="The LLM extracts topics, entities, and a novelty score from each article during summarisation (no extra calls). These feed a topic preference profile built from your ratings."
+            />
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Field
+                label="Topic score weight"
+                hint="How much the topic-profile overlap score influences ranking (0 = off). Requires at least one summarised and rated article."
+              >
+                <input
+                  type="number"
+                  class={INPUT}
+                  min={0}
+                  max={5}
+                  step={0.05}
+                  value={weights.topic_score_weight}
+                  onInput={(e) =>
+                    setWeights((w) =>
+                      w
+                        ? {
+                            ...w,
+                            topic_score_weight:
+                              parseFloat(
+                                (e.target as HTMLInputElement).value,
+                              ) || 0,
+                          }
+                        : w,
+                    )
+                  }
+                />
+              </Field>
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader
+              title="LLM reranker"
+              description="After classical scoring, send the top-K candidates to an LLM with a compact reader profile. The LLM score is blended with the classical score. One call per digest run."
+            />
+            <div class="space-y-4">
+              <label class="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  class="mt-0.5"
+                  checked={weights.llm_rerank_enabled}
+                  onChange={(e) =>
+                    setWeights((w) =>
+                      w
+                        ? {
+                            ...w,
+                            llm_rerank_enabled: (e.target as HTMLInputElement)
+                              .checked,
+                          }
+                        : w,
+                    )
+                  }
+                />
+                <span class="text-sm text-slate-700 dark:text-slate-300">
+                  Enable LLM reranker
+                </span>
+              </label>
+
+              {weights.llm_rerank_enabled && (
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Field
+                    label="Reranker model"
+                    hint="Leave blank to use the same model as the summariser. Cheap models work well here (e.g. deepseek/deepseek-v3)."
+                  >
+                    <input
+                      type="text"
+                      class={INPUT}
+                      value={weights.llm_rerank_model}
+                      placeholder="(same as summariser)"
+                      onInput={(e) =>
+                        setWeights((w) =>
+                          w
+                            ? {
+                                ...w,
+                                llm_rerank_model: (
+                                  e.target as HTMLInputElement
+                                ).value,
+                              }
+                            : w,
+                        )
+                      }
+                    />
+                  </Field>
+
+                  <Field
+                    label="Top-K candidates"
+                    hint="Number of top-ranked articles sent to the LLM for reordering (1-200)."
+                  >
+                    <input
+                      type="number"
+                      class={INPUT}
+                      min={1}
+                      max={200}
+                      value={weights.llm_rerank_top_k}
+                      onInput={(e) =>
+                        setWeights((w) =>
+                          w
+                            ? {
+                                ...w,
+                                llm_rerank_top_k:
+                                  parseInt(
+                                    (e.target as HTMLInputElement).value,
+                                    10,
+                                  ) || 30,
+                              }
+                            : w,
+                        )
+                      }
+                    />
+                  </Field>
+
+                  <Field
+                    label="LLM blend weight"
+                    hint="0 = ignore LLM score entirely. 1 = replace classical score. 0.3 = recommended starting point."
+                  >
+                    <input
+                      type="number"
+                      class={INPUT}
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={weights.llm_rerank_blend}
+                      onInput={(e) =>
+                        setWeights((w) =>
+                          w
+                            ? {
+                                ...w,
+                                llm_rerank_blend:
+                                  parseFloat(
+                                    (e.target as HTMLInputElement).value,
+                                  ) || 0,
+                              }
+                            : w,
+                        )
+                      }
+                    />
+                  </Field>
+                </div>
+              )}
+            </div>
+          </Card>
+
           <div>
             <Button type="submit" loading={savingWeights}>
               Save ranking weights

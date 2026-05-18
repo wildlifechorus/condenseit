@@ -516,7 +516,11 @@ def create_app(config_path: str | None = None) -> FastAPI:
             return JSONResponse({"error": "Missing url"}, status_code=422)
         if is_read:
             article = store.get_article(url)
-            title = str(article["title"]).strip() if article and article.get("title") else None
+            title = (
+                str(article["title"]).strip()
+                if article and article.get("title")
+                else None
+            )
             store.mark_article_read(url, title=title)
         else:
             store.mark_article_unread(url)
@@ -567,17 +571,185 @@ def create_app(config_path: str | None = None) -> FastAPI:
     async def api_preferences_profile() -> JSONResponse:
         return JSONResponse(preferences.profile_summary())
 
+    # --- Cold-start bootstrap (Phase 5) --------------------------------
+
+    @app.post("/api/preferences/bootstrap", response_model=None)
+    async def api_preferences_bootstrap(body: dict[str, Any]) -> JSONResponse:
+        """Convert free-form interest text into structured preference seeds.
+
+        Accepts ``{"interests": "I care about AI, security, not sports"}``
+        and uses the configured LLM to derive initial_keywords and
+        topic_synonyms, then persists them to the settings table so ranking
+        is immediately personalized even before any star ratings exist.
+        """
+        interests = str(body.get("interests", "")).strip()
+        if not interests or len(interests) < 5:
+            return JSONResponse(
+                {"error": "interests text is required"}, status_code=422
+            )
+        if len(interests) > 2000:
+            interests = interests[:2000]
+
+        merged = apply_db_settings(load_config(config_path), store)
+        or_key = merged.llm.openrouter_api_key
+        if not or_key:
+            from condenseit.store.secure_keys import SecureKeyStore
+            or_key = SecureKeyStore(store).get_key("openrouter") or ""
+        ollama_host = merged.llm.ollama_host
+        model = merged.llm.openrouter_model if or_key else merged.model
+
+        prompt = (
+            "A user described their reading interests:\n"
+            f'"{interests}"\n\n'
+            "Return ONLY a JSON object with:\n"
+            '  "high_keywords": ["<term1>", ...],  // 5-10 most important interests\n'
+            '  "medium_keywords": ["<term1>", ...],  // 5-10 secondary interests\n'
+            '  "dislikes": ["<term1>", ...],  // 3-5 topics to de-prioritize\n'
+            '  "synonyms": {"<group>": ["<term1>", "<term2>"]},  // 2-4 synonym groups\n'  # noqa: E501
+            '  "profile_summary": "<1-2 sentences describing this reader>"\n'
+            "\nJSON:"
+        )
+
+        raw = ""
+        try:
+            if or_key:
+                import httpx
+                resp = httpx.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    json={
+                        "model": model,
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": (
+                                    "You are a reading preference analyst. "
+                                    "Respond ONLY with a JSON object, no markdown."
+                                ),
+                            },
+                            {"role": "user", "content": prompt},
+                        ],
+                        "temperature": 0.2,
+                        "max_tokens": 600,
+                    },
+                    headers={
+                        "Authorization": f"Bearer {or_key}",
+                        "HTTP-Referer": "https://github.com/condenseit/condenseit",
+                        "X-Title": "CondenseIt",
+                    },
+                    timeout=60.0,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                choices = data.get("choices") or []
+                raw = str(choices[0]["message"]["content"]).strip() if choices else ""
+            elif ollama_host:
+                import httpx
+                resp = httpx.post(
+                    f"{ollama_host.rstrip('/')}/api/generate",
+                    json={
+                        "model": model,
+                        "prompt": prompt,
+                        "stream": False,
+                        "options": {"temperature": 0.2, "num_predict": 600},
+                    },
+                    timeout=120.0,
+                )
+                resp.raise_for_status()
+                raw = str(resp.json().get("response", "")).strip()
+        except Exception as exc:
+            return JSONResponse(
+                {"error": f"LLM call failed: {exc}"},
+                status_code=502,
+            )
+
+        # Parse the LLM response.
+        import re as _re
+        fence = _re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", _re.DOTALL)
+        brace = _re.compile(r"\{.*\}", _re.DOTALL)
+        candidates = [raw]
+        m = fence.search(raw)
+        if m:
+            candidates.insert(0, m.group(1))
+        m2 = brace.search(raw)
+        if m2:
+            candidates.append(m2.group(0))
+
+        parsed: dict[str, Any] = {}
+        for c in candidates:
+            try:
+                parsed = json.loads(c)
+                if isinstance(parsed, dict):
+                    break
+            except (json.JSONDecodeError, ValueError):
+                continue
+
+        if not parsed:
+            return JSONResponse(
+                {"error": "LLM returned unparseable response"}, status_code=502
+            )
+
+        # Persist to settings so apply_db_settings picks them up.
+        high = [str(k) for k in (parsed.get("high_keywords") or []) if k][:15]
+        medium = [str(k) for k in (parsed.get("medium_keywords") or []) if k][:15]
+        dislikes = [str(k) for k in (parsed.get("dislikes") or []) if k][:10]
+
+        existing_raw = store.get_setting("bootstrap_initial_keywords", "")
+        existing: dict[str, Any] = {}
+        if existing_raw:
+            try:
+                existing = json.loads(existing_raw)
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+        merged_high = list({*existing.get("high", []), *high})[:20]
+        merged_medium = list({*existing.get("medium", []), *medium})[:20]
+
+        store.set_setting(
+            "bootstrap_initial_keywords",
+            json.dumps({"high": merged_high, "medium": merged_medium}),
+        )
+        store.set_setting(
+            "bootstrap_dislikes",
+            json.dumps(dislikes),
+        )
+        synonyms = parsed.get("synonyms") or {}
+        if synonyms and isinstance(synonyms, dict):
+            store.set_setting("bootstrap_synonyms", json.dumps(synonyms))
+
+        profile_text = str(parsed.get("profile_summary", "")).strip()
+        if profile_text:
+            store.set_setting("bootstrap_profile_summary", profile_text)
+
+        return JSONResponse({
+            "ok": True,
+            "high_keywords": merged_high,
+            "medium_keywords": merged_medium,
+            "dislikes": dislikes,
+            "synonyms": synonyms,
+            "profile_summary": profile_text,
+        })
+
     # --- Ranking weights (admin-tunable) --------------------------------
 
-    _WEIGHT_FLOAT_KEYS = {
+    _WEIGHT_FLOAT_KEYS = {  # noqa: N806
         "tfidf_preference_weight": (0.0, 5.0),
         "category_preference_weight": (0.0, 5.0),
         "source_preference_weight": (0.0, 5.0),
         "implicit_signal_weight": (0.0, 1.0),
+        "embedding_preference_weight": (0.0, 5.0),
+        "topic_score_weight": (0.0, 5.0),
+        "llm_rerank_blend": (0.0, 1.0),
     }
-    _WEIGHT_INT_KEYS = {
+    _WEIGHT_INT_KEYS = {  # noqa: N806
         "rating_decay_half_life_days": (1, 3650),
         "min_ratings_for_learning": (1, 1000),
+        "llm_rerank_top_k": (1, 200),
+    }
+    _WEIGHT_BOOL_KEYS = ["llm_rerank_enabled"]  # noqa: N806
+    _WEIGHT_STRING_KEYS = {  # noqa: N806
+        "embedding_provider": ["off", "ollama", "openrouter"],
+        "embedding_model": None,
+        "llm_rerank_model": None,
     }
 
     @app.get("/api/preferences/weights", response_model=None)
@@ -592,6 +764,14 @@ def create_app(config_path: str | None = None) -> FastAPI:
             "implicit_signal_weight": rel.implicit_signal_weight,
             "rating_decay_half_life_days": rel.rating_decay_half_life_days,
             "min_ratings_for_learning": rel.min_ratings_for_learning,
+            "embedding_preference_weight": rel.embedding_preference_weight,
+            "topic_score_weight": rel.topic_score_weight,
+            "embedding_provider": rel.embedding_provider,
+            "embedding_model": rel.embedding_model,
+            "llm_rerank_enabled": rel.llm_rerank_enabled,
+            "llm_rerank_model": rel.llm_rerank_model,
+            "llm_rerank_top_k": rel.llm_rerank_top_k,
+            "llm_rerank_blend": rel.llm_rerank_blend,
         })
 
     @app.put("/api/preferences/weights", response_model=None)
@@ -622,9 +802,108 @@ def create_app(config_path: str | None = None) -> FastAPI:
                         )
                 except (ValueError, TypeError):
                     errors.append(f"{key} must be an integer")
+        for key in _WEIGHT_BOOL_KEYS:
+            if key in body:
+                store.set_setting(key, "1" if body[key] else "0")
+        for key, allowed in _WEIGHT_STRING_KEYS.items():
+            if key in body:
+                val = str(body[key]).strip()
+                if allowed is not None and val not in allowed:
+                    errors.append(
+                        f"{key} must be one of {allowed}, got {val!r}"
+                    )
+                else:
+                    store.set_setting(key, val)
         if errors:
             return JSONResponse({"errors": errors}, status_code=422)
         return JSONResponse({"ok": True})
+
+    @app.get("/api/sources/youtube/resolve", response_model=None)
+    async def api_youtube_resolve(handle: str) -> JSONResponse:
+        """Resolve a YouTube handle or URL to a channel ID using yt-dlp.
+
+        Query param ``handle`` accepts formats such as ``@ThePrimeagen``,
+        ``ThePrimeagen``, or a full ``https://www.youtube.com/@ThePrimeagen`` URL.
+        Requires ``yt-dlp`` to be installed on the server (``pip install yt-dlp``).
+        """
+        import re
+        import shutil
+        import subprocess
+
+        if not shutil.which("yt-dlp"):
+            return JSONResponse(
+                {"error": "yt-dlp is not installed. Run: pip install yt-dlp"},
+                status_code=503,
+            )
+
+        raw = handle.strip()
+        # Normalise to a full URL
+        if raw.startswith("http"):
+            url = raw.rstrip("/")
+        elif raw.startswith("@"):
+            url = f"https://www.youtube.com/{raw}"
+        else:
+            url = f"https://www.youtube.com/@{raw}"
+
+        # Append /videos so yt-dlp treats it as a channel playlist
+        if not url.endswith("/videos"):
+            url = url.rstrip("/") + "/videos"
+
+        try:
+            result = subprocess.run(
+                [
+                    "yt-dlp",
+                    "--no-warnings",
+                    "--flat-playlist",
+                    "--dump-single-json",
+                    "--playlist-end",
+                    "1",
+                    url,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        except subprocess.TimeoutExpired:
+            return JSONResponse({"error": "yt-dlp timed out"}, status_code=504)
+        except Exception as exc:
+            return JSONResponse({"error": str(exc)}, status_code=500)
+
+        if result.returncode != 0 or not result.stdout.strip():
+            err = result.stderr.strip()[:300] if result.stderr else "no output"
+            return JSONResponse(
+                {"error": f"yt-dlp failed: {err}"}, status_code=422
+            )
+
+        try:
+            import json as _json
+            data = _json.loads(result.stdout)
+        except Exception:
+            return JSONResponse(
+                {"error": "could not parse yt-dlp output"}, status_code=500
+            )
+
+        channel_id = data.get("channel_id") or data.get("id") or ""
+        channel_name = data.get("channel") or data.get("title") or ""
+
+        # Validate it looks like a real channel ID
+        if not re.match(r"^UC[a-zA-Z0-9_-]{22}$", channel_id):
+            return JSONResponse(
+                {"error": f"could not extract channel ID (got: {channel_id!r})"},
+                status_code=422,
+            )
+
+        feed_url = (
+            f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+        )
+        return JSONResponse(
+            {
+                "channel_id": channel_id,
+                "channel_name": channel_name,
+                "feed_url": feed_url,
+                "handle": handle.strip(),
+            }
+        )
 
     # ==================================================================
     # Legacy Jinja2 HTML routes (kept during transition)

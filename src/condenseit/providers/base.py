@@ -16,6 +16,13 @@ class ArticleSummary(TypedDict):
     tldr: str
     key_takeaways: list[str]
     summary: str
+    # Phase 2: LLM-extracted enrichment fields (always populated, default empty).
+    topics: list[str]
+    entities: list[str]
+    novelty: int
+    # Phase 2: One-sentence note the LLM may include if it infers relevance.
+    # Passively extracted from the summary JSON; not personalized.
+    relevance_to_you: str
 
 
 # Matches an optional ```json ... ``` or ``` ... ``` fence around JSON.
@@ -91,6 +98,25 @@ def parse_summary_response(raw: str) -> ArticleSummary:
                 takeaways = [t.strip() for t in takeaways.splitlines() if t.strip()]
             elif not isinstance(takeaways, list):
                 takeaways = []
+
+            # Parse enrichment fields (new; default to empty when absent).
+            raw_topics = data.get("topics", [])
+            topics = (
+                [str(t).lower().strip() for t in raw_topics if t]
+                if isinstance(raw_topics, list)
+                else []
+            )
+            raw_entities = data.get("entities", [])
+            entities = (
+                [str(e).strip() for e in raw_entities if e]
+                if isinstance(raw_entities, list)
+                else []
+            )
+            try:
+                novelty = max(1, min(5, int(data.get("novelty", 0) or 0)))
+            except (TypeError, ValueError):
+                novelty = 0
+
             return ArticleSummary(
                 tldr=_strip_non_latin_tail(
                     str(data.get("tldr", "") or "").strip()
@@ -103,6 +129,12 @@ def parse_summary_response(raw: str) -> ArticleSummary:
                 summary=_strip_non_latin_tail(
                     str(data.get("summary", "") or "").strip()
                 ),
+                topics=topics,
+                entities=entities[:10],
+                novelty=novelty,
+                relevance_to_you=_strip_non_latin_tail(
+                    str(data.get("relevance_to_you", "") or "").strip()
+                ),
             )
         except (json.JSONDecodeError, ValueError):
             continue
@@ -114,14 +146,24 @@ def parse_summary_response(raw: str) -> ArticleSummary:
     if text:
         non_ascii = sum(1 for c in text if ord(c) > 127)
         if non_ascii / len(text) > 0.2:
-            return ArticleSummary(tldr="", key_takeaways=[], summary="")
-    return ArticleSummary(tldr="", key_takeaways=[], summary=text)
+            return ArticleSummary(
+                tldr="", key_takeaways=[], summary="",
+                topics=[], entities=[], novelty=0, relevance_to_you="",
+            )
+    return ArticleSummary(
+        tldr="", key_takeaways=[], summary=text,
+        topics=[], entities=[], novelty=0, relevance_to_you="",
+    )
 
 
 class SummarizerProvider(ABC):
     @abstractmethod
-    def summarize_article(self, article: dict[str, Any]) -> ArticleSummary:
-        pass
+    def summarize_article(
+        self,
+        article: dict[str, Any],
+    ) -> ArticleSummary:
+        """Summarize ``article`` and return a structured result."""
+        ...
 
     @abstractmethod
     def generate_digest(
@@ -130,7 +172,7 @@ class SummarizerProvider(ABC):
         changes: list[dict[str, str]] | None = None,
         videos: list[dict[str, Any]] | None = None,
     ) -> str:
-        pass
+        ...
 
     @property
     def model_name(self) -> str:

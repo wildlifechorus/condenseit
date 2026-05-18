@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field
@@ -101,6 +101,33 @@ class RelevanceConfig(BaseModel):
     # equivalent terms (all lowercase). E.g. kubernetes: [k8s, helm, kubectl].
     topic_synonyms: dict[str, list[str]] = Field(default_factory=dict)
 
+    # --- Phase 1: Semantic embedding similarity ---
+    # Provider for embedding computation. "off" disables semantic similarity.
+    # "ollama" uses local Ollama (free, requires nomic-embed-text pulled).
+    # "openrouter" uses the OpenRouter embeddings API (small cost).
+    embedding_provider: Literal["ollama", "openrouter", "off"] = "off"
+    # Embedding model name. For Ollama: "nomic-embed-text". For OpenRouter:
+    # "openai/text-embedding-3-small".
+    embedding_model: str = "nomic-embed-text"
+    # Weight of the embedding cosine-similarity signal in the score breakdown.
+    embedding_preference_weight: float = 0.5
+
+    # --- Phase 2: LLM-enriched topic scoring ---
+    # Weight applied to the topic-overlap signal built from LLM-extracted article
+    # topics stored in article_enrichment. 0 = disabled.
+    topic_score_weight: float = 0.3
+
+    # --- Phase 3: LLM reranker ---
+    # When enabled, a single LLM call reorders the top-K ranked candidates.
+    llm_rerank_enabled: bool = False
+    # Model for reranking. Empty string = use the summarizer model.
+    llm_rerank_model: str = ""
+    # Number of top candidates to rerank per digest run.
+    llm_rerank_top_k: int = 30
+    # Blend weight: final_score = (1-blend)*classical + blend*llm_score.
+    llm_rerank_blend: float = 0.4
+
+
 
 class OutputConfig(BaseModel):
     format: str = "both"
@@ -112,10 +139,10 @@ class LlmConfig(BaseModel):
     ollama_host: str = "http://localhost:11434"
     manage_lifecycle: bool = True
     openrouter_api_key: str = ""
-    openrouter_model: str = "openai/gpt-4o-mini"
+    openrouter_model: str = "qwen/qwen3.5-flash-02-23"
     openrouter_daily_budget_usd: float = 1.0
     openrouter_monthly_budget_usd: float = 10.0
-    openrouter_pick_cheapest: bool = True
+    openrouter_pick_cheapest: bool = False
 
 
 class VpsConfig(BaseModel):
@@ -139,10 +166,15 @@ class AppConfig(BaseModel):
     preferred_languages: list[str] = Field(default_factory=list)
     # Case-insensitive substrings; articles whose title or description contains
     # any of these phrases are dropped before ranking. Empty list = no filter.
-    exclude_keywords: list[str] = Field(default_factory=list)
+    exclude_keywords: list[str] = Field(
+        default_factory=lambda: ["Community Forum", "promotional code", "promotional campaign"],
+    )
     # LLM summarization tuning.
     max_key_takeaways: int = Field(default=5, ge=1, le=10)
     max_summary_paragraphs: int = Field(default=5, ge=1, le=10)
+    # Number of articles to summarize concurrently. Higher = faster but more
+    # likely to hit provider rate limits. Set to 1 to disable concurrency.
+    summarize_workers: int = Field(default=4, ge=1, le=16)
     schedule: dict[str, list[str]] = Field(
         default_factory=lambda: {"times": ["07:00", "18:00"]},
     )
