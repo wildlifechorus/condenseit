@@ -7,6 +7,7 @@ import { Button } from '../../components/Button';
 import { Card, CardHeader } from '../../components/Card';
 import { EmptyState } from '../../components/EmptyState';
 import { Spinner } from '../../components/Spinner';
+import { CategoryCombobox } from '../../components/CategoryCombobox';
 
 /** Shared Tailwind class string for text inputs and selects. */
 const inputCls =
@@ -685,9 +686,10 @@ export function SourcesPage() {
 
             {/* --- Category & priority (always shown) --- */}
             <Field label="Category">
-              <input
+              <CategoryCombobox
                 name="category"
                 defaultValue="General"
+                options={categories}
                 class={inputCls}
               />
             </Field>
@@ -970,6 +972,7 @@ export function SourcesPage() {
                               loading={editLoadingId === s.id}
                               onCancel={() => setEditingId(null)}
                               onSubmit={(e) => handleEdit(e, s)}
+                              categories={categories}
                             />
                           </td>
                         </tr>
@@ -1079,6 +1082,7 @@ export function SourcesPage() {
                       loading={editLoadingId === s.id}
                       onCancel={() => setEditingId(null)}
                       onSubmit={(e) => handleEdit(e, s)}
+                      categories={categories}
                     />
                   </div>
                 )}
@@ -1096,11 +1100,13 @@ function SourceEditForm({
   loading,
   onCancel,
   onSubmit,
+  categories,
 }: {
   source: Source;
   loading: boolean;
   onCancel: () => void;
   onSubmit: (e: Event) => void;
+  categories: string[];
 }) {
   const extra = parseSourceExtra(source);
   const sourceType = source.type;
@@ -1394,9 +1400,10 @@ function SourceEditForm({
       )}
 
       <Field label="Category">
-        <input
+        <CategoryCombobox
           name="category"
           defaultValue={source.category}
+          options={categories}
           class={inputCls}
         />
       </Field>
