@@ -15,12 +15,16 @@ class FeedConfig(BaseModel):
     url: str
     category: str = "General"
     priority: int = 2
+    hide_keywords: list[str] = Field(default_factory=list)
+    highlight_keywords: list[str] = Field(default_factory=list)
 
 
 class YouTubeChannelConfig(BaseModel):
     handle: str = ""
     channel_id: str
     category: str = "Video"
+    hide_keywords: list[str] = Field(default_factory=list)
+    highlight_keywords: list[str] = Field(default_factory=list)
 
 
 class WatchUrlConfig(BaseModel):
@@ -42,6 +46,8 @@ class GoogleNewsSearchConfig(BaseModel):
     country: str = "US"
     category: str = "General"
     priority: int = 2
+    hide_keywords: list[str] = Field(default_factory=list)
+    highlight_keywords: list[str] = Field(default_factory=list)
 
 
 class HackerNewsConfig(BaseModel):
@@ -52,6 +58,8 @@ class HackerNewsConfig(BaseModel):
     min_score: int = Field(default=50, ge=0)
     category: str = "General"
     priority: int = 2
+    hide_keywords: list[str] = Field(default_factory=list)
+    highlight_keywords: list[str] = Field(default_factory=list)
 
 
 class RedditConfig(BaseModel):
@@ -64,6 +72,8 @@ class RedditConfig(BaseModel):
     min_score: int = Field(default=10, ge=0)
     category: str = "General"
     priority: int = 2
+    hide_keywords: list[str] = Field(default_factory=list)
+    highlight_keywords: list[str] = Field(default_factory=list)
 
 
 class GitHubReleasesConfig(BaseModel):
@@ -72,6 +82,8 @@ class GitHubReleasesConfig(BaseModel):
     repo: str
     category: str = "General"
     priority: int = 2
+    hide_keywords: list[str] = Field(default_factory=list)
+    highlight_keywords: list[str] = Field(default_factory=list)
 
 
 class PodcastConfig(BaseModel):
@@ -81,6 +93,8 @@ class PodcastConfig(BaseModel):
     name: str = ""
     category: str = "General"
     priority: int = 2
+    hide_keywords: list[str] = Field(default_factory=list)
+    highlight_keywords: list[str] = Field(default_factory=list)
 
 
 class RelevanceConfig(BaseModel):

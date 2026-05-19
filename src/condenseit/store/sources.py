@@ -193,25 +193,29 @@ class SourceRegistry:
     def feeds_for_config(self) -> list[FeedConfig]:
         out: list[FeedConfig] = []
         for r in self.list_enabled():
+            extra = json.loads(r.get("extra_json") or "{}")
             if r["type"] == "rss":
                 out.append(
                     FeedConfig(
                         url=r["url"],
                         category=r["category"],
                         priority=int(r["priority"]),
+                        hide_keywords=extra.get("hide_keywords") or [],
+                        highlight_keywords=extra.get("highlight_keywords") or [],
                     )
                 )
             elif r["type"] == "reddit":
                 # Reddit sources that were auto-converted to Lemmy RSS have a
                 # "converted_from" key in extra_json. Route them through the
                 # RSS collector using the stored Lemmy URL.
-                extra = json.loads(r.get("extra_json") or "{}")
                 if extra.get("converted_from"):
                     out.append(
                         FeedConfig(
                             url=r["url"],
                             category=r["category"],
                             priority=int(r["priority"]),
+                            hide_keywords=extra.get("hide_keywords") or [],
+                            highlight_keywords=extra.get("highlight_keywords") or [],
                         )
                     )
         return out
@@ -260,6 +264,8 @@ class SourceRegistry:
                     country=extra.get("country", "US"),
                     category=r["category"],
                     priority=int(r["priority"]),
+                    hide_keywords=extra.get("hide_keywords") or [],
+                    highlight_keywords=extra.get("highlight_keywords") or [],
                 ),
             )
         return out
@@ -277,6 +283,8 @@ class SourceRegistry:
                     min_score=int(extra.get("min_score", 50)),
                     category=r["category"],
                     priority=int(r["priority"]),
+                    hide_keywords=extra.get("hide_keywords") or [],
+                    highlight_keywords=extra.get("highlight_keywords") or [],
                 ),
             )
         return out
@@ -300,6 +308,8 @@ class SourceRegistry:
                     min_score=int(extra.get("min_score", 10)),
                     category=r["category"],
                     priority=int(r["priority"]),
+                    hide_keywords=extra.get("hide_keywords") or [],
+                    highlight_keywords=extra.get("highlight_keywords") or [],
                 ),
             )
         return out
@@ -315,6 +325,8 @@ class SourceRegistry:
                     repo=extra.get("repo", ""),
                     category=r["category"],
                     priority=int(r["priority"]),
+                    hide_keywords=extra.get("hide_keywords") or [],
+                    highlight_keywords=extra.get("highlight_keywords") or [],
                 ),
             )
         return out
@@ -331,6 +343,8 @@ class SourceRegistry:
                     name=extra.get("name", r.get("name", "")),
                     category=r["category"],
                     priority=int(r["priority"]),
+                    hide_keywords=extra.get("hide_keywords") or [],
+                    highlight_keywords=extra.get("highlight_keywords") or [],
                 ),
             )
         return out
