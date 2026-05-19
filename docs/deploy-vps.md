@@ -168,6 +168,10 @@ After changing code, config, or feeds:
 ./scripts/deploy.sh
 ```
 
+`deploy.sh` stops `condenseit-web`, optionally syncs the database (`--sync-db`),
+runs `condenseit migrate` on the VPS (applies schema changes from the newly
+installed wheel), rsyncs the frontend, then starts the service again.
+
 Skip the frontend build if only the Python code changed:
 
 ```bash

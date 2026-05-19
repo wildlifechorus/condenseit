@@ -33,6 +33,14 @@ class ContentStore:
         conn.execute("PRAGMA busy_timeout=30000")
         self._ensure_schema()
 
+    @classmethod
+    def migrate(cls, db_path: Path | None = None) -> Path:
+        """Apply schema migrations and return the database path."""
+        store = cls(db_path=db_path)
+        path = store.db_path
+        store.close()
+        return path
+
     def close(self) -> None:
         """Close the underlying SQLite connection.
 

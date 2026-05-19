@@ -5,7 +5,9 @@
 ### `scripts/deploy.sh`
 
 Builds the frontend SPA, packages a condenseit wheel, rsyncs everything to
-the VPS, and restarts the `condenseit-web` systemd service.
+the VPS, runs `condenseit migrate` against the production SQLite database
+(while the service is stopped), and restarts the `condenseit-web` systemd
+service.
 
 ```bash
 ./scripts/deploy.sh              # full build + deploy

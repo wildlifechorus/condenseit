@@ -3,7 +3,7 @@
 # deploy.sh - Build and deploy CondenseIt to your VPS
 #
 # Builds the frontend SPA, packages a wheel, rsyncs everything
-# to the VPS, and restarts the condenseit-web systemd service.
+# to the VPS, runs database migrations, and restarts condenseit-web.
 #
 # Usage:
 #   ./scripts/deploy.sh              # full build + deploy
@@ -185,6 +185,28 @@ if [[ "$SYNC_DB" == true ]]; then
 else
   info "Skipping DB sync (pass --sync-db to overwrite the production database)."
 fi
+
+# ---------------------------------------------------------------------------
+# Run database migrations (service must stay stopped)
+# ---------------------------------------------------------------------------
+info "Running database migrations on VPS..."
+ssh "$SSH_HOST" bash <<'REMOTE_MIGRATE'
+set -euo pipefail
+APP_DIR="$HOME/condenseit"
+if [[ ! -x "$APP_DIR/.venv/bin/condenseit" ]]; then
+  echo "Missing $APP_DIR/.venv/bin/condenseit; run scripts/bootstrap-server.sh first." >&2
+  exit 1
+fi
+if [[ ! -f "$APP_DIR/.env" ]]; then
+  echo "Missing $APP_DIR/.env; run scripts/bootstrap-server.sh first." >&2
+  exit 1
+fi
+set -a
+# shellcheck disable=SC1091
+source "$APP_DIR/.env"
+set +a
+"$APP_DIR/.venv/bin/condenseit" migrate
+REMOTE_MIGRATE
 
 # ---------------------------------------------------------------------------
 # Rsync static SPA files

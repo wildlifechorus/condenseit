@@ -1,6 +1,28 @@
 from pathlib import Path
 
+from click.testing import CliRunner
+
+from condenseit.cli import cli
 from condenseit.store.database import ContentStore
+
+
+def test_migrate_applies_schema(tmp_path: Path) -> None:
+    db_path = tmp_path / "test.db"
+    path = ContentStore.migrate(db_path=db_path)
+    assert path == db_path
+    assert db_path.is_file()
+    store = ContentStore(db_path=db_path)
+    assert "articles" in store.db.table_names()
+    store.close()
+
+
+def test_migrate_cli(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("CONDENSEIT_DATA_DIR", str(tmp_path))
+    runner = CliRunner()
+    result = runner.invoke(cli, ["migrate"])
+    assert result.exit_code == 0, result.output
+    assert "Migrations applied" in result.output
+    assert (tmp_path / "condenseit.db").is_file()
 
 
 def test_deduplicate_new_article(tmp_path: Path) -> None:

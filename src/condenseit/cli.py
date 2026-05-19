@@ -92,6 +92,15 @@ def serve(port: int, host: str, config: str | None) -> None:
 
 
 @cli.command()
+@click.option("--config", "-c", default=None, help="Path to config.yaml.")
+def migrate(config: str | None) -> None:
+    """Apply SQLite schema migrations (safe to run while the web service is stopped)."""
+    load_config(config)
+    db_path = ContentStore.migrate()
+    console.print(f"[green]Migrations applied.[/] Database: {db_path}")
+
+
+@cli.command()
 @click.option("--config", "-c", default=None)
 def status(config: str | None) -> None:
     """Show config path and latest digest info."""
