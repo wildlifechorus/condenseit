@@ -202,6 +202,7 @@ class SourceRegistry:
                         priority=int(r["priority"]),
                         hide_keywords=extra.get("hide_keywords") or [],
                         highlight_keywords=extra.get("highlight_keywords") or [],
+                        require_keywords=extra.get("require_keywords") or [],
                     )
                 )
             elif r["type"] == "reddit":
@@ -216,6 +217,7 @@ class SourceRegistry:
                             priority=int(r["priority"]),
                             hide_keywords=extra.get("hide_keywords") or [],
                             highlight_keywords=extra.get("highlight_keywords") or [],
+                            require_keywords=extra.get("require_keywords") or [],
                         )
                     )
         return out
@@ -266,6 +268,7 @@ class SourceRegistry:
                     priority=int(r["priority"]),
                     hide_keywords=extra.get("hide_keywords") or [],
                     highlight_keywords=extra.get("highlight_keywords") or [],
+                    require_keywords=extra.get("require_keywords") or [],
                 ),
             )
         return out
@@ -285,6 +288,7 @@ class SourceRegistry:
                     priority=int(r["priority"]),
                     hide_keywords=extra.get("hide_keywords") or [],
                     highlight_keywords=extra.get("highlight_keywords") or [],
+                    require_keywords=extra.get("require_keywords") or [],
                 ),
             )
         return out
@@ -310,6 +314,7 @@ class SourceRegistry:
                     priority=int(r["priority"]),
                     hide_keywords=extra.get("hide_keywords") or [],
                     highlight_keywords=extra.get("highlight_keywords") or [],
+                    require_keywords=extra.get("require_keywords") or [],
                 ),
             )
         return out
@@ -327,6 +332,7 @@ class SourceRegistry:
                     priority=int(r["priority"]),
                     hide_keywords=extra.get("hide_keywords") or [],
                     highlight_keywords=extra.get("highlight_keywords") or [],
+                    require_keywords=extra.get("require_keywords") or [],
                 ),
             )
         return out
@@ -345,6 +351,7 @@ class SourceRegistry:
                     priority=int(r["priority"]),
                     hide_keywords=extra.get("hide_keywords") or [],
                     highlight_keywords=extra.get("highlight_keywords") or [],
+                    require_keywords=extra.get("require_keywords") or [],
                 ),
             )
         return out

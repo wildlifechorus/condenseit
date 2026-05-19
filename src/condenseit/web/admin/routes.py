@@ -100,6 +100,7 @@ def _build_source_extra(
     github_repo: str = "",
     hide_keywords: list[str] | None = None,
     highlight_keywords: list[str] | None = None,
+    require_keywords: list[str] | None = None,
 ) -> tuple[dict[str, Any], str, str, str | None]:
     """Return ``(extra_json_dict, feed_url, effective_type, conversion_note)``
 
@@ -185,6 +186,8 @@ def _build_source_extra(
         extra["hide_keywords"] = hide_keywords
     if highlight_keywords:
         extra["highlight_keywords"] = highlight_keywords
+    if require_keywords:
+        extra["require_keywords"] = require_keywords
 
     return extra, feed_url, effective_type, conversion_note
 
@@ -225,6 +228,7 @@ async def _read_source_payload(request: Request) -> dict[str, Any]:
             "github_repo": _fstr("github_repo"),
             "hide_keywords": _parse_keyword_list(_fstr("hide_keywords")),
             "highlight_keywords": _parse_keyword_list(_fstr("highlight_keywords")),
+            "require_keywords": _parse_keyword_list(_fstr("require_keywords")),
         }
 
     body = await request.json()
@@ -250,6 +254,7 @@ async def _read_source_payload(request: Request) -> dict[str, Any]:
         "github_repo": str(body.get("github_repo", "")).strip(),
         "hide_keywords": _parse_keyword_list(body.get("hide_keywords", [])),
         "highlight_keywords": _parse_keyword_list(body.get("highlight_keywords", [])),
+        "require_keywords": _parse_keyword_list(body.get("require_keywords", [])),
     }
 
 
@@ -343,6 +348,7 @@ def create_admin_router(
             github_repo=github_repo,
             hide_keywords=payload["hide_keywords"],
             highlight_keywords=payload["highlight_keywords"],
+            require_keywords=payload["require_keywords"],
         )
         sources.add(effective_type, name, category, priority, feed_url, extra=extra)
         resp: dict[str, Any] = {"ok": True}
@@ -376,6 +382,7 @@ def create_admin_router(
             github_repo=str(payload["github_repo"]),
             hide_keywords=payload["hide_keywords"],
             highlight_keywords=payload["highlight_keywords"],
+            require_keywords=payload["require_keywords"],
         )
         sources.update(
             source_id,

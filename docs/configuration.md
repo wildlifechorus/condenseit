@@ -17,6 +17,38 @@ on the next digest run with no restart needed. The following source types are su
 
 ![Admin sources page with generated demo data](assets/demo/desktop-admin-sources.png)
 
+### Per-source filter rules
+
+Each source can define keyword rules in **Admin > Sources** (add or edit a source,
+**Filter rules** section). Rules are stored in the source's `extra_json` in SQLite
+and apply on the next digest run with no restart.
+
+Matching is case-insensitive against the article **title** plus the first **500
+characters** of its body (or feed summary). You can use `*` as a wildcard: every
+non-empty segment between `*` signs must appear in the text. Examples: `CVE-*`
+matches any string containing `cve-`; `GHSA-*` matches `ghsa-`; `*patch*` matches
+`patch`.
+
+| Rule | UI label | Effect |
+|------|----------|--------|
+| **Show only if** | `require_keywords` | Allowlist. If the list is non-empty, articles that match **none** of these keywords are dropped during collection (before they are stored). |
+| **Hide keywords** | `hide_keywords` | Blocklist. Articles matching any keyword are dropped. |
+| **Highlight keywords** | `highlight_keywords` | Articles matching any keyword are kept, get a +2.0 preference score boost after ranking, and show a **Highlighted** badge in the digest. |
+
+Rules are evaluated in order: hide, then show-only, then highlight. Hide and
+show-only both remove articles from the pipeline; highlight only affects ranking
+and display.
+
+Example: track the [Next.js releases Atom feed](https://github.com/vercel/next.js/releases.atom)
+but only surface security-related releases. Set **Show only if** to terms such as
+`security`, `vulnerability`, `CVE-*`, `GHSA-*`, `patch`, `advisory`, `disclosure`.
+Regular version releases without those terms are filtered out; a CVE advisory
+release is kept and can be highlighted further if you add `vulnerability` under
+**Highlight keywords**.
+
+Supported on RSS (including Reddit sources routed via Lemmy RSS), Google News,
+Hacker News, Reddit, GitHub Releases, Podcast, and YouTube collectors.
+
 ### RSS / Atom
 
 Any public RSS or Atom feed URL. Most news sites and blogs publish one.

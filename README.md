@@ -70,7 +70,7 @@ here?" breakdown so you can see exactly what drove its position.
 
 | Page | What it does |
 |------|-------------|
-| **Sources** | Add/remove all source types; filter by category; set source priority; import/export OPML for RSS feeds |
+| **Sources** | Add/remove all source types; per-source keyword filters (show only, hide, highlight); filter by category; set priority; import/export OPML |
 | **LLM** | Provider, model, OpenRouter cheapest-model option, Ollama pull/delete |
 | **API keys** | OpenRouter key storage, encrypted at rest in SQLite |
 | **Schedule** | Enable/disable automatic digest runs, set daily run times, and view the next scheduled run |

@@ -35,7 +35,7 @@ interface ITunesResult {
   artworkUrl100: string;
 }
 
-type SourceExtra = Record<string, string | number | boolean | null>;
+type SourceExtra = Record<string, string | number | boolean | null | string[]>;
 
 function parseSourceExtra(source: Source): SourceExtra {
   if (!source.extra_json) {
@@ -704,6 +704,28 @@ export function SourcesPage() {
                 <option value="5">5 - Lowest</option>
               </select>
             </Field>
+
+            {/* --- Filter rules --- */}
+            <div class="sm:col-span-2 border-t border-slate-100 dark:border-slate-800 pt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <KeywordChipInput
+                name="require_keywords"
+                label="Show only if"
+                hint='Only articles containing at least one of these are kept. Supports wildcards: CVE-*, GHSA-*. Leave empty to keep all articles.'
+                chipColor="teal"
+              />
+              <KeywordChipInput
+                name="hide_keywords"
+                label="Hide keywords"
+                hint='Articles whose title or content contains any of these are excluded. Case-insensitive, press Enter or comma to add.'
+                chipColor="red"
+              />
+              <KeywordChipInput
+                name="highlight_keywords"
+                label="Highlight keywords"
+                hint='Articles containing any of these get a ranking boost and a visual badge. Case-insensitive, press Enter or comma to add.'
+                chipColor="amber"
+              />
+            </div>
 
             <div class="sm:col-span-2">
               <Button type="submit" loading={addLoading}>
@@ -1392,6 +1414,43 @@ function SourceEditForm({
         </select>
       </Field>
 
+      {/* --- Filter rules --- */}
+      <div class="sm:col-span-2 border-t border-slate-100 dark:border-slate-800 pt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <KeywordChipInput
+          name="require_keywords"
+          label="Show only if"
+          hint='Only articles containing at least one of these are kept. Supports wildcards: CVE-*, GHSA-*. Leave empty to keep all articles.'
+          chipColor="teal"
+          defaultKeywords={
+            Array.isArray(extra['require_keywords'])
+              ? (extra['require_keywords'] as unknown as string[]).filter(Boolean)
+              : []
+          }
+        />
+        <KeywordChipInput
+          name="hide_keywords"
+          label="Hide keywords"
+          hint='Articles whose title or content contains any of these are excluded. Case-insensitive, press Enter or comma to add.'
+          chipColor="red"
+          defaultKeywords={
+            Array.isArray(extra['hide_keywords'])
+              ? (extra['hide_keywords'] as unknown as string[]).filter(Boolean)
+              : []
+          }
+        />
+        <KeywordChipInput
+          name="highlight_keywords"
+          label="Highlight keywords"
+          hint='Articles containing any of these get a ranking boost and a visual badge. Case-insensitive, press Enter or comma to add.'
+          chipColor="amber"
+          defaultKeywords={
+            Array.isArray(extra['highlight_keywords'])
+              ? (extra['highlight_keywords'] as unknown as string[]).filter(Boolean)
+              : []
+          }
+        />
+      </div>
+
       <div class="sm:col-span-2 flex items-center gap-2">
         <Button type="submit" size="sm" loading={loading}>
           Save changes
@@ -1420,6 +1479,104 @@ function Field({
       </span>
       {children}
     </label>
+  );
+}
+
+/**
+ * Chip/tag input that lets users add and remove keywords.
+ * Serializes to a hidden form input as a comma-separated string.
+ */
+function KeywordChipInput({
+  name,
+  label,
+  hint,
+  defaultKeywords = [],
+  chipColor = 'slate',
+}: {
+  name: string;
+  label: string;
+  hint: string;
+  defaultKeywords?: string[];
+  chipColor?: 'red' | 'amber' | 'teal' | 'slate';
+}) {
+  const [keywords, setKeywords] = useState<string[]>(defaultKeywords);
+  const [inputValue, setInputValue] = useState('');
+
+  const chipClass =
+    chipColor === 'red'
+      ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+      : chipColor === 'amber'
+      ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+      : chipColor === 'teal'
+      ? 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300'
+      : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
+
+  function addKeyword(raw: string) {
+    const parts = raw.split(',').map((s) => s.trim()).filter(Boolean);
+    setKeywords((prev) => {
+      const next = [...prev];
+      for (const p of parts) {
+        if (!next.includes(p)) next.push(p);
+      }
+      return next;
+    });
+    setInputValue('');
+  }
+
+  function removeKeyword(kw: string) {
+    setKeywords((prev) => prev.filter((k) => k !== kw));
+  }
+
+  return (
+    <div class="flex flex-col gap-1.5">
+      <span class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        {label}
+      </span>
+      <input type="hidden" name={name} value={keywords.join(',')} />
+      {keywords.length > 0 && (
+        <div class="flex flex-wrap gap-1.5">
+          {keywords.map((kw) => (
+            <span
+              key={kw}
+              class={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full ${chipClass}`}
+            >
+              {kw}
+              <button
+                type="button"
+                aria-label={`Remove ${kw}`}
+                onClick={() => removeKeyword(kw)}
+                class="ml-0.5 hover:opacity-70 transition-opacity"
+              >
+                &times;
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div class="flex gap-2">
+        <input
+          type="text"
+          placeholder="Add keyword..."
+          value={inputValue}
+          onInput={(e) => setInputValue((e.target as HTMLInputElement).value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ',') {
+              e.preventDefault();
+              if (inputValue.trim()) addKeyword(inputValue);
+            }
+          }}
+          class={`${inputCls} flex-1`}
+        />
+        <button
+          type="button"
+          onClick={() => { if (inputValue.trim()) addKeyword(inputValue); }}
+          class="px-3 py-2 text-sm font-semibold rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors whitespace-nowrap"
+        >
+          Add
+        </button>
+      </div>
+      <p class="text-xs text-slate-400 dark:text-slate-500">{hint}</p>
+    </div>
   );
 }
 

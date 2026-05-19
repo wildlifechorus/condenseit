@@ -46,28 +46,54 @@ logger = logging.getLogger(__name__)
 _APP_CSS = Path(__file__).resolve().parent.parent / "web" / "static" / "app.css"
 
 
-def _article_matches_keywords(article: dict[str, Any], keywords: list[str]) -> bool:
-    """Return True if any keyword appears in the article title or content snippet.
+def _keyword_matches_text(keyword: str, text: str) -> bool:
+    """Match a single keyword against lowercased combined text.
 
-    Matching is case-insensitive and treats each keyword as a substring.
+    Supports a ``*`` wildcard anywhere in the keyword:
+    - ``CVE-*``  matches any text containing ``cve-``
+    - ``*patch*`` matches any text containing ``patch``
+    - Plain text (no ``*``) is a case-insensitive substring match.
     """
+    kw = keyword.strip().lower()
+    if not kw:
+        return False
+    if "*" not in kw:
+        return kw in text
+    # Split on * and require every non-empty part to appear in the text.
+    # This is not order-aware but covers CVE-*, GHSA-*, *word* patterns.
+    parts = [p for p in kw.split("*") if p]
+    return all(p in text for p in parts)
+
+
+def _article_matches_keywords(article: dict[str, Any], keywords: list[str]) -> bool:
+    """Return True if any keyword matches the article title or content snippet."""
     if not keywords:
         return False
     title = str(article.get("title") or "").lower()
     content = str(article.get("content") or article.get("description") or "")[:500].lower()
     combined = title + " " + content
-    return any(kw.lower() in combined for kw in keywords if kw.strip())
+    return any(_keyword_matches_text(kw, combined) for kw in keywords)
 
 
 def _apply_source_rules(
     articles: list[dict[str, Any]],
     hide_keywords: list[str],
     highlight_keywords: list[str],
+    require_keywords: list[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Filter hidden articles and tag highlight articles from a source batch."""
+    """Filter and tag articles according to per-source keyword rules.
+
+    - ``hide_keywords``: article is dropped if any keyword matches.
+    - ``require_keywords``: article is dropped if the list is non-empty and
+      none of the keywords match (allowlist mode).
+    - ``highlight_keywords``: article is tagged for a score boost if any
+      keyword matches.
+    """
     out: list[dict[str, Any]] = []
     for art in articles:
         if _article_matches_keywords(art, hide_keywords):
+            continue
+        if require_keywords and not _article_matches_keywords(art, require_keywords):
             continue
         if highlight_keywords and _article_matches_keywords(art, highlight_keywords):
             art["_highlight_boost"] = True
@@ -178,15 +204,14 @@ class DigestPipeline:
         rss = RSSCollector(feeds)
         articles: list[dict[str, Any]] = []
         for _feed, items, err in rss.collect_feed_results():
-            for a in items:
-                d = a.to_dict()
-                if _article_matches_keywords(d, _feed.hide_keywords):
-                    continue
-                if _feed.highlight_keywords and _article_matches_keywords(
-                    d, _feed.highlight_keywords
-                ):
-                    d["_highlight_boost"] = True
-                articles.append(d)
+            articles.extend(
+                _apply_source_rules(
+                    [a.to_dict() for a in items],
+                    _feed.hide_keywords,
+                    _feed.highlight_keywords,
+                    _feed.require_keywords,
+                )
+            )
             self.sources.record_health(
                 _feed.url,
                 status="ok" if err is None else "error",
@@ -206,7 +231,9 @@ class DigestPipeline:
                 [cfg],
             ).collect_all_with_health()
             articles.extend(
-                _apply_source_rules(src_articles, cfg.hide_keywords, cfg.highlight_keywords)
+                _apply_source_rules(
+                    src_articles, cfg.hide_keywords, cfg.highlight_keywords, cfg.require_keywords
+                )
             )
             self._record_health(src_health)
 
@@ -215,7 +242,9 @@ class DigestPipeline:
                 [cfg],
             ).collect_all_with_health()
             articles.extend(
-                _apply_source_rules(src_articles, cfg.hide_keywords, cfg.highlight_keywords)
+                _apply_source_rules(
+                    src_articles, cfg.hide_keywords, cfg.highlight_keywords, cfg.require_keywords
+                )
             )
             self._record_health(src_health)
 
@@ -224,7 +253,9 @@ class DigestPipeline:
                 [cfg],
             ).collect_all_with_health()
             articles.extend(
-                _apply_source_rules(src_articles, cfg.hide_keywords, cfg.highlight_keywords)
+                _apply_source_rules(
+                    src_articles, cfg.hide_keywords, cfg.highlight_keywords, cfg.require_keywords
+                )
             )
             self._record_health(src_health)
 
@@ -233,7 +264,9 @@ class DigestPipeline:
                 [cfg],
             ).collect_all_with_health()
             articles.extend(
-                _apply_source_rules(src_articles, cfg.hide_keywords, cfg.highlight_keywords)
+                _apply_source_rules(
+                    src_articles, cfg.hide_keywords, cfg.highlight_keywords, cfg.require_keywords
+                )
             )
             self._record_health(src_health)
 
@@ -242,7 +275,9 @@ class DigestPipeline:
                 [cfg],
             ).collect_all_with_health()
             articles.extend(
-                _apply_source_rules(src_articles, cfg.hide_keywords, cfg.highlight_keywords)
+                _apply_source_rules(
+                    src_articles, cfg.hide_keywords, cfg.highlight_keywords, cfg.require_keywords
+                )
             )
             self._record_health(src_health)
 

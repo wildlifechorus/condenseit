@@ -17,6 +17,7 @@ class FeedConfig(BaseModel):
     priority: int = 2
     hide_keywords: list[str] = Field(default_factory=list)
     highlight_keywords: list[str] = Field(default_factory=list)
+    require_keywords: list[str] = Field(default_factory=list)
 
 
 class YouTubeChannelConfig(BaseModel):
@@ -25,6 +26,7 @@ class YouTubeChannelConfig(BaseModel):
     category: str = "Video"
     hide_keywords: list[str] = Field(default_factory=list)
     highlight_keywords: list[str] = Field(default_factory=list)
+    require_keywords: list[str] = Field(default_factory=list)
 
 
 class WatchUrlConfig(BaseModel):
@@ -48,6 +50,7 @@ class GoogleNewsSearchConfig(BaseModel):
     priority: int = 2
     hide_keywords: list[str] = Field(default_factory=list)
     highlight_keywords: list[str] = Field(default_factory=list)
+    require_keywords: list[str] = Field(default_factory=list)
 
 
 class HackerNewsConfig(BaseModel):
@@ -60,6 +63,7 @@ class HackerNewsConfig(BaseModel):
     priority: int = 2
     hide_keywords: list[str] = Field(default_factory=list)
     highlight_keywords: list[str] = Field(default_factory=list)
+    require_keywords: list[str] = Field(default_factory=list)
 
 
 class RedditConfig(BaseModel):
@@ -74,6 +78,7 @@ class RedditConfig(BaseModel):
     priority: int = 2
     hide_keywords: list[str] = Field(default_factory=list)
     highlight_keywords: list[str] = Field(default_factory=list)
+    require_keywords: list[str] = Field(default_factory=list)
 
 
 class GitHubReleasesConfig(BaseModel):
@@ -84,6 +89,7 @@ class GitHubReleasesConfig(BaseModel):
     priority: int = 2
     hide_keywords: list[str] = Field(default_factory=list)
     highlight_keywords: list[str] = Field(default_factory=list)
+    require_keywords: list[str] = Field(default_factory=list)
 
 
 class PodcastConfig(BaseModel):
@@ -95,6 +101,7 @@ class PodcastConfig(BaseModel):
     priority: int = 2
     hide_keywords: list[str] = Field(default_factory=list)
     highlight_keywords: list[str] = Field(default_factory=list)
+    require_keywords: list[str] = Field(default_factory=list)
 
 
 class RelevanceConfig(BaseModel):
