@@ -1,49 +1,40 @@
 import { useState, useEffect, useCallback } from 'preact/hooks';
 import { api } from '../lib/api';
-import type { DigestItem, ReadLaterItem } from '../lib/types';
+import type { DigestItem, StarredItem } from '../lib/types';
 import { normalizeItem } from '../lib/normalize-item';
 import { DigestCard } from '../components/DigestCard';
 import { ItemDetailPanel } from '../components/ItemDetailPanel';
 import { EmptyState } from '../components/EmptyState';
 import { Spinner } from '../components/Spinner';
 
-/** Map of url -> star rating for the read-later list view. */
 type RatingsMap = Record<string, number>;
 
 /**
- * Page that shows all items the user has saved to read later.
- * Items persist here until explicitly dismissed (marked as read / removed).
- * This list is independent of digest generation - new digest runs do NOT
- * clear it.
+ * Page that shows all items the user has starred for permanent keeping.
+ * Items remain here until explicitly unstarred. Starring is independent
+ * of Read Later and digest runs.
  */
-export function ReadLaterPage() {
-  const [items, setItems] = useState<ReadLaterItem[]>([]);
+export function StarredPage() {
+  const [items, setItems] = useState<StarredItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  /** Ratings keyed by URL, seeded from server response. */
   const [ratings, setRatings] = useState<RatingsMap>({});
-
-  /** URLs in this list - all items here are by definition "read later". */
-  const [readLaterUrls, setReadLaterUrls] = useState<Set<string>>(new Set());
-
-  /** URLs the user has starred for permanent keeping. */
   const [starredUrls, setStarredUrls] = useState<Set<string>>(new Set());
-
-  /** Item currently open in the detail panel. */
+  const [readLaterUrls, setReadLaterUrls] = useState<Set<string>>(new Set());
   const [selectedItem, setSelectedItem] = useState<DigestItem | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
     Promise.all([
-      api.getReadLaterItems(),
-      api.getStarredUrls().catch((): { urls: string[] } => ({ urls: [] })),
+      api.getStarredItems(),
+      api.getReadLaterUrls().catch((): { urls: string[] } => ({ urls: [] })),
     ])
-      .then(([{ items: fetched }, { urls: sUrls }]) => {
+      .then(([{ items: fetched }, { urls: rlUrls }]) => {
         setItems(fetched);
-        setReadLaterUrls(new Set(fetched.map((i) => i.url)));
-        setStarredUrls(new Set(sUrls));
+        setStarredUrls(new Set(fetched.map((i) => i.url)));
+        setReadLaterUrls(new Set(rlUrls));
 
         const initial: RatingsMap = {};
         for (const item of fetched) {
@@ -55,7 +46,7 @@ export function ReadLaterPage() {
       })
       .catch((e: unknown) => {
         setError(
-          e instanceof Error ? e.message : 'Failed to load read-later list.',
+          e instanceof Error ? e.message : 'Failed to load starred items.',
         );
       })
       .finally(() => setLoading(false));
@@ -65,47 +56,49 @@ export function ReadLaterPage() {
     load();
   }, [load]);
 
-  /** Update ratings after a card-level save. */
   const handleRate = useCallback((url: string, rating: number) => {
     setRatings((prev) => ({ ...prev, [url]: rating }));
   }, []);
 
-  /**
-   * Removing from read-later: deletes the item from this list entirely.
-   * This is the primary action on this page ("mark as done / read").
-   */
-  const handleRemove = useCallback((url: string) => {
-    setItems((prev) => prev.filter((i) => i.url !== url));
-    setReadLaterUrls((prev) => {
-      const next = new Set(prev);
-      next.delete(url);
-      return next;
-    });
-    if (selectedItem?.url === url) {
-      setSelectedItem(null);
-    }
-    api.removeReadLater(url).catch(() => undefined);
-  }, [selectedItem]);
+  /** Unstarring removes the item from this page entirely. */
+  const handleUnstar = useCallback(
+    (url: string) => {
+      setItems((prev) => prev.filter((i) => i.url !== url));
+      setStarredUrls((prev) => {
+        const next = new Set(prev);
+        next.delete(url);
+        return next;
+      });
+      if (selectedItem?.url === url) {
+        setSelectedItem(null);
+      }
+      api.unstarItem(url).catch(() => undefined);
+    },
+    [selectedItem],
+  );
 
-  /**
-   * Handler passed to DigestCard / ItemDetailPanel as `onReadLater`.
-   * On this page toggling = removing (the item is already saved here).
-   */
+  const handleToggleStar = useCallback(
+    (item: DigestItem) => {
+      if (starredUrls.has(item.url)) {
+        handleUnstar(item.url);
+      } else {
+        setStarredUrls((prev) => new Set([...prev, item.url]));
+        api.starItem(item).catch(() => undefined);
+      }
+    },
+    [starredUrls, handleUnstar],
+  );
+
   const handleReadLaterToggle = useCallback((item: DigestItem) => {
-    handleRemove(item.url);
-  }, [handleRemove]);
-
-  /** Toggle starred state without affecting the read-later list. */
-  const handleToggleStar = useCallback((item: DigestItem) => {
     const url = item.url;
-    setStarredUrls((prev) => {
+    setReadLaterUrls((prev) => {
       const next = new Set(prev);
       if (next.has(url)) {
         next.delete(url);
-        api.unstarItem(url).catch(() => undefined);
+        api.removeReadLater(url).catch(() => undefined);
       } else {
         next.add(url);
-        api.starItem(item).catch(() => undefined);
+        api.saveReadLater(item).catch(() => undefined);
       }
       return next;
     });
@@ -122,7 +115,7 @@ export function ReadLaterPage() {
   if (error) {
     return (
       <EmptyState
-        title="Could not load read-later list"
+        title="Could not load starred items"
         description={error}
         action={
           <button
@@ -157,16 +150,16 @@ export function ReadLaterPage() {
       <div class="space-y-4">
         <div>
           <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-            Read Later
+            Starred
           </h1>
           <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Items you save here stay until you mark them as done.
+            Articles you want to keep forever.
           </p>
         </div>
 
         <EmptyState
-          title="Nothing saved yet"
-          description='Hit the bookmark button on any digest item to save it here for later. Items stay until you remove them, even after new digest runs.'
+          title="Nothing starred yet"
+          description="Hit the Star button on any digest item to save it here permanently. Starred items stay forever until you unstar them."
           icon={
             <svg
               class="w-10 h-10"
@@ -178,7 +171,7 @@ export function ReadLaterPage() {
               <path
                 stroke-linecap="round"
                 stroke-linejoin="round"
-                d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z"
+                d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.562.562 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"
               />
             </svg>
           }
@@ -201,11 +194,11 @@ export function ReadLaterPage() {
       <div class="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-            Read Later
+            Starred
           </h1>
           <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            {items.length} item{items.length !== 1 ? 's' : ''} saved ·
-            click bookmark or &quot;Mark done&quot; to remove
+            {items.length} item{items.length !== 1 ? 's' : ''} starred -
+            unstar to remove
           </p>
         </div>
       </div>
@@ -214,19 +207,19 @@ export function ReadLaterPage() {
       <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm overflow-hidden">
         <div class="px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center gap-3">
           <svg
-            class="w-4 h-4 text-amber-500 dark:text-amber-400 flex-shrink-0"
+            class="w-4 h-4 text-yellow-500 dark:text-yellow-400 flex-shrink-0"
             fill="currentColor"
             viewBox="0 0 24 24"
           >
             <path
               stroke-linecap="round"
               stroke-linejoin="round"
-              d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z"
+              d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.562.562 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"
             />
           </svg>
           <p class="text-xs text-slate-500 dark:text-slate-400">
-            These items persist independently of new digest runs. Remove them
-            when you&apos;re done.
+            These items are saved permanently and are not affected by new digest
+            runs. Unstar to remove.
           </p>
         </div>
 
@@ -242,17 +235,10 @@ export function ReadLaterPage() {
                 item={item}
                 onRate={handleRate}
                 onSelect={setSelectedItem}
-                onReadLater={handleReadLaterToggle}
-                isReadLater={readLaterUrls.has(item.url)}
                 onToggleStar={handleToggleStar}
                 isStarred={starredUrls.has(item.url)}
-                /*
-                 * "Mark read" on this page means "I'm done, remove it".
-                 * We reuse onMarkRead for that action so the familiar
-                 * checkmark button still works.
-                 */
-                onMarkRead={handleRemove}
-                isRead={false}
+                onReadLater={handleReadLaterToggle}
+                isReadLater={readLaterUrls.has(item.url)}
               />
             );
           })}
@@ -270,11 +256,10 @@ export function ReadLaterPage() {
           rating={ratings[selectedItem.url] ?? selectedItem.rating}
           onClose={() => setSelectedItem(null)}
           onRate={handleRate}
-          onMarkRead={handleRemove}
-          onReadLater={handleReadLaterToggle}
-          isReadLater={readLaterUrls.has(selectedItem.url)}
           onToggleStar={handleToggleStar}
           isStarred={starredUrls.has(selectedItem.url)}
+          onReadLater={handleReadLaterToggle}
+          isReadLater={readLaterUrls.has(selectedItem.url)}
         />
       )}
     </div>

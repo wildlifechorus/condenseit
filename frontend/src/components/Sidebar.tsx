@@ -1,6 +1,12 @@
 import { Link, useLocation } from 'wouter';
 import type { DigestEntry } from '../lib/types';
 
+function fmtDigestLabel(iso: string): string {
+  const [y, m, d] = iso.slice(0, 10).split('-');
+  const time = iso.slice(11, 16);
+  return `${d}/${m}/${y} ${time}`;
+}
+
 interface SidebarProps {
   digests: DigestEntry[];
   currentDigestId?: number | null;
@@ -18,6 +24,7 @@ const SECTIONS: NavSection[] = [
     links: [
       { href: '/', label: 'Latest digest', exact: true },
       { href: '/read-later', label: 'Read Later' },
+      { href: '/starred', label: 'Starred' },
     ],
   },
   {
@@ -95,7 +102,7 @@ export function Sidebar({
                         : 'text-slate-500 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-300',
                     ].join(' ')}
                   >
-                    #{d.id} · {d.created_at.slice(0, 10)}
+                    #{d.id} · {fmtDigestLabel(d.created_at)}
                   </Link>
                 </li>
               ))}

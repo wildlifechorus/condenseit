@@ -21,6 +21,10 @@ interface ItemDetailPanelProps {
    * and closes the panel so the card disappears from the grid.
    */
   onDismiss?: (url: string) => void;
+  /** Called when the user toggles the starred state. */
+  onToggleStar?: (item: DigestItem) => void;
+  /** Whether this item is currently starred. */
+  isStarred?: boolean;
 }
 
 /** A single segment of parsed summary content. */
@@ -130,6 +134,8 @@ export function ItemDetailPanel({
   onReadLater,
   isReadLater = false,
   onDismiss,
+  onToggleStar,
+  isStarred = false,
 }: ItemDetailPanelProps) {
   /*
    * Some older items have the LLM's structured output stored as a raw JSON
@@ -393,6 +399,36 @@ export function ItemDetailPanel({
               {/* Dismiss: marks as read and closes the panel so the card
                   vanishes from the default grid view. Only shown while the
                   item has not yet been read. */}
+              {onToggleStar && (
+                <button
+                  type="button"
+                  onClick={() => onToggleStar(item)}
+                  title={isStarred ? 'Unstar this item' : 'Star to save forever'}
+                  class={[
+                    'flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border',
+                    'transition-colors font-medium',
+                    isStarred
+                      ? 'border-yellow-300 dark:border-yellow-700 text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20'
+                      : 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-yellow-300 hover:text-yellow-600 dark:hover:text-yellow-400',
+                  ].join(' ')}
+                >
+                  <svg
+                    class="w-3.5 h-3.5"
+                    fill={isStarred ? 'currentColor' : 'none'}
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.562.562 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"
+                    />
+                  </svg>
+                  {isStarred ? 'Starred' : 'Star'}
+                </button>
+              )}
+
               {onDismiss && !isRead && (
                 <button
                   type="button"

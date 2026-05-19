@@ -10,6 +10,44 @@ import { EmptyState } from '../components/EmptyState';
 import { Spinner } from '../components/Spinner';
 import { Button } from '../components/Button';
 
+function fmtSubtitleDate(utcIso: string): string {
+  try {
+    const d = new Date(utcIso);
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(d);
+    const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
+    const dateStr = `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}`;
+    const tzAbbr =
+      new Intl.DateTimeFormat('en-GB', {
+        timeZone: tz,
+        timeZoneName: 'short',
+      })
+        .formatToParts(d)
+        .find((p) => p.type === 'timeZoneName')?.value ?? tz;
+    return `${dateStr} ${tzAbbr}`;
+  } catch {
+    return utcIso.slice(0, 16).replace('T', ' ') + ' UTC';
+  }
+}
+
+function fmtProcessingTime(raw: string): string {
+  const match = raw.match(/^(\d+)s$/);
+  if (!match) return raw;
+  const total = parseInt(match[1], 10);
+  if (total < 60) return raw;
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return s === 0 ? `${m}m` : `${m}m ${s}s`;
+}
+
 /** Map of url -> current saved rating for this digest view. */
 type RatingsMap = Record<string, number>;
 
@@ -40,6 +78,9 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
   /** URLs the user has saved to read later. */
   const [readLaterUrls, setReadLaterUrls] = useState<Set<string>>(new Set());
 
+  /** URLs the user has starred for permanent keeping. */
+  const [starredUrls, setStarredUrls] = useState<Set<string>>(new Set());
+
   /** Item currently open in the detail panel, or null when closed. */
   const [selectedItem, setSelectedItem] = useState<DigestItem | null>(null);
 
@@ -52,7 +93,7 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
         ? api.getDigest(requestedId)
         : api.getLatestDigest();
 
-    // Fetch all three in parallel so setLoading(false) only fires once every
+    // Fetch all in parallel so setLoading(false) only fires once every
     // request has resolved. Previously getReadUrls / getReadLaterUrls were
     // fired inside .then() without being awaited, causing a race where the
     // page rendered with an empty readUrls set (showing all items) before
@@ -61,8 +102,9 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
       load,
       api.getReadUrls().catch((): { urls: string[] } => ({ urls: [] })),
       api.getReadLaterUrls().catch((): { urls: string[] } => ({ urls: [] })),
+      api.getStarredUrls().catch((): { urls: string[] } => ({ urls: [] })),
     ])
-      .then(([d, { urls: fetchedReadUrls }, { urls: fetchedReadLaterUrls }]) => {
+      .then(([d, { urls: fetchedReadUrls }, { urls: fetchedReadLaterUrls }, { urls: fetchedStarredUrls }]) => {
         setDetail(d);
         setFiltered(d?.items ?? []);
         onDigestLoaded?.(d?.meta.id ?? null);
@@ -76,10 +118,11 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
         }
         setRatings(initial);
 
-        // Apply read / read-later state together with the digest so the
-        // first paint already has the correct visibility.
+        // Apply read / read-later / starred state together with the digest so
+        // the first paint already has the correct visibility.
         setReadUrls(new Set(fetchedReadUrls));
         setReadLaterUrls(new Set(fetchedReadLaterUrls));
+        setStarredUrls(new Set(fetchedStarredUrls));
       })
       .catch((e: unknown) => {
         setError(e instanceof Error ? e.message : 'Failed to load digest.');
@@ -138,6 +181,22 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
       } else {
         next.add(url);
         api.saveReadLater(item).catch(() => undefined);
+      }
+      return next;
+    });
+  }, []);
+
+  /** Toggle the starred state for an item. */
+  const handleToggleStar = useCallback((item: DigestItem) => {
+    const url = item.url;
+    setStarredUrls((prev) => {
+      const next = new Set(prev);
+      if (next.has(url)) {
+        next.delete(url);
+        api.unstarItem(url).catch(() => undefined);
+      } else {
+        next.add(url);
+        api.starItem(item).catch(() => undefined);
       }
       return next;
     });
@@ -237,10 +296,10 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
             Digest #{meta.id}
           </h1>
           <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            {meta.created_at?.slice(0, 16).replace('T', ' ')} UTC
+            {meta.created_at && fmtSubtitleDate(meta.created_at)}
             {meta.articles_count != null && ` · ${meta.articles_count} articles`}
             {meta.model && ` · ${meta.model}`}
-            {meta.processing_time && ` · ${meta.processing_time}`}
+            {meta.processing_time && ` · ${fmtProcessingTime(meta.processing_time)}`}
           </p>
         </div>
       </div>
@@ -288,6 +347,8 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
                     onReadLater={handleReadLater}
                     isReadLater={readLaterUrls.has(item.url)}
                     onDismiss={handleDismiss}
+                    onToggleStar={handleToggleStar}
+                    isStarred={starredUrls.has(item.url)}
                   />
                 );
               })}
@@ -311,6 +372,8 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
           onReadLater={handleReadLater}
           isReadLater={readLaterUrls.has(selectedItem.url)}
           onDismiss={handleDismiss}
+          onToggleStar={handleToggleStar}
+          isStarred={starredUrls.has(selectedItem.url)}
         />
       )}
     </div>

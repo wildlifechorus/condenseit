@@ -119,6 +119,10 @@ interface DigestCardProps {
    * read so it disappears from the default (hide-read) view.
    */
   onDismiss?: (url: string) => void;
+  /** Called when the user toggles the starred state of this item. */
+  onToggleStar?: (item: DigestItem) => void;
+  /** Whether this item is currently starred. */
+  isStarred?: boolean;
 }
 
 function formatDate(iso?: string): string {
@@ -148,6 +152,8 @@ export function DigestCard({
   onReadLater,
   isReadLater = false,
   onDismiss,
+  onToggleStar,
+  isStarred = false,
 }: DigestCardProps) {
   const summary = cleanSummary(item.summary);
   const metaParts: string[] = [];
@@ -162,6 +168,7 @@ export function DigestCard({
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [readLaterFlash, setReadLaterFlash] = useState(false);
+  const [starFlash, setStarFlash] = useState(false);
 
   /**
    * Sync local star display whenever the parent updates item.rating
@@ -345,6 +352,44 @@ export function DigestCard({
         <div class="mt-1 pt-2 border-t border-slate-100 dark:border-slate-800 overflow-x-auto pb-1">
           <div class="flex w-max min-w-full items-center gap-2">
             <div class="flex items-center gap-1.5 shrink-0">
+              {onToggleStar && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onToggleStar(item);
+                    if (!isStarred) {
+                      setStarFlash(true);
+                      setTimeout(() => setStarFlash(false), 2000);
+                    }
+                  }}
+                  title={isStarred ? 'Unstar this item' : 'Star to save forever'}
+                  class={[
+                    'flex items-center gap-1 text-xs px-2 py-1 rounded-md border',
+                    'transition-colors',
+                    isStarred
+                      ? 'border-yellow-300 dark:border-yellow-700 text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20'
+                      : starFlash
+                        ? 'border-yellow-300 text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20'
+                        : 'border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:border-yellow-300 hover:text-yellow-600 dark:hover:text-yellow-400',
+                  ].join(' ')}
+                >
+                  <svg
+                    class="w-3 h-3"
+                    fill={isStarred ? 'currentColor' : 'none'}
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.562.562 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"
+                    />
+                  </svg>
+                  {isStarred ? 'Starred' : 'Star'}
+                </button>
+              )}
+
               {onReadLater && (
                 <button
                   type="button"

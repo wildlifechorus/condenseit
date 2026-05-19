@@ -297,6 +297,16 @@ export interface ReadLaterItem extends DigestItem {
   saved_at: string;
 }
 
+// ---------- Starred ------------------------------------------------------
+
+/**
+ * A digest item the user has starred for permanent keeping.
+ * Mirrors DigestItem plus a `starred_at` timestamp set when it was starred.
+ */
+export interface StarredItem extends DigestItem {
+  starred_at: string;
+}
+
 // ---------- Run logs -----------------------------------------------------
 
 export interface RunLogSummary {

@@ -210,6 +210,23 @@ class ContentStore:
             self.db.execute(
                 "ALTER TABLE read_later ADD COLUMN image_url TEXT"
             )
+        if "starred" not in self.db.table_names():
+            self.db["starred"].create(
+                {
+                    "url": str,
+                    "title": str,
+                    "summary": str,
+                    "tldr": str,
+                    "key_takeaways": str,
+                    "source": str,
+                    "category": str,
+                    "kind": str,
+                    "published_at": str,
+                    "starred_at": str,
+                    "image_url": str,
+                },
+                pk="url",
+            )
         if "dismissed_articles" not in self.db.table_names():
             self.db["dismissed_articles"].create(
                 {
@@ -556,6 +573,65 @@ class ContentStore:
         rows = list(
             self.db.query(
                 "SELECT * FROM read_later ORDER BY saved_at DESC",
+            )
+        )
+        for row in rows:
+            raw_kt = row.get("key_takeaways") or "[]"
+            try:
+                row["key_takeaways"] = json.loads(raw_kt)
+            except (json.JSONDecodeError, TypeError):
+                row["key_takeaways"] = []
+        return rows
+
+    def save_starred(self, item: dict[str, Any]) -> None:
+        """Persist a digest item to the starred (permanent-save) list.
+
+        ``key_takeaways`` is stored as a JSON array string so it survives a
+        round-trip through SQLite without a schema change.
+        """
+        key_takeaways = item.get("key_takeaways") or []
+        if isinstance(key_takeaways, list):
+            key_takeaways = json.dumps(key_takeaways)
+        self.db["starred"].upsert(
+            {
+                "url": str(item.get("url", "")).strip(),
+                "title": str(item.get("title", "")),
+                "summary": str(item.get("summary", "")),
+                "tldr": str(item.get("tldr", "") or ""),
+                "key_takeaways": str(key_takeaways),
+                "source": str(item.get("source", "")),
+                "category": str(item.get("category", "")),
+                "kind": str(item.get("kind", "article")),
+                "published_at": str(item.get("published_at", "") or ""),
+                "image_url": str(item.get("image_url") or ""),
+                "starred_at": datetime.now(UTC).isoformat(),
+            },
+            pk="url",
+        )
+
+    def remove_starred(self, url: str) -> None:
+        """Remove a URL from the starred list."""
+        try:
+            self.db["starred"].delete(url)
+        except NotFoundError:
+            pass
+
+    def get_starred_urls(self) -> set[str]:
+        """Return the set of all URLs currently starred."""
+        if "starred" not in self.db.table_names():
+            return set()
+        return {str(row["url"]) for row in self.db["starred"].rows}
+
+    def list_starred(self) -> list[dict[str, Any]]:
+        """Return all starred items ordered newest-starred first.
+
+        ``key_takeaways`` is deserialized back to a list before returning.
+        """
+        if "starred" not in self.db.table_names():
+            return []
+        rows = list(
+            self.db.query(
+                "SELECT * FROM starred ORDER BY starred_at DESC",
             )
         )
         for row in rows:

@@ -18,6 +18,7 @@ import type {
   ScheduleConfig,
   SchedulerStatus,
   Source,
+  StarredItem,
 } from './types';
 
 /** Generic HTTP helper. Throws on non-2xx responses. */
@@ -188,4 +189,14 @@ export const api = {
     request<void>('POST', '/api/read-later', item),
   removeReadLater: (url: string) =>
     request<void>('DELETE', '/api/read-later', { url }),
+
+  // Starred (permanent saves)
+  getStarredItems: () =>
+    request<{ items: StarredItem[] }>('GET', '/api/starred'),
+  getStarredUrls: () =>
+    request<{ urls: string[] }>('GET', '/api/starred/urls'),
+  starItem: (item: DigestItem) =>
+    request<void>('POST', '/api/starred', item),
+  unstarItem: (url: string) =>
+    request<void>('DELETE', '/api/starred', { url }),
 };

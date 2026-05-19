@@ -587,6 +587,43 @@ def create_app(config_path: str | None = None) -> FastAPI:
         urls = sorted(store.get_read_later_urls())
         return JSONResponse({"urls": urls})
 
+    # --- Starred (permanent saves) ------------------------------------
+
+    @app.get("/api/starred", response_model=None)
+    async def api_get_starred() -> JSONResponse:
+        """Return all starred items, newest first."""
+        items = store.list_starred()
+        items = _attach_ratings(store, items)
+        return JSONResponse({"items": items})
+
+    @app.post("/api/starred", response_model=None)
+    async def api_save_starred(body: dict[str, Any]) -> JSONResponse:
+        """Star a digest item for permanent saving.
+
+        The client sends the full DigestItem payload so we can store a
+        complete snapshot independent of digest history.
+        """
+        url = str(body.get("url", "")).strip()
+        if not url:
+            return JSONResponse({"error": "Missing url"}, status_code=422)
+        store.save_starred(body)
+        return JSONResponse({"ok": True})
+
+    @app.delete("/api/starred", response_model=None)
+    async def api_remove_starred(body: dict[str, Any]) -> JSONResponse:
+        """Remove a URL from the starred list."""
+        url = str(body.get("url", "")).strip()
+        if not url:
+            return JSONResponse({"error": "Missing url"}, status_code=422)
+        store.remove_starred(url)
+        return JSONResponse({"ok": True})
+
+    @app.get("/api/starred/urls", response_model=None)
+    async def api_get_starred_urls() -> JSONResponse:
+        """Return only the set of starred URLs (lightweight check)."""
+        urls = sorted(store.get_starred_urls())
+        return JSONResponse({"urls": urls})
+
     # --- Preference profile --------------------------------------------
 
     @app.get("/api/preferences/profile", response_model=None)

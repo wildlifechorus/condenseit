@@ -5,6 +5,7 @@ import { AppLayout } from './layouts/AppLayout';
 import { DigestPage } from './pages/Digest';
 import { LoginPage } from './pages/Login';
 import { ReadLaterPage } from './pages/ReadLater';
+import { StarredPage } from './pages/Starred';
 import { SourcesPage } from './pages/admin/Sources';
 import { LlmConfigPage } from './pages/admin/LlmConfig';
 import { ApiKeysPage } from './pages/admin/ApiKeys';
@@ -73,6 +74,9 @@ export function App() {
           </Route>
           <Route path="/read-later">
             <ReadLaterPage />
+          </Route>
+          <Route path="/starred">
+            <StarredPage />
           </Route>
           <Route path="/admin">
             <Redirect to="/admin/sources" />

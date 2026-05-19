@@ -44,6 +44,7 @@ The ranking engine learns from multiple signals:
 | **Star rating 1-2** | Explicit negative | Penalises matched terms, category, and source |
 | **Mark as read** | Implicit mild positive | Mild boost to category and content profile |
 | **Save for later** | Implicit strong positive | Strong boost to category and content profile |
+| **Star (permanent save)** | No ranking effect | Saved forever in the Starred page; survives all future digest runs |
 | **Dismiss** | Implicit mild negative | Mild penalty to category and content profile |
 
 Scores are additive across multiple named signals: keywords, term overlap,
