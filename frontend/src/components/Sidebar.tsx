@@ -1,11 +1,6 @@
 import { Link, useLocation } from 'wouter';
+import { formatDigestLabel } from '../lib/dates';
 import type { DigestEntry } from '../lib/types';
-
-function fmtDigestLabel(iso: string): string {
-  const [y, m, d] = iso.slice(0, 10).split('-');
-  const time = iso.slice(11, 16);
-  return `${d}/${m}/${y} ${time}`;
-}
 
 interface SidebarProps {
   digests: DigestEntry[];
@@ -102,7 +97,7 @@ export function Sidebar({
                         : 'text-slate-500 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-300',
                     ].join(' ')}
                   >
-                    #{d.id} · {fmtDigestLabel(d.created_at)}
+                    #{d.id} · {formatDigestLabel(d.created_at)}
                   </Link>
                 </li>
               ))}

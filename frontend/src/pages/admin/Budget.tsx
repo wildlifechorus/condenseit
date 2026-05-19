@@ -4,6 +4,7 @@ import type { BudgetData, BudgetLimits } from '../../lib/types';
 import { Card, CardHeader } from '../../components/Card';
 import { Button } from '../../components/Button';
 import { Spinner } from '../../components/Spinner';
+import { formatDigestLabel } from '../../lib/dates';
 
 const INPUT =
   'w-full px-3 py-2 text-sm bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500';
@@ -323,7 +324,7 @@ export function BudgetPage() {
                       #{d.digest_id}
                     </td>
                     <td class="py-2 pr-4 text-slate-500 dark:text-slate-400 text-xs">
-                      {d.created_at.slice(0, 16).replace('T', ' ')} UTC
+                      {formatDigestLabel(d.created_at)}
                     </td>
                     <td class="py-2 pr-4 text-right text-slate-500 dark:text-slate-400">
                       {d.articles}

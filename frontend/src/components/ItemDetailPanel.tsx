@@ -4,6 +4,7 @@ import { RatingStars } from './RatingStars';
 import { cleanSummary, tryParseStructuredSummary } from '../lib/clean-summary';
 import type { DigestItem } from '../lib/types';
 import { api } from '../lib/api';
+import { formatDateOnly } from '../lib/dates';
 
 interface ItemDetailPanelProps {
   item: DigestItem;
@@ -106,20 +107,6 @@ function parseSummary(raw: string): SummarySegment[] {
   return segments;
 }
 
-function formatDate(iso?: string): string {
-  if (!iso) return '';
-  const d = iso.slice(0, 10);
-  try {
-    return new Date(d).toLocaleDateString('en-GB', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    });
-  } catch {
-    return d;
-  }
-}
-
 /**
  * Full-screen slide-over panel showing all detail for a single DigestItem.
  * Rendered as a portal-like fixed overlay; Escape key or backdrop click closes it.
@@ -152,7 +139,7 @@ export function ItemDetailPanel({
       : jsonFallback?.key_takeaways;
 
   const segments = parseSummary(item.summary);
-  const date = formatDate(item.published_at);
+  const date = formatDateOnly(item.published_at, { year: true });
   const metaParts: string[] = [];
   if (item.source) metaParts.push(item.source);
   if (date) metaParts.push(date);

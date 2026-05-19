@@ -4,6 +4,7 @@ import { RatingStars } from './RatingStars';
 import { cleanSummary } from '../lib/clean-summary';
 import type { DigestItem, ScoreBreakdown } from '../lib/types';
 import { api } from '../lib/api';
+import { formatDateOnly } from '../lib/dates';
 
 /** Human-readable labels for each score signal. */
 const SIGNAL_LABELS: Record<string, string> = {
@@ -125,19 +126,6 @@ interface DigestCardProps {
   isStarred?: boolean;
 }
 
-function formatDate(iso?: string): string {
-  if (!iso) return '';
-  const d = iso.slice(0, 10);
-  try {
-    return new Date(d).toLocaleDateString('en-GB', {
-      day: 'numeric',
-      month: 'short',
-    });
-  } catch {
-    return d;
-  }
-}
-
 /**
  * Single article / video / watch card with title, summary,
  * category badge, source, published date, inline star rating,
@@ -158,7 +146,7 @@ export function DigestCard({
   const summary = cleanSummary(item.summary);
   const metaParts: string[] = [];
   if (item.source) metaParts.push(item.source);
-  const date = formatDate(item.published_at);
+  const date = formatDateOnly(item.published_at);
   if (date) metaParts.push(date);
 
   /** Local rating mirrors the parent map so the stars feel instant. */

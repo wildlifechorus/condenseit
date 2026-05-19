@@ -3,6 +3,7 @@ import { api } from '../../lib/api';
 import type { PreferenceProfile } from '../../lib/types';
 import { Card, CardHeader } from '../../components/Card';
 import { Spinner } from '../../components/Spinner';
+import { formatDateOnly } from '../../lib/dates';
 
 // ---------------------------------------------------------------------------
 // Cold-start onboarding panel (Phase 5)
@@ -409,7 +410,7 @@ export function PreferencesPage() {
               <p class="text-sm text-slate-600 dark:text-slate-400">
                 Your oldest rating (
                 <span class="font-mono text-xs">
-                  {profile.earliest_rating.slice(0, 10)}
+                  {formatDateOnly(profile.earliest_rating, { year: true })}
                 </span>
                 ) now carries{' '}
                 <span class="font-semibold">

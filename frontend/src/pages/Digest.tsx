@@ -9,34 +9,7 @@ import { FilterPanel } from '../components/FilterPanel';
 import { EmptyState } from '../components/EmptyState';
 import { Spinner } from '../components/Spinner';
 import { Button } from '../components/Button';
-
-function fmtSubtitleDate(utcIso: string): string {
-  try {
-    const d = new Date(utcIso);
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const parts = new Intl.DateTimeFormat('en-GB', {
-      timeZone: tz,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).formatToParts(d);
-    const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
-    const dateStr = `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}`;
-    const tzAbbr =
-      new Intl.DateTimeFormat('en-GB', {
-        timeZone: tz,
-        timeZoneName: 'short',
-      })
-        .formatToParts(d)
-        .find((p) => p.type === 'timeZoneName')?.value ?? tz;
-    return `${dateStr} ${tzAbbr}`;
-  } catch {
-    return utcIso.slice(0, 16).replace('T', ' ') + ' UTC';
-  }
-}
+import { formatDigestSubtitle } from '../lib/dates';
 
 function fmtProcessingTime(raw: string): string {
   const match = raw.match(/^(\d+)s$/);
@@ -296,7 +269,7 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
             Digest #{meta.id}
           </h1>
           <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            {meta.created_at && fmtSubtitleDate(meta.created_at)}
+            {meta.created_at && formatDigestSubtitle(meta.created_at)}
             {meta.articles_count != null && ` · ${meta.articles_count} articles`}
             {meta.model && ` · ${meta.model}`}
             {meta.processing_time && ` · ${fmtProcessingTime(meta.processing_time)}`}

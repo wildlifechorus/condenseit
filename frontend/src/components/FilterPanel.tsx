@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
+import { localDateKey } from '../lib/dates';
 import type { DigestItem } from '../lib/types';
 
 interface Filters {
@@ -36,11 +37,6 @@ function unique(items: DigestItem[], key: keyof DigestItem): string[] {
   return Array.from(set).sort((a, b) => a.localeCompare(b));
 }
 
-function datePart(iso?: string): string {
-  if (!iso) return '';
-  return iso.slice(0, 10);
-}
-
 function passes(it: DigestItem, f: Filters): boolean {
   if (f.search) {
     const q = f.search.toLowerCase();
@@ -54,7 +50,7 @@ function passes(it: DigestItem, f: Filters): boolean {
   if (f.source && it.source !== f.source) return false;
   if (f.kind && it.kind !== f.kind) return false;
   if (f.dateFrom || f.dateTo) {
-    const d = datePart(it.published_at);
+    const d = localDateKey(it.published_at);
     if (!d) return false;
     if (f.dateFrom && d < f.dateFrom) return false;
     if (f.dateTo && d > f.dateTo) return false;

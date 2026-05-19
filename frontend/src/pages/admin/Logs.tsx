@@ -3,10 +3,7 @@ import { api } from '../../lib/api';
 import type { RunLog, RunLogSummary } from '../../lib/types';
 import { Card } from '../../components/Card';
 import { Spinner } from '../../components/Spinner';
-
-function fmtDate(iso: string): string {
-  return iso.slice(0, 16).replace('T', ' ') + ' UTC';
-}
+import { formatDigestLabel } from '../../lib/dates';
 
 export function LogsPage() {
   const [logs, setLogs] = useState<RunLogSummary[]>([]);
@@ -93,7 +90,7 @@ export function LogsPage() {
                 )}
               </div>
               <span class="text-xs text-slate-400 dark:text-slate-500">
-                {fmtDate(log.created_at)}
+                {formatDigestLabel(log.created_at)}
               </span>
             </div>
             <span class="flex-shrink-0 text-xs text-slate-400 dark:text-slate-500 mt-0.5">

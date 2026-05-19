@@ -8,6 +8,7 @@ import { Card, CardHeader } from '../../components/Card';
 import { EmptyState } from '../../components/EmptyState';
 import { Spinner } from '../../components/Spinner';
 import { CategoryCombobox } from '../../components/CategoryCombobox';
+import { formatDigestLabel } from '../../lib/dates';
 
 /** Shared Tailwind class string for text inputs and selects. */
 const inputCls =
@@ -915,7 +916,7 @@ export function SourcesPage() {
                               )}
                               {s.last_checked_at && (
                                 <span title={s.last_error ?? ''}>
-                                  {s.last_checked_at.slice(0, 16)}
+                                  {formatDigestLabel(s.last_checked_at)}
                                 </span>
                               )}
                             </div>
