@@ -54,6 +54,8 @@ export interface DigestItem {
   novelty?: number;
   /** Phase 4: One-sentence relevance note for this reader. */
   relevance_to_you?: string;
+  /** True when the article matched a per-source highlight keyword rule. */
+  highlighted?: boolean;
 }
 
 export interface DigestEntry {

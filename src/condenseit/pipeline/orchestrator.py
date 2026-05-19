@@ -46,6 +46,35 @@ logger = logging.getLogger(__name__)
 _APP_CSS = Path(__file__).resolve().parent.parent / "web" / "static" / "app.css"
 
 
+def _article_matches_keywords(article: dict[str, Any], keywords: list[str]) -> bool:
+    """Return True if any keyword appears in the article title or content snippet.
+
+    Matching is case-insensitive and treats each keyword as a substring.
+    """
+    if not keywords:
+        return False
+    title = str(article.get("title") or "").lower()
+    content = str(article.get("content") or article.get("description") or "")[:500].lower()
+    combined = title + " " + content
+    return any(kw.lower() in combined for kw in keywords if kw.strip())
+
+
+def _apply_source_rules(
+    articles: list[dict[str, Any]],
+    hide_keywords: list[str],
+    highlight_keywords: list[str],
+) -> list[dict[str, Any]]:
+    """Filter hidden articles and tag highlight articles from a source batch."""
+    out: list[dict[str, Any]] = []
+    for art in articles:
+        if _article_matches_keywords(art, hide_keywords):
+            continue
+        if highlight_keywords and _article_matches_keywords(art, highlight_keywords):
+            art["_highlight_boost"] = True
+        out.append(art)
+    return out
+
+
 class DigestPipeline:
     def __init__(self, config_path: str | None = None) -> None:
         self.config: AppConfig = load_config(config_path)
@@ -149,7 +178,15 @@ class DigestPipeline:
         rss = RSSCollector(feeds)
         articles: list[dict[str, Any]] = []
         for _feed, items, err in rss.collect_feed_results():
-            articles.extend(a.to_dict() for a in items)
+            for a in items:
+                d = a.to_dict()
+                if _article_matches_keywords(d, _feed.hide_keywords):
+                    continue
+                if _feed.highlight_keywords and _article_matches_keywords(
+                    d, _feed.highlight_keywords
+                ):
+                    d["_highlight_boost"] = True
+                articles.append(d)
             self.sources.record_health(
                 _feed.url,
                 status="ok" if err is None else "error",
@@ -164,40 +201,50 @@ class DigestPipeline:
         changes, web_health = check_website_changes_with_health(watch, self.store)
         self._record_health(web_health)
 
-        if gnews:
-            gnews_articles, gnews_health = GoogleNewsCollector(
-                gnews,
+        for cfg in gnews:
+            src_articles, src_health = GoogleNewsCollector(
+                [cfg],
             ).collect_all_with_health()
-            articles.extend(gnews_articles)
-            self._record_health(gnews_health)
+            articles.extend(
+                _apply_source_rules(src_articles, cfg.hide_keywords, cfg.highlight_keywords)
+            )
+            self._record_health(src_health)
 
-        if hackernews:
-            hn_articles, hn_health = HackerNewsCollector(
-                hackernews,
+        for cfg in hackernews:
+            src_articles, src_health = HackerNewsCollector(
+                [cfg],
             ).collect_all_with_health()
-            articles.extend(hn_articles)
-            self._record_health(hn_health)
+            articles.extend(
+                _apply_source_rules(src_articles, cfg.hide_keywords, cfg.highlight_keywords)
+            )
+            self._record_health(src_health)
 
-        if reddit:
-            reddit_articles, reddit_health = RedditCollector(
-                reddit,
+        for cfg in reddit:
+            src_articles, src_health = RedditCollector(
+                [cfg],
             ).collect_all_with_health()
-            articles.extend(reddit_articles)
-            self._record_health(reddit_health)
+            articles.extend(
+                _apply_source_rules(src_articles, cfg.hide_keywords, cfg.highlight_keywords)
+            )
+            self._record_health(src_health)
 
-        if github_releases:
-            gh_articles, gh_health = GitHubReleasesCollector(
-                github_releases,
+        for cfg in github_releases:
+            src_articles, src_health = GitHubReleasesCollector(
+                [cfg],
             ).collect_all_with_health()
-            articles.extend(gh_articles)
-            self._record_health(gh_health)
+            articles.extend(
+                _apply_source_rules(src_articles, cfg.hide_keywords, cfg.highlight_keywords)
+            )
+            self._record_health(src_health)
 
-        if podcasts:
-            pod_articles, pod_health = PodcastCollector(
-                podcasts,
+        for cfg in podcasts:
+            src_articles, src_health = PodcastCollector(
+                [cfg],
             ).collect_all_with_health()
-            articles.extend(pod_articles)
-            self._record_health(pod_health)
+            articles.extend(
+                _apply_source_rules(src_articles, cfg.hide_keywords, cfg.highlight_keywords)
+            )
+            self._record_health(src_health)
 
         articles.extend(v.to_dict() for v in videos)
 
@@ -234,6 +281,13 @@ class DigestPipeline:
             keyword_high={k.lower() for k in keywords.get("high", [])},
             keyword_medium={k.lower() for k in keywords.get("medium", [])},
         )
+        # Apply per-source highlight boost before dedup so highlighted articles
+        # are more likely to win their story cluster.
+        for art in ranked:
+            if art.get("_highlight_boost"):
+                art["preference_score"] = art.get("preference_score", 0.0) + 2.0
+                art["highlighted"] = True
+
         # Deduplicate after ranking so the highest-scoring version of each
         # story cluster is the one that survives.
         ranked = self._deduplicate_stories(ranked)

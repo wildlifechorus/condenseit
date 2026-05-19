@@ -53,6 +53,33 @@ def _is_htmx(request: Request) -> bool:
     return request.headers.get("HX-Request", "").lower() == "true"
 
 
+def _parse_keyword_list(value: Any) -> list[str]:
+    """Parse a keyword list from a comma-separated string or a JSON array.
+
+    Returns a deduplicated list of non-empty stripped strings, preserving order.
+    """
+    if isinstance(value, list):
+        items = [str(v).strip() for v in value]
+    elif isinstance(value, str) and value.strip():
+        raw = value.strip()
+        if raw.startswith("["):
+            try:
+                items = [str(v).strip() for v in json.loads(raw)]
+            except Exception:
+                items = [p.strip() for p in raw.split(",")]
+        else:
+            items = [p.strip() for p in raw.split(",")]
+    else:
+        items = []
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in items:
+        if item and item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
+
+
 def _build_source_extra(
     source_type: str,
     url: str,
@@ -71,6 +98,8 @@ def _build_source_extra(
     reddit_max_items: int = 20,
     reddit_min_score: int = 10,
     github_repo: str = "",
+    hide_keywords: list[str] | None = None,
+    highlight_keywords: list[str] | None = None,
 ) -> tuple[dict[str, Any], str, str, str | None]:
     """Return ``(extra_json_dict, feed_url, effective_type, conversion_note)``
 
@@ -151,6 +180,12 @@ def _build_source_extra(
         extra = {"feed_url": url, "name": name}
         feed_url = url
 
+    # Persist filter rules regardless of source type.
+    if hide_keywords:
+        extra["hide_keywords"] = hide_keywords
+    if highlight_keywords:
+        extra["highlight_keywords"] = highlight_keywords
+
     return extra, feed_url, effective_type, conversion_note
 
 
@@ -188,6 +223,8 @@ async def _read_source_payload(request: Request) -> dict[str, Any]:
             "reddit_max_items": _fint("reddit_max_items", 20),
             "reddit_min_score": _fint("reddit_min_score", 10),
             "github_repo": _fstr("github_repo"),
+            "hide_keywords": _parse_keyword_list(_fstr("hide_keywords")),
+            "highlight_keywords": _parse_keyword_list(_fstr("highlight_keywords")),
         }
 
     body = await request.json()
@@ -211,6 +248,8 @@ async def _read_source_payload(request: Request) -> dict[str, Any]:
         "reddit_max_items": int(body.get("reddit_max_items", 20)),
         "reddit_min_score": int(body.get("reddit_min_score", 10)),
         "github_repo": str(body.get("github_repo", "")).strip(),
+        "hide_keywords": _parse_keyword_list(body.get("hide_keywords", [])),
+        "highlight_keywords": _parse_keyword_list(body.get("highlight_keywords", [])),
     }
 
 
@@ -302,6 +341,8 @@ def create_admin_router(
             reddit_max_items=reddit_max_items,
             reddit_min_score=reddit_min_score,
             github_repo=github_repo,
+            hide_keywords=payload["hide_keywords"],
+            highlight_keywords=payload["highlight_keywords"],
         )
         sources.add(effective_type, name, category, priority, feed_url, extra=extra)
         resp: dict[str, Any] = {"ok": True}
@@ -333,6 +374,8 @@ def create_admin_router(
             reddit_max_items=int(payload["reddit_max_items"]),
             reddit_min_score=int(payload["reddit_min_score"]),
             github_repo=str(payload["github_repo"]),
+            hide_keywords=payload["hide_keywords"],
+            highlight_keywords=payload["highlight_keywords"],
         )
         sources.update(
             source_id,
