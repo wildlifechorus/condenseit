@@ -19,6 +19,9 @@ Quick path:
 The web UI gives you the digest reader, rating controls, read-later actions,
 and admin pages in one place. This screenshot uses generated demo data.
 
+To open CondenseIt like a native app on your phone, see
+[add-to-home-screen.md](add-to-home-screen.md).
+
 ![Desktop digest reader with demo data](assets/demo/desktop-digest.png)
 
 See [configuration.md](configuration.md) for YAML and environment variables.

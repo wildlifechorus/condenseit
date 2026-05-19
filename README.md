@@ -189,6 +189,7 @@ Detailed setup guides:
 - [Local deployment](docs/deploy-local.md)
 - [VPS deployment](docs/deploy-vps.md)
 - [Firebase / Cloud Run deployment](docs/deploy-firebase.md)
+- [Add to home screen (iOS and Android)](docs/add-to-home-screen.md)
 
 Key `config.yaml` sections:
 
