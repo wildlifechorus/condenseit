@@ -100,6 +100,15 @@ relevance:
   # All six relevance weights can also be overridden live in Admin > Settings.
   implicit_signal_weight: 0.5
 
+  # Semantic (embedding-based) duplicate detection.
+  # Requires embedding_provider to be set to "ollama" or "openrouter".
+  # When enabled, articles covering the same story across different sources are
+  # collapsed to the highest-ranked version using cosine similarity on embeddings.
+  # embedding_provider: "ollama"
+  # embedding_model: "nomic-embed-text"
+  # semantic_dedup_enabled: true
+  # semantic_dedup_threshold: 0.85  # practical range: 0.80 (aggressive) - 0.90 (conservative)
+
   initial_keywords:
     high: ["kubernetes", "CVE", "security", "breaking change", "cursor", "llm"]
     medium: ["docker", "github", "python", "go", "rust", "fpv", "drone"]

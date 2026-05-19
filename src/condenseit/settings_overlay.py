@@ -136,6 +136,7 @@ def apply_db_settings(config: AppConfig, store: ContentStore) -> AppConfig:
         ("embedding_preference_weight", "embedding_preference_weight", 0.0, 5.0),
         ("topic_score_weight", "topic_score_weight", 0.0, 5.0),
         ("llm_rerank_blend", "llm_rerank_blend", 0.0, 1.0),
+        ("semantic_dedup_threshold", "semantic_dedup_threshold", 0.5, 1.0),
     ]:
         raw = store.get_setting(key, "")
         if raw:
@@ -163,6 +164,7 @@ def apply_db_settings(config: AppConfig, store: ContentStore) -> AppConfig:
     # Feature flag overrides stored as "1"/"0" strings.
     for key, attr in [
         ("llm_rerank_enabled", "llm_rerank_enabled"),
+        ("semantic_dedup_enabled", "semantic_dedup_enabled"),
     ]:
         raw = store.get_setting(key, "")
         if raw == "1":

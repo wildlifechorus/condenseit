@@ -259,6 +259,23 @@ Recommended models:
 - **Ollama (free)**: `nomic-embed-text` - fast, strong quality, requires the model to be pulled once
 - **OpenRouter**: `openai/text-embedding-3-small` - $0.02 per million tokens, high quality; a full digest run typically costs under $0.001
 
+##### Semantic duplicate detection
+
+When an embedding provider is active, the pipeline runs a second dedup pass after the existing title-similarity filter. Articles covering the same event across different sources are clustered by cosine similarity; only the highest-ranked article in each cluster makes it into the digest.
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `relevance.semantic_dedup_enabled` | `true` | Enable embedding-based story dedup (requires `embedding_provider != "off"`) |
+| `relevance.semantic_dedup_threshold` | `0.85` | Cosine similarity above which two articles are treated as the same story |
+
+Threshold guidance:
+
+- **0.90+**: only near-identical wording removed; lowest false-positive risk
+- **0.85 (default)**: catches same-event cross-source duplicates with rare false positives
+- **0.80**: aggressive; may merge topically related but genuinely distinct stories
+
+Both settings are adjustable in **Admin > Settings** under the "Semantic embeddings" card without restarting the server.
+
 #### Layer 2: LLM topic enrichment
 
 Every article summary call now also extracts structured metadata from the same

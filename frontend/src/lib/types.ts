@@ -196,6 +196,10 @@ export interface RankingWeights {
   llm_rerank_top_k: number;
   /** Phase 3: blend weight between LLM score and classical score (0-1). */
   llm_rerank_blend: number;
+  /** Semantic dedup: use embeddings to collapse same-story articles. Only active when embedding_provider != "off". */
+  semantic_dedup_enabled: boolean;
+  /** Cosine similarity threshold above which two articles are treated as the same story (0.5-1.0). */
+  semantic_dedup_threshold: number;
 }
 
 // ---------- Budget -------------------------------------------------------

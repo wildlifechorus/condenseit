@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import markdown
 
 from condenseit.collectors.github_releases import GitHubReleasesCollector
@@ -23,7 +24,11 @@ from condenseit.collectors.rss import RSSCollector
 from condenseit.collectors.website import check_website_changes_with_health
 from condenseit.collectors.youtube import YouTubeCollector
 from condenseit.config import AppConfig, load_config, resolve_output_path
-from condenseit.learning.embeddings import build_embedding_provider
+from condenseit.learning.embeddings import (
+    build_embedding_provider,
+    cosine_similarity,
+    get_or_compute_embedding,
+)
 from condenseit.learning.preference_engine import PreferenceEngine
 from condenseit.learning.reranker import build_profile_narrative, rerank
 from condenseit.pipeline.article_balance import select_balanced_digest_articles
@@ -71,7 +76,7 @@ class DigestPipeline:
             if self._or_key
             else None
         )
-        _embed_provider = build_embedding_provider(
+        self._embed_provider = build_embedding_provider(
             self.config.relevance.embedding_provider,
             self.config.relevance.embedding_model,
             self.config.llm.ollama_host,
@@ -87,7 +92,7 @@ class DigestPipeline:
             self.config.relevance.rating_decay_half_life_days,
             self.config.relevance.implicit_signal_weight,
             self.config.relevance.topic_synonyms,
-            embedding_provider=_embed_provider,
+            embedding_provider=self._embed_provider,
             embedding_weight=self.config.relevance.embedding_preference_weight,
             topic_score_weight=self.config.relevance.topic_score_weight,
         )
@@ -594,20 +599,27 @@ class DigestPipeline:
     ) -> list[dict[str, Any]]:
         """Remove cross-source duplicates from an already-ranked article list.
 
-        When multiple publishers cover the same event they produce articles
-        with similar but not identical headlines.  This step iterates through
-        the ranked list and skips any article whose title is too similar
-        (Jaccard word-set similarity >= 0.35) to a story already kept.
-        Because the input is ranked, the highest-scoring version of each
-        story cluster is always the one that survives.
+        Pass 1 - Jaccard title similarity: skips any article whose title word
+        set overlaps >= 0.35 with an already-kept article.  Titles shorter than
+        3 words are never fuzzy-matched to avoid false positives.
 
-        Titles shorter than 3 words are never fuzzy-matched to avoid
-        false-positive suppression of genuinely distinct short headlines.
+        Pass 2 - Semantic embedding dedup (when an embedding provider is
+        configured and ``semantic_dedup_enabled`` is true): embeds each
+        surviving article and drops it if its cosine similarity to any
+        already-kept embedding exceeds ``semantic_dedup_threshold``.
+        Embeddings are fetched from the SQLite cache first so articles that
+        were already embedded during preference scoring incur no extra cost.
+
+        Because the input is already ranked, the highest-scoring version of
+        each story cluster always survives both passes.
         """
         if not articles:
             return articles
 
-        _threshold = 0.35
+        # ------------------------------------------------------------------
+        # Pass 1: Jaccard title dedup
+        # ------------------------------------------------------------------
+        _jaccard_threshold = 0.35
 
         def _jaccard(a: frozenset[str], b: frozenset[str]) -> float:
             union = a | b
@@ -615,30 +627,90 @@ class DigestPipeline:
 
         kept: list[dict[str, Any]] = []
         kept_word_sets: list[frozenset[str]] = []
-        dropped = 0
+        jaccard_dropped = 0
 
         for art in articles:
             title = str(art.get('title') or '').lower().strip()
             words = frozenset(title.split())
             if len(words) >= 3 and any(
-                _jaccard(words, existing) >= _threshold
+                _jaccard(words, existing) >= _jaccard_threshold
                 for existing in kept_word_sets
                 if len(existing) >= 3
             ):
-                dropped += 1
+                jaccard_dropped += 1
                 continue
             kept.append(art)
             kept_word_sets.append(words)
 
-        if dropped:
+        if jaccard_dropped:
             logger.info(
-                'Story dedup: removed %d near-duplicate article(s)'
-                ' (Jaccard >= %.2f), %d remaining',
-                dropped,
-                _threshold,
+                'Story dedup (Jaccard): removed %d near-duplicate(s)'
+                ' (threshold >= %.2f), %d remaining',
+                jaccard_dropped,
+                _jaccard_threshold,
                 len(kept),
             )
-        return kept
+
+        # ------------------------------------------------------------------
+        # Pass 2: Semantic embedding dedup
+        # ------------------------------------------------------------------
+        rel = self.config.relevance
+        if (
+            self._embed_provider is None
+            or not rel.semantic_dedup_enabled
+            or len(kept) < 2
+        ):
+            return kept
+
+        sem_threshold = rel.semantic_dedup_threshold
+
+        def _embed_article(art: dict[str, Any]):
+            url = str(art.get('url') or '')
+            content_hash = str(art.get('content_hash') or '')
+            title_text = str(art.get('title') or '')
+            body = str(art.get('content') or '')
+            text = (title_text + ' ' + body[:500]).strip()
+            try:
+                vec = get_or_compute_embedding(
+                    self._embed_provider,  # type: ignore[arg-type]
+                    self.store,
+                    url,
+                    content_hash,
+                    text,
+                )
+            except Exception:
+                vec = None
+            return art, vec
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            results = list(pool.map(_embed_article, kept))
+
+        sem_kept: list[dict[str, Any]] = []
+        kept_vecs: list[np.ndarray] = []
+        sem_dropped = 0
+
+        for art, vec in results:
+            if vec is None:
+                sem_kept.append(art)
+                continue
+            if any(
+                cosine_similarity(vec, kv) >= sem_threshold for kv in kept_vecs
+            ):
+                sem_dropped += 1
+                continue
+            sem_kept.append(art)
+            kept_vecs.append(vec)
+
+        if sem_dropped:
+            logger.info(
+                'Story dedup (semantic): removed %d near-duplicate(s)'
+                ' (cosine >= %.2f), %d remaining',
+                sem_dropped,
+                sem_threshold,
+                len(sem_kept),
+            )
+
+        return sem_kept
 
     def post_run(
         self,

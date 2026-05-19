@@ -805,6 +805,64 @@ export function SettingsPage() {
                   />
                 </Field>
               )}
+
+              {weights.embedding_provider !== 'off' && (
+                <div class="sm:col-span-2 space-y-3">
+                  <label class="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      class="mt-0.5"
+                      checked={weights.semantic_dedup_enabled}
+                      onChange={(e) =>
+                        setWeights((w) =>
+                          w
+                            ? {
+                                ...w,
+                                semantic_dedup_enabled: (
+                                  e.target as HTMLInputElement
+                                ).checked,
+                              }
+                            : w,
+                        )
+                      }
+                    />
+                    <span class="text-sm text-slate-700 dark:text-slate-300">
+                      Deduplicate same-story articles using embeddings
+                    </span>
+                  </label>
+
+                  {weights.semantic_dedup_enabled && (
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pl-6">
+                      <Field
+                        label="Duplicate similarity threshold"
+                        hint="Cosine similarity above which two articles are treated as the same story. 0.85 is recommended; lower = more aggressive (0.80), higher = more conservative (0.90)."
+                      >
+                        <input
+                          type="number"
+                          class={INPUT}
+                          min={0.5}
+                          max={1.0}
+                          step={0.01}
+                          value={weights.semantic_dedup_threshold}
+                          onInput={(e) =>
+                            setWeights((w) =>
+                              w
+                                ? {
+                                    ...w,
+                                    semantic_dedup_threshold:
+                                      parseFloat(
+                                        (e.target as HTMLInputElement).value,
+                                      ) || 0.85,
+                                  }
+                                : w,
+                            )
+                          }
+                        />
+                      </Field>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </Card>
 

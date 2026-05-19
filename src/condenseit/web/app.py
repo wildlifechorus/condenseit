@@ -761,13 +761,14 @@ def create_app(config_path: str | None = None) -> FastAPI:
         "embedding_preference_weight": (0.0, 5.0),
         "topic_score_weight": (0.0, 5.0),
         "llm_rerank_blend": (0.0, 1.0),
+        "semantic_dedup_threshold": (0.5, 1.0),
     }
     _WEIGHT_INT_KEYS = {  # noqa: N806
         "rating_decay_half_life_days": (1, 3650),
         "min_ratings_for_learning": (1, 1000),
         "llm_rerank_top_k": (1, 200),
     }
-    _WEIGHT_BOOL_KEYS = ["llm_rerank_enabled"]  # noqa: N806
+    _WEIGHT_BOOL_KEYS = ["llm_rerank_enabled", "semantic_dedup_enabled"]  # noqa: N806
     _WEIGHT_STRING_KEYS = {  # noqa: N806
         "embedding_provider": ["off", "ollama", "openrouter"],
         "embedding_model": None,
@@ -794,6 +795,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
             "llm_rerank_model": rel.llm_rerank_model,
             "llm_rerank_top_k": rel.llm_rerank_top_k,
             "llm_rerank_blend": rel.llm_rerank_blend,
+            "semantic_dedup_enabled": rel.semantic_dedup_enabled,
+            "semantic_dedup_threshold": rel.semantic_dedup_threshold,
         })
 
     @app.put("/api/preferences/weights", response_model=None)

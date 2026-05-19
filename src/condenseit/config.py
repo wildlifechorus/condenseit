@@ -111,6 +111,13 @@ class RelevanceConfig(BaseModel):
     embedding_model: str = "nomic-embed-text"
     # Weight of the embedding cosine-similarity signal in the score breakdown.
     embedding_preference_weight: float = 0.5
+    # Remove cross-source articles that cover the same story using embedding
+    # cosine similarity. Only active when embedding_provider != "off".
+    semantic_dedup_enabled: bool = True
+    # Cosine similarity above which two articles are treated as the same story.
+    # 0.85 is a safe default for nomic-embed-text and text-embedding-3-small.
+    # Practical range: 0.80 (aggressive) to 0.90 (conservative).
+    semantic_dedup_threshold: float = 0.85
 
     # --- Phase 2: LLM-enriched topic scoring ---
     # Weight applied to the topic-overlap signal built from LLM-extracted article
