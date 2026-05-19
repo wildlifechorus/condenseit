@@ -305,7 +305,10 @@ class ContentStore:
             return None
 
     def save_article(self, article: dict[str, Any]) -> None:
-        self.db["articles"].upsert(article, pk="url")
+        # Strip transient in-memory keys (prefixed with "_") that are not
+        # database columns, e.g. "_highlight_boost" used by the pipeline.
+        row = {k: v for k, v in article.items() if not k.startswith("_")}
+        self.db["articles"].upsert(row, pk="url")
 
     def _refresh_article_collection_meta(
         self,
