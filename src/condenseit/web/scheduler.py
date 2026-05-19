@@ -16,6 +16,7 @@ import os
 from collections.abc import Callable
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -101,10 +102,20 @@ async def trigger_reschedule() -> None:
         _RESCHEDULE_EVENT.set()
 
 
+def _resolve_timezone(tz_name: str) -> ZoneInfo:
+    """Return a ZoneInfo for *tz_name*, falling back to UTC on invalid names."""
+    try:
+        return ZoneInfo(tz_name)
+    except (ZoneInfoNotFoundError, KeyError):
+        logger.warning("Unknown timezone %r; falling back to UTC.", tz_name)
+        return ZoneInfo("UTC")
+
+
 async def scheduler_loop(
     get_times: Callable[[], list[str]],
     job_manager_start: Callable,
     is_enabled: Callable[[], bool] | None = None,
+    get_timezone: Callable[[], str] | None = None,
 ) -> None:
     global _RESCHEDULE_EVENT
     _RESCHEDULE_EVENT = asyncio.Event()
@@ -136,10 +147,18 @@ async def scheduler_loop(
                 return
             continue
 
-        now = datetime.now(UTC)
+        tz_name = get_timezone() if get_timezone is not None else "UTC"
+        tz = _resolve_timezone(tz_name)
+        now = datetime.now(tz)
         wait = _seconds_until_next(parsed, now)
-        next_iso = (now + timedelta(seconds=wait)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        logger.info("Scheduler: next run at %s (in %.0fs)", next_iso, wait)
+        next_utc = (now + timedelta(seconds=wait)).astimezone(UTC)
+        next_iso = next_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+        logger.info(
+            "Scheduler: next run at %s [%s] (in %.0fs)",
+            next_iso,
+            tz_name,
+            wait,
+        )
         _SCHEDULER_STATE["next_run_utc"] = next_iso
 
         try:

@@ -10,8 +10,11 @@ max_articles_per_category: 5
 max_article_age_hours: 36
 
 # Digest schedule (used by the built-in scheduler when CONDENSEIT_SCHEDULER_ENABLED=1).
-# Times are UTC (HH:MM, 24-hour).
+# Times are interpreted in the configured timezone (24-hour HH:MM).
+# timezone: IANA timezone name (e.g. "America/New_York", "Europe/London", "Asia/Tokyo").
+#   Defaults to "UTC". Can also be set via the Admin > Schedule UI.
 schedule:
+  timezone: "UTC"
   times: ["07:00", "18:00"]
 
 feeds:

@@ -12,6 +12,7 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 import markdown
@@ -137,6 +138,13 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 pass
         return config.schedule.get("times", [])
 
+    def _get_schedule_timezone() -> str:
+        """Return the user-configured IANA timezone, falling back to config then UTC."""
+        db_val = store.get_setting("schedule_timezone", "")
+        if db_val:
+            return db_val
+        return config.schedule.get("timezone", "UTC")
+
     def _is_scheduler_enabled() -> bool:
         """Check DB setting first, then fall back to env var."""
         db_val = store.get_setting("scheduler_enabled", "")
@@ -156,6 +164,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 _get_schedule_times,
                 job_manager.start,
                 is_enabled=_is_scheduler_enabled,
+                get_timezone=_get_schedule_timezone,
             ),
             name="condenseit-scheduler",
         )
@@ -322,6 +331,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 "times": times,
                 "enabled": _is_scheduler_enabled(),
                 "next_run_utc": _SCHEDULER_STATE.get("next_run_utc"),
+                "timezone": _get_schedule_timezone(),
             }
         )
 
@@ -351,6 +361,18 @@ def create_app(config_path: str | None = None) -> FastAPI:
                     )
             store.set_setting("schedule_times", json.dumps(validated))
             _SCHEDULER_STATE["schedule_times"] = validated
+
+        # Handle timezone update
+        if "timezone" in body:
+            tz_name = str(body["timezone"]).strip()
+            try:
+                ZoneInfo(tz_name)
+            except (ZoneInfoNotFoundError, KeyError):
+                return JSONResponse(
+                    {"error": f"Unknown timezone: {tz_name!r}. Use an IANA timezone name such as 'America/New_York'."},
+                    status_code=422,
+                )
+            store.set_setting("schedule_timezone", tz_name)
 
         # Wake the scheduler loop so changes take effect immediately.
         await trigger_reschedule()

@@ -156,7 +156,7 @@ export const api = {
   // Schedule config
   getScheduleConfig: () =>
     request<ScheduleConfig>('GET', '/api/config/schedule'),
-  saveScheduleConfig: (payload: { times?: string[]; enabled?: boolean }) =>
+  saveScheduleConfig: (payload: { times?: string[]; enabled?: boolean; timezone?: string }) =>
     request<{ ok: boolean }>('PUT', '/api/config/schedule', payload),
 
   // Digest pipeline settings

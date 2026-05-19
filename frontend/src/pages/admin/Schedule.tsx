@@ -10,10 +10,47 @@ const INPUT =
 
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
+/** All IANA timezone names available in this browser, grouped by region. */
+const TIMEZONE_GROUPS: Record<string, string[]> = (() => {
+  let all: string[];
+  try {
+    all = (Intl as any).supportedValuesOf('timeZone') as string[];
+  } catch {
+    all = ['UTC'];
+  }
+  const groups: Record<string, string[]> = {};
+  for (const tz of all) {
+    const slash = tz.indexOf('/');
+    const region = slash === -1 ? 'General' : tz.slice(0, slash);
+    (groups[region] ??= []).push(tz);
+  }
+  return groups;
+})();
+
+const ALL_TIMEZONES = Object.values(TIMEZONE_GROUPS).flat();
+
+/** Format a UTC ISO string in the given IANA timezone. */
+function formatInTz(utcIso: string, tz: string): string {
+  try {
+    return new Date(utcIso).toLocaleString('en-GB', {
+      timeZone: tz,
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+  } catch {
+    return utcIso;
+  }
+}
+
 export function SchedulePage() {
   const [cfg, setCfg] = useState<ScheduleConfig | null>(null);
   const [times, setTimes] = useState<string[]>([]);
   const [enabled, setEnabled] = useState(false);
+  const [timezone, setTimezone] = useState('UTC');
   const [loading, setLoading] = useState(true);
   const [savingTimes, setSavingTimes] = useState(false);
   const [togglingEnabled, setTogglingEnabled] = useState(false);
@@ -28,6 +65,7 @@ export function SchedulePage() {
         setCfg(c);
         setTimes(c.times.length > 0 ? c.times : ['07:00']);
         setEnabled(c.enabled);
+        setTimezone(c.timezone || 'UTC');
       })
       .catch((e: unknown) => {
         showFlash(
@@ -82,13 +120,23 @@ export function SchedulePage() {
     }
     setSavingTimes(true);
     try {
-      await api.saveScheduleConfig({ times });
+      await api.saveScheduleConfig({ times, timezone });
+      setCfg((prev) => (prev ? { ...prev, times, timezone } : prev));
       showFlash('Schedule saved.');
     } catch (err) {
       showFlash(err instanceof Error ? err.message : 'Save failed.', false);
     } finally {
       setSavingTimes(false);
     }
+  }
+
+  /** Human-readable next-run string in the user's timezone. */
+  function nextRunLabel(): string {
+    if (!cfg?.next_run_utc) return '';
+    const utc = cfg.next_run_utc.replace('T', ' ').replace('Z', ' UTC');
+    if (timezone === 'UTC') return utc;
+    const local = formatInTz(cfg.next_run_utc, timezone);
+    return `${local} (${timezone}) · ${utc}`;
   }
 
   if (loading) {
@@ -133,7 +181,7 @@ export function SchedulePage() {
             <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
               {enabled
                 ? cfg?.next_run_utc
-                  ? `Next run: ${cfg.next_run_utc.replace('T', ' ').replace('Z', ' UTC')}`
+                  ? `Next run: ${nextRunLabel()}`
                   : 'Enabled — configure run times below.'
                 : 'Disabled — digests only run when triggered manually.'}
             </p>
@@ -164,45 +212,80 @@ export function SchedulePage() {
         </div>
       </Card>
 
-      {/* Run times */}
+      {/* Timezone + run times */}
       <Card>
         <CardHeader
           title="Run times"
-          description="Times are UTC (24-hour HH:MM)."
+          description="Times are in your configured timezone (24-hour HH:MM). Save to apply changes."
         />
-        <form onSubmit={handleSaveTimes} class="space-y-3">
-          {times.map((t, idx) => (
-            <div key={idx} class="flex items-center gap-2">
-              <input
-                type="text"
-                class={`${INPUT} w-28`}
-                placeholder="07:00"
-                value={t}
-                pattern="([01]\d|2[0-3]):[0-5]\d"
-                required
-                onInput={(e) =>
-                  updateTime(idx, (e.target as HTMLInputElement).value)
-                }
-              />
-              {times.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => removeTime(idx)}
-                  class="text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors text-sm px-1"
-                  aria-label="Remove time"
-                >
-                  Remove
-                </button>
+        <form onSubmit={handleSaveTimes} class="space-y-5">
+          {/* Timezone select */}
+          <div class="space-y-1.5">
+            <label
+              for="tz-select"
+              class="block text-xs font-medium text-slate-600 dark:text-slate-400"
+            >
+              Timezone
+            </label>
+            <select
+              id="tz-select"
+              class={`${INPUT} w-full`}
+              value={timezone}
+              onChange={(e) => setTimezone((e.target as HTMLSelectElement).value)}
+            >
+              {!ALL_TIMEZONES.includes(timezone) && (
+                <option value={timezone}>{timezone}</option>
               )}
-            </div>
-          ))}
+              {Object.entries(TIMEZONE_GROUPS).map(([region, tzs]) => (
+                <optgroup key={region} label={region}>
+                  {tzs.map((tz) => (
+                    <option key={tz} value={tz}>
+                      {tz}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
 
-          <div class="flex items-center gap-3 pt-1">
+          {/* HH:MM time inputs */}
+          <div class="space-y-2">
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-400">
+              Daily run times
+            </label>
+            {times.map((t, idx) => (
+              <div key={idx} class="flex items-center gap-2">
+                <input
+                  type="text"
+                  class={`${INPUT} w-28`}
+                  placeholder="07:00"
+                  value={t}
+                  pattern="([01]\d|2[0-3]):[0-5]\d"
+                  required
+                  onInput={(e) =>
+                    updateTime(idx, (e.target as HTMLInputElement).value)
+                  }
+                />
+                {times.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeTime(idx)}
+                    class="text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors text-sm px-1"
+                    aria-label="Remove time"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div class="flex items-center gap-3">
             <Button type="button" variant="secondary" size="sm" onClick={addTime}>
               Add time
             </Button>
             <Button type="submit" loading={savingTimes}>
-              Save times
+              Save
             </Button>
           </div>
         </form>

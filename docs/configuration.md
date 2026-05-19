@@ -373,6 +373,23 @@ The built-in scheduler runs digests at the times configured in **Admin > Schedul
 (stored in the DB, overriding `config.schedule.times`). No cron, systemd timer,
 or launchd entry is needed. See [scheduling.md](scheduling.md) for details.
 
+### Timezone
+
+By default all schedule times are treated as UTC. Set your timezone in
+**Admin > Schedule** or in `config.yaml` under `schedule.timezone`:
+
+```yaml
+schedule:
+  timezone: "America/New_York"  # IANA timezone name
+  times: ["07:00", "18:00"]
+```
+
+Use any [IANA timezone name](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)
+(e.g. `Europe/London`, `Asia/Tokyo`, `America/Los_Angeles`). The setting is
+stored in the database when saved via the UI, which overrides the YAML value.
+The next-run time shown in the admin panel is displayed in both your local
+timezone and UTC.
+
 If you prefer external scheduling (cron, systemd, launchd), the
 `bash scripts/install.sh` helper can emit ready-to-paste snippets for your
 chosen time and cadence (see [installation.md](installation.md)).

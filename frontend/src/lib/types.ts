@@ -245,12 +245,14 @@ export interface SchedulerStatus {
   enabled: boolean;
   next_run_utc: string | null;
   schedule_times: string[];
+  timezone: string;
 }
 
 export interface ScheduleConfig {
   times: string[];
   enabled: boolean;
   next_run_utc: string | null;
+  timezone: string;
 }
 
 // ---------- Digest settings ----------------------------------------------
