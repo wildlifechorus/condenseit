@@ -76,6 +76,7 @@ class OllamaSummarizer(SummarizerProvider):
         response = self.client.generate(
             model=self.model,
             prompt=prompt,
+            think=False,
             options={"temperature": 0.3, "num_predict": 900},
         )
         return parse_summary_response(response["response"])
