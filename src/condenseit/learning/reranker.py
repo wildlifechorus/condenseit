@@ -225,6 +225,7 @@ def _call_ollama(prompt: str, model: str, host: str) -> str:
                 "model": model,
                 "prompt": prompt,
                 "stream": False,
+                "think": False,
                 "options": {"temperature": 0.1, "num_predict": 2500},
             },
         )
