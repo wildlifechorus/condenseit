@@ -473,6 +473,8 @@ def create_admin_router(
                 "ollama_host": merged.llm.ollama_host,
                 "ollama_models": ollama_models,
                 "ollama_reachable": ollama_reachable,
+                "openai_base_url": merged.llm.openai_base_url,
+                "openai_model": merged.llm.openai_model,
             }
         )
 
@@ -489,6 +491,10 @@ def create_admin_router(
                 "openrouter_pick_cheapest",
                 "1" if body["openrouter_pick_cheapest"] else "0",
             )
+        if "openai_base_url" in body:
+            store.set_setting("openai_base_url", str(body["openai_base_url"]))
+        if "openai_model" in body and body["openai_model"]:
+            store.set_setting("openai_model", str(body["openai_model"]))
         return JSONResponse({"ok": True})
 
     @router.post("/api/config/llm/ollama/pull", response_model=None)
@@ -919,6 +925,8 @@ def create_admin_router(
                 or_model=merged.llm.openrouter_model,
                 openrouter_pick_cheapest=merged.llm.openrouter_pick_cheapest,
                 ollama_models=ollama_models,
+                openai_base_url=merged.llm.openai_base_url,
+                openai_model=merged.llm.openai_model,
                 msg=request.query_params.get("msg", ""),
             ),
         )
@@ -929,6 +937,8 @@ def create_admin_router(
         model: str = Form(...),
         openrouter_model: str = Form(""),
         openrouter_pick_cheapest: str = Form(""),
+        openai_base_url: str = Form(""),
+        openai_model: str = Form(""),
     ) -> RedirectResponse:
         store.set_setting("llm_provider", provider)
         store.set_setting("model", model)
@@ -938,6 +948,9 @@ def create_admin_router(
             "openrouter_pick_cheapest",
             "1" if openrouter_pick_cheapest == "on" else "0",
         )
+        store.set_setting("openai_base_url", openai_base_url)
+        if openai_model:
+            store.set_setting("openai_model", openai_model)
         return RedirectResponse("/admin/llm", status_code=303)
 
     @router.post("/admin/llm/ollama/pull", response_model=None)

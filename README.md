@@ -2,9 +2,9 @@
 
 > Self-hosted AI news digest. Collect RSS feeds, YouTube channels, website
 > diffs, Google News searches, Hacker News, Reddit, GitHub Releases, and podcasts,
-> summarize with a local LLM (Ollama) or OpenRouter, learn your preferences
-> from star ratings and engagement signals, and read a daily digest in the
-> browser.
+> summarize with a local LLM (Ollama), OpenRouter, or any OpenAI-compatible endpoint,
+> learn your preferences from star ratings and engagement signals, and read a daily
+> digest in the browser.
 
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License MIT](https://img.shields.io/badge/license-MIT-green)
@@ -17,14 +17,14 @@
 
 ---
 
-## Two modes
+## Modes
 
-| | Local | Remote |
-|-|-------|--------|
-| **LLM** | Ollama on your Mac (Metal) | OpenRouter (cloud) |
-| **Scheduling** | `condenseit run` from CLI, or `CONDENSEIT_SCHEDULER_ENABLED=1` | Built-in scheduler (`CONDENSEIT_SCHEDULER_ENABLED=1`) |
-| **Setup** | `uv sync` + `condenseit serve` | `bootstrap-server.sh` + `deploy.sh` |
-| **Cost** | Free (local hardware) | Pay-per-token via OpenRouter |
+| | Local | Remote | OpenAI-compatible |
+|-|-------|--------|-------------------|
+| **LLM** | Ollama on your Mac (Metal) | OpenRouter (cloud) | Any `/v1/chat/completions` server |
+| **Scheduling** | `condenseit run` from CLI, or `CONDENSEIT_SCHEDULER_ENABLED=1` | Built-in scheduler (`CONDENSEIT_SCHEDULER_ENABLED=1`) | Same as local or remote |
+| **Setup** | `uv sync` + `condenseit serve` | `bootstrap-server.sh` + `deploy.sh` | Set `OPENAI_API_BASE_URL` + `OPENAI_API_KEY` |
+| **Cost** | Free (local hardware) | Pay-per-token via OpenRouter | Depends on server |
 
 Both modes use the same unified web UI: digest reader and admin panel.
 
@@ -71,7 +71,7 @@ here?" breakdown so you can see exactly what drove its position.
 | Page | What it does |
 |------|-------------|
 | **Sources** | Add/remove all source types; per-source keyword filters (show only, hide, highlight); filter by category; set priority; import/export OPML |
-| **LLM** | Provider, model, OpenRouter cheapest-model option, Ollama pull/delete |
+| **LLM** | Provider (Ollama / OpenRouter / OpenAI-compatible), model, OpenRouter cheapest-model option, OpenAI-compatible base URL, Ollama pull/delete |
 | **API keys** | OpenRouter key storage, encrypted at rest in SQLite |
 | **Schedule** | Enable/disable automatic digest runs, set daily run times, and view the next scheduled run |
 | **Settings** | Article limits, category balance, article age cutoff, language filter, summary format, and **ranking weights** |
@@ -110,7 +110,9 @@ cp config.example.yaml config.yaml
 cp .env.example .env
 # Edit config.yaml: add your feeds under the feeds/youtube_channels sections.
 # The example defaults to llm.provider: "openrouter" (requires OPENROUTER_API_KEY in .env).
-# Change llm.provider to "ollama" if you installed Ollama above.
+# Change llm.provider to "ollama" if you installed Ollama above, or set it to
+# "openai" and configure llm.openai_base_url + OPENAI_API_KEY for any
+# OpenAI-compatible server (LM Studio, vLLM, llama.cpp, etc.).
 
 # Start the web UI
 condenseit serve --port 8899
@@ -193,7 +195,7 @@ Detailed setup guides:
 
 Key `config.yaml` sections:
 
-- `llm` - provider (`ollama` / `openrouter` / `fallback`), model, budget limits
+- `llm` - provider (`ollama` / `openrouter` / `fallback` / `openai`), model, budget limits, OpenAI-compatible base URL
 - `feeds` / `youtube_channels` / `watch_urls` - legacy YAML-seeded sources (still supported)
 - `schedule.times` - default daily run times (overridden by Admin > Schedule)
 - `vps` - SSH target for `scripts/deploy.sh`
@@ -210,7 +212,7 @@ Settings also editable live in the admin panel (stored in SQLite, no restart nee
   `source_preference_weight`, `implicit_signal_weight`,
   `rating_decay_half_life_days`, `min_ratings_for_learning`,
   `embedding_preference_weight`, `topic_score_weight`
-- **LLM** - provider, model, OpenRouter model, cheapest-model selection
+- **LLM** - provider, model, OpenRouter model, cheapest-model selection, OpenAI-compatible base URL and model
 - **Budget** - OpenRouter daily and monthly budget limits
 - **Security** - admin password
 

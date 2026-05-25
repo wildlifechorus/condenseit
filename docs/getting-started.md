@@ -8,8 +8,14 @@ For a full **local install** (uv, `config.yaml`, `.env`, first run), see
 Quick path:
 
 1. Copy `config.example.yaml` to `config.yaml` and adjust feeds and channels.
-2. Install Ollama on the host (Mac: Metal GPU). Pull a small model, for example
-   `ollama pull llama3.2:3b`.
+2. Choose an LLM backend:
+   - **Ollama (local)**: install Ollama on the host (Mac: Metal GPU), pull a model
+     (`ollama pull llama3.2:3b`), and set `llm.provider: "ollama"` in `config.yaml`.
+   - **OpenRouter (cloud)**: set `llm.provider: "openrouter"` and add
+     `OPENROUTER_API_KEY` to `.env`.
+   - **OpenAI-compatible server** (LM Studio, vLLM, llama.cpp, etc.): set
+     `llm.provider: "openai"`, `llm.openai_base_url` to your server's base URL,
+     and `OPENAI_API_KEY` in `.env`.
 3. Install deps: `uv sync` (see [installation.md](installation.md)) or a
    venv with `pip install -e ".[dev]"`.
 4. Run the web UI: `condenseit serve` (or `make docker-up` for Docker UI only).

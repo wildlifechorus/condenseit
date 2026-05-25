@@ -19,6 +19,12 @@ def apply_db_settings(config: AppConfig, store: ContentStore) -> AppConfig:
     or_model = store.get_setting("openrouter_model")
     if or_model:
         config.llm.openrouter_model = or_model
+    openai_base_url = store.get_setting("openai_base_url", "")
+    if openai_base_url:
+        config.llm.openai_base_url = openai_base_url
+    openai_model = store.get_setting("openai_model", "")
+    if openai_model:
+        config.llm.openai_model = openai_model
     pick = store.get_setting("openrouter_pick_cheapest", "")
     if pick == "1":
         config.llm.openrouter_pick_cheapest = True

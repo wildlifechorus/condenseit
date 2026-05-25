@@ -128,10 +128,11 @@ output:
 # ---------------------------------------------------------------------------
 # LLM configuration
 #
-# Two modes:
-#   Local:  provider: "ollama" - runs on your Mac/server with Ollama
-#   Remote: provider: "openrouter" - uses OpenRouter cloud API
-#   Both:   provider: "fallback" - tries Ollama first, falls back to OpenRouter
+# Three modes:
+#   Local:    provider: "ollama"     - runs on your Mac/server with Ollama
+#   Remote:   provider: "openrouter" - uses OpenRouter cloud API
+#   Both:     provider: "fallback"   - tries Ollama first, falls back to OpenRouter
+#   OpenAI-compat: provider: "openai" - any /v1/chat/completions server
 # ---------------------------------------------------------------------------
 llm:
   provider: "openrouter"
@@ -149,6 +150,15 @@ llm:
   openrouter_monthly_budget_usd: 10.0
   # When true, picks the cheapest available model (re-checked hourly).
   openrouter_pick_cheapest: false
+
+  # OpenAI-compatible endpoint (used when provider is "openai")
+  # Works with any server that exposes /v1/chat/completions:
+  #   Ollama compat layer, LM Studio, vLLM, llama.cpp, text-generation-inference,
+  #   real OpenAI (https://api.openai.com/v1), Azure OpenAI, etc.
+  # Base URL comes from OPENAI_API_BASE_URL env var; API key from OPENAI_API_KEY;
+  # model from OPENAI_MODEL (falls back to top-level "model" if not set).
+  # openai_base_url: "${OPENAI_API_BASE_URL:-http://localhost:11434/v1}"
+  # openai_model: "gemma4-e4b-q4_m"
 
 # VPS deployment (used by scripts/deploy.sh)
 # Leave host empty until you have a real SSH target.
