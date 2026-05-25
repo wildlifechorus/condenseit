@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from abc import ABC, abstractmethod
 from typing import Any
 
 from typing_extensions import TypedDict
+
+logger = logging.getLogger(__name__)
 
 
 class ArticleSummary(TypedDict):
@@ -25,6 +28,11 @@ class ArticleSummary(TypedDict):
     relevance_to_you: str
 
 
+_EMPTY_SUMMARY = ArticleSummary(
+    tldr="", key_takeaways=[], summary="",
+    topics=[], entities=[], novelty=0, relevance_to_you="",
+)
+
 # Matches an optional ```json ... ``` or ``` ... ``` fence around JSON.
 _FENCE_RE = re.compile(
     r"```(?:json)?\s*(\{.*?\})\s*```",
@@ -34,12 +42,35 @@ _FENCE_RE = re.compile(
 # Greedily matches the outermost {...} object in a raw response.
 _BRACE_RE = re.compile(r"\{.*\}", re.DOTALL)
 
+# Strips an opening code fence (e.g. ```json\n or ```\n) so we can work on
+# the raw JSON content even when the closing fence was never emitted.
+_FENCE_OPEN_RE = re.compile(r"^```(?:json)?\s*", re.IGNORECASE)
+
 # Detects the start of a Chinese LLM refusal phrase that some multilingual
 # models append mid-response (e.g. "作为一个人工智能语言模型...").
 # We strip from the first run of consecutive CJK characters onward when that
 # run comprises the majority of the remaining text, so we don't accidentally
 # truncate article titles that legitimately contain a single CJK character.
 _CJK_BLOCK_RE = re.compile(r"[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]{4,}")
+
+# Regex patterns for partial-field extraction from truncated JSON.
+# These only match *complete* string values (closed quote, then comma/newline).
+_PARTIAL_STR_FIELD_RE = {
+    field: re.compile(
+        r'"' + re.escape(field) + r'"\s*:\s*"((?:[^"\\]|\\.)*)"',
+        re.DOTALL,
+    )
+    for field in ("tldr", "summary", "relevance_to_you")
+}
+# key_takeaways: match a fully-closed JSON array value.
+_PARTIAL_ARRAY_FIELD_RE = {
+    field: re.compile(
+        r'"' + re.escape(field) + r'"\s*:\s*(\[[^\[\]]*\])',
+        re.DOTALL,
+    )
+    for field in ("key_takeaways", "topics", "entities")
+}
+_PARTIAL_INT_FIELD_RE = re.compile(r'"novelty"\s*:\s*(\d+)')
 
 
 def _strip_non_latin_tail(value: str) -> str:
@@ -58,14 +89,92 @@ def _strip_non_latin_tail(value: str) -> str:
     return value
 
 
+def _extract_partial_fields(text: str) -> ArticleSummary | None:
+    """Try to extract individual fields from a truncated JSON string.
+
+    When the LLM response is cut off mid-value (max_tokens hit), the JSON
+    object is invalid as a whole, but earlier fields that were fully written
+    can still be rescued with targeted regex extraction.
+
+    Returns an :class:`ArticleSummary` if at least ``tldr`` was found,
+    otherwise returns ``None`` so the caller can keep trying other strategies.
+    """
+    # Strip opening code fence if present.
+    body = _FENCE_OPEN_RE.sub("", text).strip()
+    # Only attempt on text that looks like it started as a JSON object.
+    if not body.startswith("{"):
+        return None
+
+    result: dict[str, Any] = {}
+
+    for field, pat in _PARTIAL_STR_FIELD_RE.items():
+        m = pat.search(body)
+        if m:
+            try:
+                # json.loads the quoted value to handle escape sequences.
+                result[field] = json.loads('"' + m.group(1) + '"')
+            except (json.JSONDecodeError, ValueError):
+                result[field] = m.group(1)
+
+    for field, pat in _PARTIAL_ARRAY_FIELD_RE.items():
+        m = pat.search(body)
+        if m:
+            try:
+                result[field] = json.loads(m.group(1))
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+    m_nov = _PARTIAL_INT_FIELD_RE.search(body)
+    if m_nov:
+        try:
+            result["novelty"] = max(1, min(5, int(m_nov.group(1))))
+        except (TypeError, ValueError):
+            pass
+
+    # Require at least tldr to have been found; otherwise not useful.
+    if not result.get("tldr"):
+        return None
+
+    takeaways = result.get("key_takeaways", [])
+    if isinstance(takeaways, str):
+        takeaways = [t.strip() for t in takeaways.splitlines() if t.strip()]
+    elif not isinstance(takeaways, list):
+        takeaways = []
+
+    raw_topics = result.get("topics", [])
+    topics = [str(t).lower().strip() for t in raw_topics if t] if isinstance(raw_topics, list) else []
+    raw_entities = result.get("entities", [])
+    entities = [str(e).strip() for e in raw_entities if e] if isinstance(raw_entities, list) else []
+
+    return ArticleSummary(
+        tldr=_strip_non_latin_tail(str(result.get("tldr", "") or "").strip()),
+        key_takeaways=[_strip_non_latin_tail(str(t)) for t in takeaways if t],
+        summary=_strip_non_latin_tail(str(result.get("summary", "") or "").strip()),
+        topics=topics,
+        entities=entities[:10],
+        novelty=result.get("novelty") or 0,
+        relevance_to_you=_strip_non_latin_tail(
+            str(result.get("relevance_to_you", "") or "").strip()
+        ),
+    )
+
+
+def _looks_like_json(text: str) -> bool:
+    """Return True if text looks like raw JSON (starts with { or a code fence)."""
+    stripped = _FENCE_OPEN_RE.sub("", text.strip()).strip()
+    return stripped.startswith("{")
+
+
 def parse_summary_response(raw: str) -> ArticleSummary:
     """Parse a JSON article-summary response produced by an LLM.
 
     Attempts several strategies in order:
       1. Strip whitespace and parse as bare JSON.
-      2. Extract JSON from a markdown code fence.
+      2. Extract JSON from a markdown code fence (complete fence).
       3. Grab the first ``{...}`` substring and parse it.
-      4. Fall back: treat the whole response as the ``summary`` field.
+      4. Partial-field extraction from a truncated JSON response.
+      5. Fall back: treat the whole response as the ``summary`` field,
+         but only if it doesn't look like raw JSON (refuse to store garbage).
 
     Always returns a fully-populated :class:`ArticleSummary` dict.
     """
@@ -76,7 +185,7 @@ def parse_summary_response(raw: str) -> ArticleSummary:
         text.rstrip(",") + "}",
         text + "}",
     ]
-    # Code-fence extraction
+    # Code-fence extraction (only fires when the closing fence was emitted)
     m = _FENCE_RE.search(text)
     if m:
         chunk = m.group(1).strip()
@@ -139,17 +248,27 @@ def parse_summary_response(raw: str) -> ArticleSummary:
         except (json.JSONDecodeError, ValueError):
             continue
 
-    # Final fallback: treat the whole text as a plain summary, but only when
-    # it looks like Latin-script prose. If most characters are non-ASCII (e.g.
-    # a Chinese refusal phrase from a multilingual model), discard the response
-    # to avoid showing garbage text in the UI.
+    # Partial-field recovery for truncated responses (max_tokens hit).
+    partial = _extract_partial_fields(text)
+    if partial is not None:
+        logger.debug("parse_summary_response: recovered partial fields from truncated JSON")
+        return partial
+
+    # Final fallback: treat the whole text as a plain summary, but refuse to
+    # store raw JSON blobs or code fences in the summary column — they render
+    # as garbage in the UI and indicate a parse failure, not prose content.
     if text:
         non_ascii = sum(1 for c in text if ord(c) > 127)
         if non_ascii / len(text) > 0.2:
-            return ArticleSummary(
-                tldr="", key_takeaways=[], summary="",
-                topics=[], entities=[], novelty=0, relevance_to_you="",
+            return _EMPTY_SUMMARY
+
+        if _looks_like_json(text):
+            logger.warning(
+                "parse_summary_response: response looks like raw/truncated JSON "
+                "but could not be parsed; discarding to avoid storing garbage"
             )
+            return _EMPTY_SUMMARY
+
     return ArticleSummary(
         tldr="", key_takeaways=[], summary=text,
         topics=[], entities=[], novelty=0, relevance_to_you="",

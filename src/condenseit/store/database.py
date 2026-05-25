@@ -653,6 +653,41 @@ class ContentStore:
                 row["key_takeaways"] = []
         return rows
 
+    def repair_raw_json_summaries(self) -> int:
+        """Re-parse and fix rows in read_later and starred where the summary
+        column holds a raw JSON blob (LLM truncation artifact).
+
+        Returns the number of rows updated across both tables.
+        """
+        from condenseit.providers.base import parse_summary_response  # local to avoid circular
+
+        updated = 0
+        for table in ("read_later", "starred"):
+            if table not in self.db.table_names():
+                continue
+            rows = list(
+                self.db.query(
+                    f"SELECT url, summary, tldr, key_takeaways FROM {table}"  # noqa: S608
+                    " WHERE summary LIKE '%\"tldr\"%'"
+                    "    OR summary LIKE '%```json%'"
+                )
+            )
+            for row in rows:
+                raw_summary = str(row.get("summary") or "")
+                parsed = parse_summary_response(raw_summary)
+                # Only replace when we actually extracted something meaningful.
+                if not parsed["tldr"] and not parsed["summary"]:
+                    continue
+                new_kt = json.dumps(parsed["key_takeaways"])
+                self.db.execute(
+                    f"UPDATE {table} SET summary=?, tldr=?, key_takeaways=? WHERE url=?",  # noqa: S608
+                    [parsed["summary"], parsed["tldr"], new_kt, row["url"]],
+                )
+                updated += 1
+        if updated:
+            self.db.conn.commit()
+        return updated
+
     def save_run_log(self, digest_id: int | None, log_text: str) -> int:
         """Persist the captured log from a digest run."""
         row = {

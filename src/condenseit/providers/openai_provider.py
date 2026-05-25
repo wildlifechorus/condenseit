@@ -51,7 +51,7 @@ class OpenAISummarizer(SummarizerProvider):
     def _chat(
         self,
         messages: list[dict[str, str]],
-        max_tokens: int = 900,
+        max_tokens: int = 1400,
     ) -> str:
         url = f"{self.base_url}/chat/completions"
         payload: dict[str, Any] = {
@@ -86,7 +86,14 @@ class OpenAISummarizer(SummarizerProvider):
         choices = data.get("choices", [])
         if not choices:
             return ""
-        return str(choices[0]["message"]["content"]).strip()
+        choice = choices[0]
+        if choice.get("finish_reason") == "length":
+            logger.warning(
+                "OpenAI-compat response truncated (finish_reason=length) for model=%s; "
+                "consider raising max_tokens",
+                self.model,
+            )
+        return str(choice["message"]["content"]).strip()
 
     def summarize_article(
         self,

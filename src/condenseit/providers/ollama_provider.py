@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import ollama
@@ -12,6 +13,8 @@ from condenseit.providers.base import (
     SummarizerProvider,
     parse_summary_response,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _build_summary_prompt(
@@ -77,8 +80,14 @@ class OllamaSummarizer(SummarizerProvider):
             model=self.model,
             prompt=prompt,
             think=False,
-            options={"temperature": 0.3, "num_predict": 900},
+            options={"temperature": 0.3, "num_predict": 1400},
         )
+        if response.get("done_reason") == "length":
+            logger.warning(
+                "Ollama response truncated (done_reason=length) for model=%s; "
+                "consider raising num_predict",
+                self.model,
+            )
         return parse_summary_response(response["response"])
 
     def generate_digest(
