@@ -2,7 +2,7 @@
 {% block content %}
 <header class="page-header">
   <h1>LLM configuration</h1>
-  <p class="page-lead">Local Ollama on the host, or OpenRouter in the cloud.</p>
+  <p class="page-lead">Local Ollama, OpenRouter in the cloud, or any OpenAI-compatible endpoint.</p>
 </header>
 
 {% if msg %}
@@ -21,6 +21,9 @@
       <option value="fallback" {% if provider == 'fallback' %}selected{% endif %}>
         Fallback (local then cloud)
       </option>
+      <option value="openai" {% if provider == 'openai' %}selected{% endif %}>
+        OpenAI-compatible endpoint
+      </option>
     </select>
   </label>
   <label>Model / Ollama tag
@@ -33,6 +36,14 @@
     <input type="checkbox" name="openrouter_pick_cheapest" value="on"
       {% if openrouter_pick_cheapest %}checked{% endif %}>
     Prefer cheapest OpenRouter model (catalog prompt price, re-checked hourly)
+  </label>
+  <label style="grid-column: 1 / -1">OpenAI-compatible base URL
+    <input name="openai_base_url" value="{{ openai_base_url }}"
+      placeholder="http://localhost:11434/v1">
+    <span class="hint">Any server exposing <code>/v1/chat/completions</code>: Ollama compat, LM Studio, vLLM, llama.cpp, text-generation-inference, real OpenAI, etc.</span>
+  </label>
+  <label>OpenAI-compatible model
+    <input name="openai_model" value="{{ openai_model }}" placeholder="gemma4-e4b-q4_m">
   </label>
   <p class="hint" style="grid-column: 1 / -1">
     Ollama host: <code>{{ ollama_host }}</code> (not in Docker; runs on your Mac)

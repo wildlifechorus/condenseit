@@ -7,6 +7,7 @@ from condenseit.providers.base import SummarizerProvider
 from condenseit.providers.budget import BudgetTracker
 from condenseit.providers.fallback_chain import FallbackChainProvider
 from condenseit.providers.ollama_provider import OllamaSummarizer
+from condenseit.providers.openai_provider import OpenAISummarizer
 from condenseit.providers.openrouter_models import pick_cheapest_text_model
 from condenseit.providers.openrouter_provider import OpenRouterSummarizer
 from condenseit.store.database import ContentStore
@@ -28,6 +29,21 @@ def build_summarizer(
         return OllamaSummarizer(
             model=model,
             host=config.llm.ollama_host,
+            max_key_takeaways=max_takeaways,
+            max_summary_paragraphs=max_paragraphs,
+        )
+
+    if provider == "openai":
+        api_key = keys.get_key("openai") or config.llm.openai_api_key
+        if not config.llm.openai_base_url:
+            raise ValueError(
+                "OpenAI-compatible base URL required "
+                "(llm.openai_base_url or OPENAI_API_BASE_URL)"
+            )
+        return OpenAISummarizer(
+            model=config.llm.openai_model or model,
+            base_url=config.llm.openai_base_url,
+            api_key=api_key,
             max_key_takeaways=max_takeaways,
             max_summary_paragraphs=max_paragraphs,
         )

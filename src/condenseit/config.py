@@ -171,6 +171,10 @@ class LlmConfig(BaseModel):
     openrouter_daily_budget_usd: float = 1.0
     openrouter_monthly_budget_usd: float = 10.0
     openrouter_pick_cheapest: bool = False
+    # OpenAI-compatible endpoint (provider: "openai")
+    openai_base_url: str = ""
+    openai_api_key: str = ""
+    openai_model: str = ""
 
 
 class VpsConfig(BaseModel):
@@ -293,6 +297,15 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         expanded.setdefault("llm", {})["openrouter_api_key"] = os.environ[
             "OPENROUTER_API_KEY"
         ]
+
+    if os.environ.get("OPENAI_API_BASE_URL"):
+        expanded.setdefault("llm", {})["openai_base_url"] = (
+            os.environ["OPENAI_API_BASE_URL"]
+        )
+    if os.environ.get("OPENAI_API_KEY"):
+        expanded.setdefault("llm", {})["openai_api_key"] = os.environ["OPENAI_API_KEY"]
+    if os.environ.get("OPENAI_MODEL"):
+        expanded.setdefault("llm", {})["openai_model"] = os.environ["OPENAI_MODEL"]
 
     cap = os.environ.get("CONDENSEIT_MAX_ARTICLES_PER_DIGEST", "").strip()
     if cap:

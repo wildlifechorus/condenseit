@@ -1,4 +1,4 @@
-"""OpenRouter cloud LLM provider."""
+"""OpenAI-compatible endpoint provider (v1/chat/completions)."""
 
 from __future__ import annotations
 
@@ -16,25 +16,31 @@ from condenseit.providers.base import (
     build_chat_user_prompt,
     parse_summary_response,
 )
-from condenseit.providers.budget import BudgetTracker
 
 logger = logging.getLogger(__name__)
 
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+_RETRY_WAITS = [5, 15, 30]
 
 
-class OpenRouterSummarizer(SummarizerProvider):
+class OpenAISummarizer(SummarizerProvider):
+    """Summarizer that calls any OpenAI-compatible /v1/chat/completions endpoint.
+
+    Works with Ollama's OpenAI compat layer, LM Studio, vLLM, llama.cpp,
+    text-generation-inference, and real OpenAI / Azure OpenAI endpoints.
+    """
+
     def __init__(
         self,
         model: str,
-        api_key: str,
-        budget: BudgetTracker | None = None,
+        base_url: str,
+        api_key: str = "",
         max_key_takeaways: int = 5,
         max_summary_paragraphs: int = 5,
     ) -> None:
         self.model = model
+        # Normalise: strip trailing slash so we can always append /chat/completions.
+        self.base_url = base_url.rstrip("/")
         self.api_key = api_key
-        self.budget = budget
         self.max_key_takeaways = max_key_takeaways
         self.max_summary_paragraphs = max_summary_paragraphs
 
@@ -45,27 +51,23 @@ class OpenRouterSummarizer(SummarizerProvider):
     def _chat(
         self,
         messages: list[dict[str, str]],
-        max_tokens: int = 512,
+        max_tokens: int = 900,
     ) -> str:
-        if self.budget and not self.budget.can_spend():
-            raise RuntimeError("OpenRouter daily or monthly budget exceeded")
-
-        payload = {
+        url = f"{self.base_url}/chat/completions"
+        payload: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
             "temperature": 0.3,
             "max_tokens": max_tokens,
         }
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "HTTP-Referer": "https://github.com/condenseit/condenseit",
-            "X-Title": "CondenseIt",
-        }
-        _RETRY_WAITS = [5, 15, 30]
+        headers: dict[str, str] = {}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
         resp: httpx.Response | None = None
         with httpx.Client(timeout=120.0) as client:
             for attempt in range(len(_RETRY_WAITS) + 1):
-                resp = client.post(OPENROUTER_URL, json=payload, headers=headers)
+                resp = client.post(url, json=payload, headers=headers)
                 if resp.status_code != 429:
                     resp.raise_for_status()
                     break
@@ -73,23 +75,14 @@ class OpenRouterSummarizer(SummarizerProvider):
                     resp.raise_for_status()
                 wait = int(resp.headers.get("Retry-After") or _RETRY_WAITS[attempt])
                 logger.warning(
-                    "OpenRouter 429 rate limit; retrying in %ds (attempt %d/%d)",
+                    "OpenAI-compat 429 rate limit; retrying in %ds (attempt %d/%d)",
                     wait,
                     attempt + 1,
                     len(_RETRY_WAITS),
                 )
                 time.sleep(wait)
+
         data = resp.json()  # type: ignore[union-attr]
-
-        usage = data.get("usage", {})
-        cost = float(data.get("usage", {}).get("cost", 0) or 0)
-        if self.budget and cost > 0:
-            self.budget.record_spend(
-                cost,
-                model=self.model,
-                tokens=int(usage.get("total_tokens", 0)),
-            )
-
         choices = data.get("choices", [])
         if not choices:
             return ""
@@ -113,7 +106,7 @@ class OpenRouterSummarizer(SummarizerProvider):
                 ),
             },
         ]
-        raw = self._chat(messages, max_tokens=900)
+        raw = self._chat(messages)
         return parse_summary_response(raw)
 
     def generate_digest(

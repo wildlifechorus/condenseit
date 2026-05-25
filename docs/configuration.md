@@ -148,11 +148,37 @@ Episode or channel artwork is used when the feed provides it.
 
 ## LLM
 
-- `llm.provider`: `ollama`, `openrouter`, or `fallback` (local then cloud).
+- `llm.provider`: `ollama`, `openrouter`, `fallback` (local then cloud), or `openai`.
 - `llm.openrouter_pick_cheapest`: when `true`, the cheapest suitable text model from
   the public OpenRouter catalog is chosen (cached about one hour). You still need
   an API key for requests.
 - `llm.openrouter_daily_budget_usd` / `openrouter_monthly_budget_usd`: spend caps.
+
+### OpenAI-compatible endpoint (`provider: "openai"`)
+
+Point CondenseIt at any server that implements the `/v1/chat/completions` endpoint.
+This includes Ollama's built-in OpenAI compatibility layer, LM Studio, vLLM,
+llama.cpp server, text-generation-inference, real OpenAI, Azure OpenAI, and many
+others.
+
+| Setting | Env var | Description |
+|---------|---------|-------------|
+| `llm.openai_base_url` | `OPENAI_API_BASE_URL` | Full base URL, e.g. `http://localhost:11434/v1` or `https://api.openai.com/v1` |
+| `llm.openai_model` | `OPENAI_MODEL` | Model name as the server expects it. Falls back to the top-level `model` field if not set. |
+| `llm.openai_api_key` | `OPENAI_API_KEY` | API key. Can be any non-empty string for local servers that don't authenticate. |
+
+Example minimal config for a local vLLM or LM Studio server:
+
+```yaml
+llm:
+  provider: "openai"
+  openai_base_url: "${OPENAI_API_BASE_URL:-http://localhost:8000/v1}"
+  openai_model: "gemma4-e4b-q4_m"
+```
+
+Set `OPENAI_API_KEY` in `.env` (required if the server enforces authentication; use any placeholder value for servers that don't).
+
+The `openai_base_url` and `openai_model` can also be changed live in **Admin > LLM** without restarting the server.
 
 ## Digest settings
 
