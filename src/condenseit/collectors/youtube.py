@@ -7,6 +7,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 import feedparser
@@ -25,6 +26,19 @@ _HTML_TAG_RE = re.compile(r"<[^>]+>")
 _MAX_BODY_CHARS = 12000
 
 
+def _parse_entry_date(entry: Any) -> str:
+    """Return the video's actual publish date from the feed entry, or now() as fallback."""
+    if entry.get("published_parsed"):
+        t = entry.published_parsed
+        return datetime(*t[:6], tzinfo=UTC).isoformat()
+    if entry.get("published"):
+        try:
+            return parsedate_to_datetime(entry.published).isoformat()
+        except (TypeError, ValueError):
+            pass
+    return datetime.now(UTC).isoformat()
+
+
 @dataclass
 class VideoItem:
     video_id: str
@@ -34,6 +48,7 @@ class VideoItem:
     category: str
     body: str
     image_url: str | None = field(default=None)
+    published_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def to_dict(self) -> dict[str, str | None]:
         return {
@@ -43,7 +58,7 @@ class VideoItem:
             "source": self.channel,
             "category": self.category,
             "content_hash": ContentStore.content_hash(self.body),
-            "published_at": datetime.now(UTC).isoformat(),
+            "published_at": self.published_at,
             "collected_at": datetime.now(UTC).isoformat(),
             "image_url": self.image_url,
         }
@@ -123,6 +138,7 @@ class YouTubeCollector:
                     category=ch.category,
                     body=body[:_MAX_BODY_CHARS],
                     image_url=thumbnail,
+                    published_at=_parse_entry_date(entry),
                 ),
             )
             self._mark_processed(vid)
