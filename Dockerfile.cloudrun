@@ -14,6 +14,7 @@ WORKDIR /app
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
+    ffmpeg \
     libxml2 \
     libxslt1.1 \
   && rm -rf /var/lib/apt/lists/*

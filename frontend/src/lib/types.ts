@@ -272,6 +272,9 @@ export interface DigestConfig {
   exclude_keywords: string[];
   max_key_takeaways: number;
   max_summary_paragraphs: number;
+  youtube_transcription_enabled: boolean;
+  youtube_transcription_model: string;
+  youtube_transcription_max_duration: number;
 }
 
 // ---------- Budget limits ------------------------------------------------

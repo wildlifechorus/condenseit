@@ -574,6 +574,9 @@ def create_admin_router(
                 "exclude_keywords": excl_kw,
                 "max_key_takeaways": merged.max_key_takeaways,
                 "max_summary_paragraphs": merged.max_summary_paragraphs,
+                "youtube_transcription_enabled": merged.youtube_transcription.enabled,
+                "youtube_transcription_model": merged.youtube_transcription.model,
+                "youtube_transcription_max_duration": merged.youtube_transcription.max_duration_seconds,
             }
         )
 
@@ -663,6 +666,27 @@ def create_admin_router(
             except (ValueError, TypeError):
                 return JSONResponse(
                     {"error": "max_summary_paragraphs must be 1-10"},
+                    status_code=422,
+                )
+        if "youtube_transcription_enabled" in body:
+            store.set_setting(
+                "youtube_transcription_enabled",
+                "1" if body["youtube_transcription_enabled"] else "0",
+            )
+        if "youtube_transcription_model" in body:
+            model_val = str(body["youtube_transcription_model"]).strip()
+            if model_val:
+                store.set_setting("youtube_transcription_model", model_val)
+        if "youtube_transcription_max_duration" in body:
+            try:
+                val = int(body["youtube_transcription_max_duration"])
+                if 60 <= val <= 7200:
+                    store.set_setting(
+                        "youtube_transcription_max_duration", str(val)
+                    )
+            except (ValueError, TypeError):
+                return JSONResponse(
+                    {"error": "youtube_transcription_max_duration must be 60-7200"},
                     status_code=422,
                 )
         return JSONResponse({"ok": True})

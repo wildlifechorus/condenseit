@@ -62,14 +62,61 @@ feeds:
 
 ### YouTube
 
-Collects transcripts (or RSS descriptions as fallback) from the most recent videos
-of a channel. Requires the channel's `channel_id` (found on the channel's About page).
+Collects the most recent videos from a channel. Requires the channel's `channel_id`
+(found on the channel's About page).
+
+Content is sourced using a three-step fallback:
+
+1. **YouTube captions** via `youtube-transcript-api`, free, instant, no download needed.
+2. **Whisper transcription** (opt-in), if captions are unavailable, downloads the audio
+   with `yt-dlp` and transcribes it via the [OpenRouter Whisper API](#youtube-transcription).
+   Requires an OpenRouter API key and `yt-dlp` installed on the server.
+3. **RSS description**, falls back to the text the creator wrote in the video description.
 
 ```yaml
 youtube_channels:
   - handle: "@example"
     channel_id: "UCxxxxxxxxxxxxxxxxxxxxxxxxx"
     category: "Tech"
+```
+
+#### YouTube transcription
+
+Audio-based transcription dramatically improves summary quality for videos that
+lack captions. Enable and configure it in **Admin > Digest** under the
+"YouTube transcription" card, or in `config.yaml`:
+
+```yaml
+youtube_transcription:
+  enabled: false                          # off by default; enable to activate
+  model: "openai/whisper-large-v3-turbo"  # fast and cheap; see below
+  max_duration_seconds: 1800              # skip videos longer than 30 min (default)
+```
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `enabled` | `false` | Enable audio transcription when captions are unavailable |
+| `model` | `openai/whisper-large-v3-turbo` | Whisper model via OpenRouter |
+| `max_duration_seconds` | `1800` | Skip videos longer than this (60–7200 s) |
+
+**Available Whisper models on OpenRouter:**
+
+| Model | Speed | Quality | Notes |
+|-------|-------|---------|-------|
+| `openai/whisper-large-v3-turbo` | Very fast (216× real-time) | Good (12% WER) | Recommended default |
+| `openai/whisper-large-v3` | Fast | Best (10.3% WER, 99+ languages) | Use for higher accuracy |
+
+**Cost:** billed per second of audio via your existing OpenRouter key. A typical
+15-minute video costs ~$0.036 with `whisper-large-v3-turbo`. Spend is tracked in
+**Admin > Budget** alongside summarisation costs and respects your daily/monthly limits.
+
+**Server requirements:** `yt-dlp` and `ffmpeg` must be installed. Both are included
+in the Docker images and the VPS provisioning script (`scripts/provision-ubuntu.sh`).
+For an existing VPS, install them manually once:
+
+```bash
+pip install yt-dlp
+apt-get install -y ffmpeg
 ```
 
 ### Website watch
@@ -197,6 +244,8 @@ set in `config.yaml`:
   the LLM-generated article summary.
 - `preferred_languages`: ISO 639-1 codes (e.g. `["en", "pt"]`). Leave empty to
   accept all languages. Language detection uses `langdetect`.
+- `youtube_transcription.enabled` (default `false`): enable Whisper audio transcription
+  for YouTube videos that lack captions. See [YouTube transcription](#youtube-transcription).
 
 ## Preferences and ranking
 

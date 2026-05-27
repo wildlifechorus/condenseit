@@ -72,7 +72,7 @@ DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -q
 # ---------------------------------------------------------------------------
 # Install system dependencies
 # ---------------------------------------------------------------------------
-info "Installing nginx, python3, certbot, ufw, fail2ban, rsync, curl..."
+info "Installing nginx, python3, certbot, ufw, fail2ban, rsync, curl, ffmpeg..."
 DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
   nginx \
   python3 \
@@ -87,6 +87,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
   git \
   unzip \
   ca-certificates \
+  ffmpeg \
   libxml2 \
   libxslt1.1
 
@@ -178,6 +179,16 @@ fi
 DEPLOY_DIR="${CONDENSEIT_DEPLOY_DIR:-/var/www}"
 mkdir -p "$DEPLOY_DIR"
 info "Deploy root: $DEPLOY_DIR"
+
+# ---------------------------------------------------------------------------
+# Install yt-dlp (needed for YouTube audio transcription)
+# ---------------------------------------------------------------------------
+info "Installing yt-dlp..."
+if ! command -v yt-dlp &>/dev/null; then
+  pip3 install --break-system-packages yt-dlp 2>/dev/null \
+    || pip3 install yt-dlp \
+    || warn "Failed to install yt-dlp. YouTube transcription will not work."
+fi
 
 # ---------------------------------------------------------------------------
 # Summary

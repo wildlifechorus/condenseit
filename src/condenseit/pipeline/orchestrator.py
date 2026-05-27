@@ -219,7 +219,13 @@ class DigestPipeline:
                 item_count=len(items),
             )
 
-        yt = YouTubeCollector(youtube, self.store)
+        yt = YouTubeCollector(
+            youtube,
+            self.store,
+            transcription_config=self.config.youtube_transcription,
+            openrouter_api_key=self._or_key,
+            budget=self._ai_budget,
+        )
         videos, yt_health = yt.collect_new_videos_with_health()
         self._record_health(yt_health)
 

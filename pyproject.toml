@@ -28,6 +28,7 @@ dependencies = [
   "sqlite-utils>=3.37",
   "trafilatura>=1.12",
   "uvicorn>=0.32",
+  "yt-dlp>=2024.1",
   "youtube-transcript-api>=1.2",
 ]
 

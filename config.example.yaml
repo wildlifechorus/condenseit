@@ -44,6 +44,21 @@ feeds:
 
 youtube_channels: []
 
+# ---------------------------------------------------------------------------
+# YouTube transcription (audio-based via OpenRouter Whisper API)
+#
+# When enabled, videos that lack captions are transcribed by downloading
+# the audio with yt-dlp and sending it to OpenRouter's Whisper endpoint.
+# Requires: yt-dlp + ffmpeg installed on the server, OpenRouter API key set.
+# Cost: ~$0.006/min of audio (whisper-large-v3-turbo is cheaper and faster).
+# Disabled by default; enable in Admin > Settings or here.
+# ---------------------------------------------------------------------------
+youtube_transcription:
+  enabled: false
+  model: "openai/whisper-large-v3-turbo"
+  # Skip videos longer than this (seconds). Default 1800 = 30 minutes.
+  max_duration_seconds: 1800
+
 watch_urls: []
 
 # ---------------------------------------------------------------------------

@@ -157,6 +157,14 @@ class RelevanceConfig(BaseModel):
 
 
 
+class YouTubeTranscriptionConfig(BaseModel):
+    """Settings for audio-based YouTube transcription via OpenRouter Whisper."""
+
+    enabled: bool = False
+    model: str = "openai/whisper-large-v3-turbo"
+    max_duration_seconds: int = Field(default=1800, ge=60, le=7200)
+
+
 class OutputConfig(BaseModel):
     format: str = "both"
     path: str = "data/digests"
@@ -214,6 +222,9 @@ class AppConfig(BaseModel):
     youtube_channels: list[YouTubeChannelConfig] = Field(default_factory=list)
     watch_urls: list[WatchUrlConfig] = Field(default_factory=list)
     relevance: RelevanceConfig = Field(default_factory=RelevanceConfig)
+    youtube_transcription: YouTubeTranscriptionConfig = Field(
+        default_factory=YouTubeTranscriptionConfig
+    )
     output: OutputConfig = Field(default_factory=OutputConfig)
     llm: LlmConfig = Field(default_factory=LlmConfig)
     vps: VpsConfig = Field(default_factory=VpsConfig)

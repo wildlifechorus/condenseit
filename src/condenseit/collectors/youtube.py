@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import base64
 import html
 import logging
 import re
+import shutil
+import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
+from pathlib import Path
 from typing import Any
 
 import feedparser
@@ -15,8 +20,9 @@ import httpx
 import sqlite_utils.db
 from youtube_transcript_api import YouTubeTranscriptApi
 
-from condenseit.config import YouTubeChannelConfig
+from condenseit.config import YouTubeChannelConfig, YouTubeTranscriptionConfig
 from condenseit.fetch_headers import digest_fetch_headers
+from condenseit.providers.budget import BudgetTracker
 from condenseit.store.database import ContentStore
 
 logger = logging.getLogger(__name__)
@@ -24,6 +30,8 @@ logger = logging.getLogger(__name__)
 _VIDEO_ID_RE = re.compile(r"(?:v=|/shorts/)([a-zA-Z0-9_-]{11})")
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
 _MAX_BODY_CHARS = 12000
+
+_OPENROUTER_TRANSCRIPTION_URL = "https://openrouter.ai/api/v1/audio/transcriptions"
 
 
 def _parse_entry_date(entry: Any) -> str:
@@ -69,13 +77,29 @@ class YouTubeCollector:
         self,
         channels: list[YouTubeChannelConfig],
         store: ContentStore,
+        *,
+        transcription_config: YouTubeTranscriptionConfig | None = None,
+        openrouter_api_key: str = "",
+        budget: BudgetTracker | None = None,
     ) -> None:
         self.channels = channels
         self.store = store
+        self._transcription = transcription_config
+        self._or_key = openrouter_api_key
+        self._budget = budget
         self.client = httpx.Client(
             timeout=30.0,
             follow_redirects=True,
             headers=digest_fetch_headers(),
+        )
+
+    @property
+    def _whisper_enabled(self) -> bool:
+        return bool(
+            self._transcription
+            and self._transcription.enabled
+            and self._or_key
+            and shutil.which("yt-dlp")
         )
 
     def collect_new_videos(self) -> list[VideoItem]:
@@ -117,6 +141,8 @@ class YouTubeCollector:
             if not vid or self._is_processed(vid):
                 continue
             transcript = self._fetch_transcript(vid)
+            if not transcript and self._whisper_enabled:
+                transcript = self._transcribe_via_whisper(vid)
             description = self._entry_plain_text(entry)
             body = (transcript or description).strip()
             if not body:
@@ -169,6 +195,93 @@ class YouTubeCollector:
         except Exception:
             logger.debug("No transcript for %s", video_id, exc_info=True)
             return ""
+
+    def _transcribe_via_whisper(self, video_id: str) -> str:
+        """Download audio with yt-dlp and transcribe via OpenRouter Whisper API."""
+        assert self._transcription is not None
+
+        if self._budget and not self._budget.can_spend():
+            logger.info("Budget exhausted, skipping Whisper transcription for %s", video_id)
+            return ""
+
+        tmp_dir = Path(tempfile.mkdtemp(prefix="condenseit_yt_"))
+        audio_path = tmp_dir / "audio.m4a"
+        try:
+            url = f"https://www.youtube.com/watch?v={video_id}"
+            max_dur = self._transcription.max_duration_seconds
+            result = subprocess.run(
+                [
+                    "yt-dlp",
+                    "--extract-audio",
+                    "--audio-format", "m4a",
+                    "--match-filter", f"duration<={max_dur}",
+                    "--no-playlist",
+                    "--quiet",
+                    "--no-warnings",
+                    "-o", str(audio_path),
+                    url,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if result.returncode != 0 or not audio_path.exists():
+                logger.debug(
+                    "yt-dlp failed for %s: %s", video_id, result.stderr[:200]
+                )
+                return ""
+
+            audio_bytes = audio_path.read_bytes()
+            audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
+
+            resp = httpx.post(
+                _OPENROUTER_TRANSCRIPTION_URL,
+                headers={
+                    "Authorization": f"Bearer {self._or_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self._transcription.model,
+                    "input_audio": {
+                        "data": audio_b64,
+                        "format": "m4a",
+                    },
+                    "language": "en",
+                },
+                timeout=300.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            text = str(data.get("text") or "").strip()
+
+            if self._budget and text:
+                usage = data.get("usage") or {}
+                cost = float(usage.get("total_cost") or 0)
+                if not cost:
+                    duration_s = len(audio_bytes) / 16000
+                    cost = duration_s * 0.0001
+                self._budget.record_spend(
+                    cost,
+                    model=self._transcription.model,
+                    tokens=int(usage.get("total_tokens") or 0),
+                )
+
+            if text:
+                logger.info(
+                    "Whisper transcription succeeded for %s (%d chars)",
+                    video_id,
+                    len(text),
+                )
+            return text[:_MAX_BODY_CHARS]
+
+        except subprocess.TimeoutExpired:
+            logger.warning("yt-dlp timed out for %s", video_id)
+            return ""
+        except Exception:
+            logger.debug("Whisper transcription failed for %s", video_id, exc_info=True)
+            return ""
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
 
     @staticmethod
     def _entry_plain_text(entry: Any) -> str:

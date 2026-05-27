@@ -485,6 +485,99 @@ export function SettingsPage() {
           </Field>
         </Card>
 
+        <Card>
+          <CardHeader
+            title="YouTube transcription"
+            description="When enabled, videos without captions are transcribed via OpenRouter Whisper. Requires an OpenRouter API key and yt-dlp installed on the server."
+          />
+          <div class="space-y-4">
+            <label class="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                class="mt-0.5"
+                checked={cfg.youtube_transcription_enabled}
+                onChange={(e) =>
+                  setCfg((p) =>
+                    p
+                      ? {
+                          ...p,
+                          youtube_transcription_enabled: (
+                            e.target as HTMLInputElement
+                          ).checked,
+                        }
+                      : p,
+                  )
+                }
+              />
+              <span class="text-sm text-slate-700 dark:text-slate-300">
+                Enable audio transcription for YouTube videos (uses OpenRouter
+                Whisper API, billed per second of audio)
+              </span>
+            </label>
+
+            {cfg.youtube_transcription_enabled && (
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Field
+                  label="Whisper model"
+                  hint="openai/whisper-large-v3-turbo is fast and cheap. openai/whisper-large-v3 is highest quality."
+                >
+                  <select
+                    class={INPUT}
+                    value={cfg.youtube_transcription_model}
+                    onChange={(e) =>
+                      setCfg((p) =>
+                        p
+                          ? {
+                              ...p,
+                              youtube_transcription_model: (
+                                e.target as HTMLSelectElement
+                              ).value,
+                            }
+                          : p,
+                      )
+                    }
+                  >
+                    <option value="openai/whisper-large-v3-turbo">
+                      whisper-large-v3-turbo (fast, cheap)
+                    </option>
+                    <option value="openai/whisper-large-v3">
+                      whisper-large-v3 (best quality)
+                    </option>
+                  </select>
+                </Field>
+
+                <Field
+                  label="Max video duration (seconds)"
+                  hint="Videos longer than this are skipped. Default 1800 (30 min). Max 7200 (2 hours)."
+                >
+                  <input
+                    type="number"
+                    class={INPUT}
+                    min={60}
+                    max={7200}
+                    required
+                    value={cfg.youtube_transcription_max_duration}
+                    onInput={(e) =>
+                      setCfg((p) =>
+                        p
+                          ? {
+                              ...p,
+                              youtube_transcription_max_duration:
+                                parseInt(
+                                  (e.target as HTMLInputElement).value,
+                                  10,
+                                ) || 1800,
+                            }
+                          : p,
+                      )
+                    }
+                  />
+                </Field>
+              </div>
+            )}
+          </div>
+        </Card>
+
         <div>
           <Button type="submit" loading={saving}>
             Save settings

@@ -222,4 +222,24 @@ def apply_db_settings(config: AppConfig, store: ContentStore) -> AppConfig:
         except (json.JSONDecodeError, TypeError):
             pass
 
+    # YouTube transcription (audio-based via OpenRouter Whisper)
+    yt_transcription_raw = store.get_setting("youtube_transcription_enabled", "")
+    if yt_transcription_raw == "1":
+        config.youtube_transcription.enabled = True
+    elif yt_transcription_raw == "0":
+        config.youtube_transcription.enabled = False
+
+    yt_transcription_model = store.get_setting("youtube_transcription_model", "")
+    if yt_transcription_model:
+        config.youtube_transcription.model = yt_transcription_model
+
+    yt_max_dur = store.get_setting("youtube_transcription_max_duration", "")
+    if yt_max_dur:
+        try:
+            val = int(yt_max_dur)
+            if 60 <= val <= 7200:
+                config.youtube_transcription.max_duration_seconds = val
+        except ValueError:
+            pass
+
     return config
