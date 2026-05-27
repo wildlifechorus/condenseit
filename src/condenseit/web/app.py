@@ -33,6 +33,7 @@ from condenseit.settings_overlay import apply_db_settings
 from condenseit.store.database import ContentStore
 from condenseit.web.admin.routes import create_admin_router
 from condenseit.web.digest_job import DigestJobManager
+from condenseit.web.feed import create_feed_router
 from condenseit.web.scheduler import (
     _SCHEDULER_STATE,
     get_scheduler_status,
@@ -241,8 +242,15 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 auth_header[len("Bearer "):].strip(),
                 effective_pw,
             )
+            # Feed readers pass the token as a query param; validate it
+            # against the dedicated feed token (independent of admin password).
+            token_param = request.query_params.get("token", "")
+            feed_token = store.get_setting("feed_token", "") if token_param else ""
+            token_ok = bool(feed_token) and secrets.compare_digest(
+                token_param, feed_token
+            )
             session: dict[str, Any] = getattr(request, "session", {})
-            if not bearer_ok and not session.get("authenticated"):
+            if not bearer_ok and not token_ok and not session.get("authenticated"):
                 return JSONResponse(
                     {"detail": "Not authenticated"},
                     status_code=401,
@@ -263,6 +271,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
         app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
 
     app.include_router(create_admin_router(config_path, store))
+    app.include_router(create_feed_router(store))
 
     # ==================================================================
     # JSON API routes

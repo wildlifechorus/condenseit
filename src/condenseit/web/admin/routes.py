@@ -778,6 +778,34 @@ def create_admin_router(
         store.set_setting("auth_password", new_pw)
         return JSONResponse({"ok": True})
 
+    # --- Feed token ----------------------------------------------------
+
+    def _feed_url(request: Request, token: str) -> str:
+        base = str(request.base_url).rstrip("/")
+        return f"{base}/api/feed/atom?token={token}"
+
+    @router.get("/api/config/feed-token", response_model=None)
+    async def api_get_feed_token(request: Request) -> JSONResponse:
+        token = store.get_setting("feed_token", "")
+        if token:
+            return JSONResponse(
+                {"exists": True, "token": token, "feed_url": _feed_url(request, token)}
+            )
+        return JSONResponse({"exists": False, "token": None, "feed_url": None})
+
+    @router.post("/api/config/feed-token", response_model=None)
+    async def api_generate_feed_token(request: Request) -> JSONResponse:
+        token = secrets.token_urlsafe(32)
+        store.set_setting("feed_token", token)
+        return JSONResponse(
+            {"exists": True, "token": token, "feed_url": _feed_url(request, token)}
+        )
+
+    @router.delete("/api/config/feed-token", response_model=None)
+    async def api_revoke_feed_token() -> JSONResponse:
+        store.set_setting("feed_token", "")
+        return JSONResponse({"ok": True})
+
     # --- Run logs ------------------------------------------------------
 
     @router.get("/api/logs", response_model=None)

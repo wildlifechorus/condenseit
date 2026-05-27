@@ -292,6 +292,12 @@ export interface PasswordInfo {
   using_default: boolean;
 }
 
+export interface FeedTokenInfo {
+  exists: boolean;
+  token: string | null;
+  feed_url: string | null;
+}
+
 // ---------- Read Later ---------------------------------------------------
 
 /**

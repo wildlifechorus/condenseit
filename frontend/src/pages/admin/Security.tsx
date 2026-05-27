@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useEffect, useRef } from 'preact/hooks';
 import { api } from '../../lib/api';
-import type { PasswordInfo } from '../../lib/types';
+import type { FeedTokenInfo, PasswordInfo } from '../../lib/types';
 import { Card, CardHeader } from '../../components/Card';
 import { Button } from '../../components/Button';
 import { Spinner } from '../../components/Spinner';
@@ -19,12 +19,24 @@ export function SecurityPage() {
     null,
   );
 
+  const [feedToken, setFeedToken] = useState<FeedTokenInfo | null>(null);
+  const [feedTokenLoading, setFeedTokenLoading] = useState(true);
+  const [feedTokenWorking, setFeedTokenWorking] = useState(false);
+  const [feedFlash, setFeedFlash] = useState<{ text: string; ok: boolean } | null>(null);
+  const [revokeConfirm, setRevokeConfirm] = useState(false);
+  const feedUrlRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     api
       .getPasswordInfo()
       .then(setInfo)
       .catch(() => {})
       .finally(() => setLoading(false));
+    api
+      .getFeedToken()
+      .then(setFeedToken)
+      .catch(() => {})
+      .finally(() => setFeedTokenLoading(false));
   }, []);
 
   function showFlash(text: string, ok = true) {
@@ -58,6 +70,50 @@ export function SecurityPage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  function showFeedFlash(text: string, ok = true) {
+    setFeedFlash({ text, ok });
+    setTimeout(() => setFeedFlash(null), 5000);
+  }
+
+  async function handleGenerateToken() {
+    setFeedTokenWorking(true);
+    try {
+      const info = await api.generateFeedToken();
+      setFeedToken(info);
+      showFeedFlash('Feed token generated. Copy the URL below and add it to your reader.');
+    } catch {
+      showFeedFlash('Failed to generate feed token.', false);
+    } finally {
+      setFeedTokenWorking(false);
+    }
+  }
+
+  async function handleRevokeToken() {
+    if (!revokeConfirm) {
+      setRevokeConfirm(true);
+      return;
+    }
+    setFeedTokenWorking(true);
+    setRevokeConfirm(false);
+    try {
+      await api.revokeFeedToken();
+      setFeedToken({ exists: false, token: null, feed_url: null });
+      showFeedFlash('Feed token revoked. Your reader will no longer have access.');
+    } catch {
+      showFeedFlash('Failed to revoke feed token.', false);
+    } finally {
+      setFeedTokenWorking(false);
+    }
+  }
+
+  function handleCopyUrl() {
+    if (feedUrlRef.current) {
+      feedUrlRef.current.select();
+      navigator.clipboard.writeText(feedUrlRef.current.value).catch(() => {});
+    }
+    showFeedFlash('Feed URL copied to clipboard.');
   }
 
   if (loading) {
@@ -193,6 +249,92 @@ export function SecurityPage() {
           </p>
         </Card>
       )}
+
+      {/* Feed access token */}
+      <Card>
+        <CardHeader
+          title="Feed access token"
+          description="Generate a token to subscribe to your digest as an Atom feed in any RSS reader (Reeder, NetNewsWire, Miniflux, FreshRSS, etc.)."
+        />
+
+        {feedTokenLoading ? (
+          <Spinner size="sm" className="text-teal-600 dark:text-teal-400" />
+        ) : (
+          <div class="space-y-4">
+            {feedFlash && (
+              <div
+                class={[
+                  'px-4 py-3 text-sm rounded-lg border',
+                  feedFlash.ok
+                    ? 'bg-teal-50 dark:bg-teal-900/20 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800'
+                    : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800',
+                ].join(' ')}
+              >
+                {feedFlash.text}
+              </div>
+            )}
+
+            {feedToken?.exists ? (
+              <>
+                <label class="flex flex-col gap-1">
+                  <span class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    Feed URL
+                  </span>
+                  <div class="flex gap-2">
+                    <input
+                      ref={feedUrlRef}
+                      type="text"
+                      readOnly
+                      value={feedToken.feed_url ?? ''}
+                      class={INPUT + ' font-mono text-xs flex-1'}
+                      onClick={() => feedUrlRef.current?.select()}
+                    />
+                    <Button type="button" onClick={handleCopyUrl}>
+                      Copy
+                    </Button>
+                  </div>
+                  <span class="text-xs text-slate-400 dark:text-slate-500">
+                    Add this URL to your RSS reader. Treat it like a password — it grants read access to your digest.
+                  </span>
+                </label>
+
+                <div class="flex items-center gap-3">
+                  <Button
+                    type="button"
+                    variant="danger"
+                    loading={feedTokenWorking}
+                    onClick={handleRevokeToken}
+                  >
+                    {revokeConfirm ? 'Confirm revoke' : 'Revoke token'}
+                  </Button>
+                  {revokeConfirm && (
+                    <button
+                      type="button"
+                      class="text-sm text-slate-500 dark:text-slate-400 hover:underline"
+                      onClick={() => setRevokeConfirm(false)}
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div class="space-y-2">
+                <p class="text-sm text-slate-500 dark:text-slate-400">
+                  No feed token active. Generate one to get your feed URL.
+                </p>
+                <Button
+                  type="button"
+                  loading={feedTokenWorking}
+                  onClick={handleGenerateToken}
+                >
+                  Generate token
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

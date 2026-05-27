@@ -54,6 +54,31 @@ For future local transcription mode, the VPS would additionally need:
 - A pre-downloaded Whisper model (~150 MB for `base`, ~500 MB for `small`)
 - Sufficient RAM (1-2 GB headroom for the model)
 
+## RSS/Atom Output Feed
+
+### Completed
+
+- **Atom feed endpoint**, `GET /api/feed/atom` serializes the latest digest run as
+  standard Atom. Each digest item becomes an `<entry>` with the TL;DR as
+  `<summary>` and the full LLM summary (plus key takeaways and topics) as
+  `<content type="html">`. Auth uses a dedicated feed token independent of the
+  admin password.
+
+- **Feed token management in Admin > Security**, Users generate and revoke a
+  dedicated feed access token from the Security page. The panel displays the
+  full feed URL ready to paste into any RSS reader (Reeder, NetNewsWire,
+  Miniflux, FreshRSS, etc.). Revoking the token immediately invalidates the
+  URL without affecting the admin login password.
+
+### Planned
+
+- **Google Reader API (Tier 2)**, Implement the minimal GReader API subset
+  (`stream/contents`, `subscription/list`, `mark-all-as-read`, `edit-tag`) so
+  native GReader clients can subscribe and sync read/unread state back into the
+  preference engine. Community contributions welcome, see
+  [issue #4](https://github.com/wildlifechorus/condenseit/issues/4) for the
+  original spec and discussion.
+
 ## Other Planned Features
 
 _This section will be populated as new feature plans are defined._

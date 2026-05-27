@@ -6,6 +6,7 @@ import type {
   DigestDetail,
   DigestEntry,
   DigestItem,
+  FeedTokenInfo,
   Job,
   LlmConfig,
   PasswordInfo,
@@ -174,6 +175,14 @@ export const api = {
       current_password,
       new_password,
     }),
+
+  // Feed token
+  getFeedToken: () =>
+    request<FeedTokenInfo>('GET', '/api/config/feed-token'),
+  generateFeedToken: () =>
+    request<FeedTokenInfo>('POST', '/api/config/feed-token'),
+  revokeFeedToken: () =>
+    request<void>('DELETE', '/api/config/feed-token'),
 
   // Run logs
   listLogs: () => request<RunLogSummary[]>('GET', '/api/logs'),
