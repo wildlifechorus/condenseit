@@ -218,6 +218,13 @@ class ContentStore:
             self.db.execute(
                 "ALTER TABLE read_later ADD COLUMN image_url TEXT"
             )
+        # Migration: add removed_at for soft-delete so historical saves are
+        # retained in learning signals and engagement stats even after the
+        # article is cleared from the queue.
+        if "removed_at" not in read_later_cols:
+            self.db.execute(
+                "ALTER TABLE read_later ADD COLUMN removed_at TEXT"
+            )
         if "starred" not in self.db.table_names():
             self.db["starred"].create(
                 {
@@ -540,6 +547,10 @@ class ContentStore:
 
         ``key_takeaways`` is stored as a JSON array string so it survives a
         round-trip through SQLite without a schema change.
+
+        ``removed_at`` is explicitly set to ``None`` so that re-saving an
+        article that was previously cleared from the queue restores it as an
+        active entry.
         """
         key_takeaways = item.get("key_takeaways") or []
         if isinstance(key_takeaways, list):
@@ -557,33 +568,58 @@ class ContentStore:
                 "published_at": str(item.get("published_at", "") or ""),
                 "image_url": str(item.get("image_url") or ""),
                 "saved_at": datetime.now(UTC).isoformat(),
+                "removed_at": None,
             },
             pk="url",
         )
 
     def remove_read_later(self, url: str) -> None:
-        """Remove a URL from the read-later list."""
+        """Soft-delete a URL from the read-later queue.
+
+        The row is retained with ``removed_at`` set to the current timestamp
+        so that historical save signals continue to contribute to the learning
+        profile and engagement stats.
+        """
+        if "read_later" not in self.db.table_names():
+            return
         try:
-            self.db["read_later"].delete(url)
+            self.db["read_later"].get(url)
         except NotFoundError:
-            pass
+            return
+        self.db.execute(
+            "UPDATE read_later SET removed_at = ? WHERE url = ?",
+            [datetime.now(UTC).isoformat(), url],
+        )
 
     def get_read_later_urls(self) -> set[str]:
-        """Return the set of all URLs currently saved for later."""
+        """Return the set of URLs currently in the read-later queue.
+
+        Soft-deleted entries (removed_at IS NOT NULL) are excluded so that
+        callers receive only the active queue, matching the list endpoint.
+        """
         if "read_later" not in self.db.table_names():
             return set()
-        return {str(row["url"]) for row in self.db["read_later"].rows}
+        return {
+            str(row["url"])
+            for row in self.db.execute(
+                "SELECT url FROM read_later WHERE removed_at IS NULL"
+            ).fetchall()
+        }
 
     def list_read_later(self) -> list[dict[str, Any]]:
-        """Return all read-later items ordered newest-saved first.
+        """Return active read-later items ordered newest-saved first.
 
+        Soft-deleted entries (removed_at IS NOT NULL) are excluded so the
+        queue UI only shows articles the user has not yet processed.
         ``key_takeaways`` is deserialized back to a list before returning.
         """
         if "read_later" not in self.db.table_names():
             return []
         rows = list(
             self.db.query(
-                "SELECT * FROM read_later ORDER BY saved_at DESC",
+                "SELECT * FROM read_later"
+                " WHERE removed_at IS NULL"
+                " ORDER BY saved_at DESC",
             )
         )
         for row in rows:

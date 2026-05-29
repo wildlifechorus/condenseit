@@ -509,7 +509,13 @@ class PreferenceEngine:
                 pass
         if "read_later" in self.store.db.table_names():
             try:
-                saved_count = self.store.db["read_later"].count
+                # Count all rows — including soft-deleted ones — so the stat
+                # reflects articles the user has ever saved, not just the
+                # current queue length.
+                row = self.store.db.execute(
+                    "SELECT COUNT(*) FROM read_later"
+                ).fetchone()
+                saved_count = int(row[0]) if row else 0
             except Exception:
                 pass
         dismissed_count = self.store.dismissed_count()

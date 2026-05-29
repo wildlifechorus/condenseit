@@ -151,7 +151,7 @@ export interface PreferenceProfile {
   rating_distribution: Record<string, number>;
   /** Number of articles that were marked as read (implicit positive signal). */
   implicit_read_count: number;
-  /** Number of articles currently saved for later (implicit strong positive). */
+  /** Number of articles ever saved for later, including processed ones (implicit strong positive). */
   implicit_saved_count: number;
   /** Number of articles the user has dismissed (implicit negative signal). */
   implicit_dismissed_count: number;
