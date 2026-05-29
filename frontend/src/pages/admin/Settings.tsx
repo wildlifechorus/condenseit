@@ -450,19 +450,47 @@ export function SettingsPage() {
         <Card>
           <CardHeader
             title="Language preferences"
-            description="Only include articles in these languages. Leave empty to accept all languages."
+            description="Control which languages are collected and what language digests are written in."
           />
-          <Field
-            label="Preferred languages"
-            hint="Type an ISO 639-1 code (e.g. en, pt, de) and press Enter or comma to add. Leave empty for no filter."
-          >
-            <LanguageInput
-              value={cfg.preferred_languages}
-              onChange={(langs) =>
-                setCfg((p) => (p ? { ...p, preferred_languages: langs } : p))
+          <div class="space-y-4">
+            <Field
+              label="Preferred languages (input filter)"
+              hint="Type an ISO 639-1 code (e.g. en, pt, de) and press Enter or comma to add. Filters which articles are collected. Leave empty for no filter."
+            >
+              <LanguageInput
+                value={cfg.preferred_languages}
+                onChange={(langs) =>
+                  setCfg((p) => (p ? { ...p, preferred_languages: langs } : p))
+                }
+              />
+            </Field>
+
+            <Field
+              label="Digest output language"
+              hint={
+                'ISO 639-1 code for the LLM output language (e.g. "en", "fr", "de"), or "source" to match each article\'s detected language. Default: en.'
               }
-            />
-          </Field>
+            >
+              <input
+                type="text"
+                class={INPUT}
+                value={cfg.digest_language ?? 'en'}
+                placeholder="en"
+                onInput={(e) =>
+                  setCfg((p) =>
+                    p
+                      ? {
+                          ...p,
+                          digest_language: (
+                            e.target as HTMLInputElement
+                          ).value.trim().toLowerCase() || 'en',
+                        }
+                      : p,
+                  )
+                }
+              />
+            </Field>
+          </div>
         </Card>
 
         <Card>
@@ -800,20 +828,22 @@ export function SettingsPage() {
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field
                 label="Embedding provider"
-                hint="off = disabled. ollama = free local. openrouter = cloud (fractions of a cent per run)."
+                hint="off = disabled. ollama = free local. openrouter = cloud (~$0.001/run). openai = any OpenAI-compatible /v1/embeddings endpoint (uses llm.openai_base_url)."
               >
                 <select
                   class={INPUT}
                   value={weights.embedding_provider}
                   onChange={(e) => {
                     const provider = (e.target as HTMLSelectElement)
-                      .value as 'off' | 'ollama' | 'openrouter';
+                      .value as 'off' | 'ollama' | 'openrouter' | 'openai';
                     const defaultModel =
                       provider === 'ollama'
                         ? 'nomic-embed-text'
                         : provider === 'openrouter'
                           ? 'openai/text-embedding-3-small'
-                          : '';
+                          : provider === 'openai'
+                            ? 'text-embedding-3-small'
+                            : '';
                     setWeights((w) =>
                       w
                         ? {
@@ -823,7 +853,8 @@ export function SettingsPage() {
                               w.embedding_model &&
                               w.embedding_model !== 'nomic-embed-text' &&
                               w.embedding_model !==
-                                'openai/text-embedding-3-small'
+                                'openai/text-embedding-3-small' &&
+                              w.embedding_model !== 'text-embedding-3-small'
                                 ? w.embedding_model
                                 : defaultModel,
                           }
@@ -834,6 +865,7 @@ export function SettingsPage() {
                   <option value="off">off</option>
                   <option value="ollama">ollama</option>
                   <option value="openrouter">openrouter</option>
+                  <option value="openai">openai (custom endpoint)</option>
                 </select>
               </Field>
 
@@ -843,7 +875,9 @@ export function SettingsPage() {
                   hint={
                     weights.embedding_provider === 'openrouter'
                       ? 'openai/text-embedding-3-small is cheapest ($0.02/1M tokens, high quality).'
-                      : 'nomic-embed-text is free and works well for news content.'
+                      : weights.embedding_provider === 'openai'
+                        ? 'Model name on your custom endpoint (e.g. text-embedding-3-small).'
+                        : 'nomic-embed-text is free and works well for news content.'
                   }
                 >
                   <input
@@ -853,7 +887,9 @@ export function SettingsPage() {
                     placeholder={
                       weights.embedding_provider === 'openrouter'
                         ? 'openai/text-embedding-3-small'
-                        : 'nomic-embed-text'
+                        : weights.embedding_provider === 'openai'
+                          ? 'text-embedding-3-small'
+                          : 'nomic-embed-text'
                     }
                     onInput={(e) =>
                       setWeights((w) =>

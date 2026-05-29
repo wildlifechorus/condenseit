@@ -79,8 +79,9 @@ class TestSharedPromptHelpers:
         # The old local definitions should be gone (check for assignment, not substring)
         assert "_SYSTEM_PROMPT =" not in source
         assert "def _build_user_prompt" not in source
-        # And the shared names should be imported and used
-        assert "CHAT_SYSTEM_PROMPT" in source
+        # And the shared helpers should be imported and used (build_chat_system_prompt
+        # replaced the static CHAT_SYSTEM_PROMPT constant to support dynamic language).
+        assert "build_chat_system_prompt" in source
         assert "build_chat_user_prompt" in source
 
 

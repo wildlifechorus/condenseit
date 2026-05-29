@@ -10,6 +10,7 @@ services:
       CONDENSEIT_DATA_DIR: /app/data
       CONDENSEIT_FRONTEND_DIST: /app/frontend/dist
       OLLAMA_HOST: http://host.docker.internal:11434
+      TZ: UTC
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

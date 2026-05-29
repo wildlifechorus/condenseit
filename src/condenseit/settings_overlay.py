@@ -75,6 +75,11 @@ def apply_db_settings(config: AppConfig, store: ContentStore) -> AppConfig:
         except ValueError:
             pass
 
+    # Digest output language
+    digest_lang = store.get_setting("digest_language", "")
+    if digest_lang:
+        config.digest_language = digest_lang
+
     # Language preferences
     langs_raw = store.get_setting("preferred_languages", "")
     if langs_raw:

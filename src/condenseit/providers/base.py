@@ -13,6 +13,105 @@ from typing_extensions import TypedDict
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Language helpers (Issue #7)
+# ---------------------------------------------------------------------------
+
+# Map of ISO 639-1 codes (and common langdetect outputs) to human-readable
+# language names suitable for embedding in LLM prompts.
+_LANG_NAMES: dict[str, str] = {
+    "af": "Afrikaans",
+    "ar": "Arabic",
+    "bg": "Bulgarian",
+    "bn": "Bengali",
+    "ca": "Catalan",
+    "cs": "Czech",
+    "cy": "Welsh",
+    "da": "Danish",
+    "de": "German",
+    "el": "Greek",
+    "en": "English",
+    "es": "Spanish",
+    "et": "Estonian",
+    "fa": "Persian",
+    "fi": "Finnish",
+    "fr": "French",
+    "gu": "Gujarati",
+    "he": "Hebrew",
+    "hi": "Hindi",
+    "hr": "Croatian",
+    "hu": "Hungarian",
+    "hy": "Armenian",
+    "id": "Indonesian",
+    "it": "Italian",
+    "ja": "Japanese",
+    "ka": "Georgian",
+    "kn": "Kannada",
+    "ko": "Korean",
+    "lt": "Lithuanian",
+    "lv": "Latvian",
+    "mk": "Macedonian",
+    "ml": "Malayalam",
+    "mr": "Marathi",
+    "nl": "Dutch",
+    "no": "Norwegian",
+    "pl": "Polish",
+    "pt": "Portuguese",
+    "ro": "Romanian",
+    "ru": "Russian",
+    "sk": "Slovak",
+    "sl": "Slovenian",
+    "sq": "Albanian",
+    "sr": "Serbian",
+    "sv": "Swedish",
+    "sw": "Swahili",
+    "ta": "Tamil",
+    "te": "Telugu",
+    "th": "Thai",
+    "tl": "Filipino",
+    "tr": "Turkish",
+    "uk": "Ukrainian",
+    "ur": "Urdu",
+    "vi": "Vietnamese",
+    "zh": "Chinese",
+    "zh-cn": "Chinese",
+    "zh-tw": "Chinese",
+}
+
+
+def _lang_code_to_name(code: str) -> str:
+    """Map an ISO 639-1 language code to a human-readable name for LLM prompts."""
+    code = code.lower().strip()
+    if code in _LANG_NAMES:
+        return _LANG_NAMES[code]
+    # Unknown code: capitalise and return as-is (e.g. "Eo" for Esperanto).
+    return code.capitalize()
+
+
+def resolve_digest_language(digest_language: str, content: str = "") -> str:
+    """Resolve a digest_language config value to a human-readable language name.
+
+    - ``"en"`` (default) → ``"English"``
+    - ``"source"`` → auto-detect from ``content`` via langdetect; falls back to
+      ``"English"`` if detection fails or content is empty
+    - Any other ISO 639-1 code (e.g. ``"fr"``) → mapped name (``"French"``)
+    """
+    code = digest_language.strip().lower()
+    if not code or code == "en":
+        return "English"
+    if code == "source":
+        if not content:
+            return "English"
+        try:
+            from langdetect import detect  # type: ignore[import-untyped]
+
+            detected = detect(content[:1000])
+            return _lang_code_to_name(detected)
+        except Exception:
+            return "English"
+    return _lang_code_to_name(code)
+
+
 class ArticleSummary(TypedDict):
     """Structured output from a single article summarization call."""
 
@@ -275,11 +374,22 @@ def parse_summary_response(raw: str) -> ArticleSummary:
     )
 
 
-CHAT_SYSTEM_PROMPT = (
-    "You are a concise news analyst. Respond ONLY with a JSON object — "
-    "no markdown, no code fences, no additional text. "
-    "Write all JSON field values in English regardless of the article's language."
-)
+def build_chat_system_prompt(language: str = "English") -> str:
+    """Return the system prompt for chat-completions providers.
+
+    ``language`` is a human-readable language name such as ``"English"`` or
+    ``"French"``.  All JSON field values in the response will be written in
+    that language.
+    """
+    return (
+        "You are a concise news analyst. Respond ONLY with a JSON object — "
+        "no markdown, no code fences, no additional text. "
+        f"Write all JSON field values in {language} regardless of the article's language."
+    )
+
+
+# Backward-compatible alias for the default English system prompt.
+CHAT_SYSTEM_PROMPT = build_chat_system_prompt("English")
 
 
 def build_chat_user_prompt(
@@ -287,8 +397,13 @@ def build_chat_user_prompt(
     content: str,
     max_key_takeaways: int = 5,
     max_summary_paragraphs: int = 5,
+    language: str = "English",
 ) -> str:
-    """Build the per-article user prompt for chat-completions providers."""
+    """Build the per-article user prompt for chat-completions providers.
+
+    ``language`` is a human-readable language name such as ``"English"`` or
+    ``"French"``.
+    """
     takeaway_placeholders = ", ".join(
         f'"<takeaway {i + 1}>"' for i in range(max_key_takeaways)
     )
@@ -296,11 +411,11 @@ def build_chat_user_prompt(
 
     return (
         "Analyze this article and respond with a JSON object "
-        "in exactly this structure. All values must be written in English:\n"
+        f"in exactly this structure. All values must be written in {language}:\n"
         f"{{\n"
-        f'  "tldr": "<one sentence in English: what happened and why it matters>",\n'
+        f'  "tldr": "<one sentence in {language}: what happened and why it matters>",\n'
         f'  "key_takeaways": [{takeaway_placeholders}],\n'
-        f'  "summary": "<detailed summary in English, {max_summary_paragraphs} {para_word}>",\n'  # noqa: E501
+        f'  "summary": "<detailed summary in {language}, {max_summary_paragraphs} {para_word}>",\n'  # noqa: E501
         f'  "topics": ["<topic-1>", "<topic-2>", "<topic-3>"],\n'
         f'  "entities": ["<person-org-product-1>", "<entity-2>"],\n'
         f'  "novelty": <integer 1-5: how surprising or novel vs mainstream coverage>\n'

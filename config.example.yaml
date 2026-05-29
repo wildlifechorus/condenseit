@@ -1,6 +1,11 @@
 model: "llama3.2:3b"
 # Maximum articles per digest run. Override with CONDENSEIT_MAX_ARTICLES_PER_DIGEST.
 max_articles_per_digest: 50
+# Language for digest output. ISO 639-1 code (e.g. "en", "fr", "de") or "source"
+# to auto-detect each article's language and summarize in that language.
+# Default "en" produces English output regardless of the article's source language.
+# Can also be changed in Admin > Settings without restarting the server.
+# digest_language: "en"
 # Reserve one slot per category before filling remaining slots by rank.
 balance_digest_categories: true
 # Maximum articles from any single category in the balanced digest.
@@ -116,13 +121,14 @@ relevance:
   implicit_signal_weight: 0.5
 
   # Semantic (embedding-based) duplicate detection.
-  # Requires embedding_provider to be set to "ollama" or "openrouter".
+  # Requires embedding_provider to be set to "ollama", "openrouter", or "openai".
   # When enabled, articles covering the same story across different sources are
   # collapsed to the highest-ranked version using cosine similarity on embeddings.
-  # embedding_provider: "ollama"
-  # embedding_model: "nomic-embed-text"
+  # embedding_provider: "ollama"       # "ollama", "openrouter", "openai", or "off"
+  # embedding_model: "nomic-embed-text" # For "openai": any model the server supports
   # semantic_dedup_enabled: true
   # semantic_dedup_threshold: 0.85  # practical range: 0.80 (aggressive) - 0.90 (conservative)
+  # Note: "openai" reuses llm.openai_base_url and llm.openai_api_key.
 
   initial_keywords:
     high: ["kubernetes", "CVE", "security", "breaking change", "cursor", "llm"]

@@ -202,16 +202,59 @@ def _call_openrouter(
             budget.record_spend(
                 cost, model=model, tokens=int(usage.get("total_tokens", 0) or 0)
             )
-        choices = data.get("choices") or []
-        if not choices:
-            return ""
-        content = str(choices[0]["message"]["content"]).strip()
-        # Some OpenRouter models expose reasoning in a separate field; strip it.
-        reasoning = choices[0].get("message", {}).get("reasoning", "") or ""
-        if reasoning:
-            # Only keep content that is not just the reasoning repeated.
-            content = content.replace(reasoning.strip(), "").strip()
-        return content
+    choices = data.get("choices") or []
+    if not choices:
+        return ""
+    content = str(choices[0]["message"]["content"]).strip()
+    # Some OpenRouter models expose reasoning in a separate field; strip it.
+    reasoning = choices[0].get("message", {}).get("reasoning", "") or ""
+    if reasoning:
+        # Only keep content that is not just the reasoning repeated.
+        content = content.replace(reasoning.strip(), "").strip()
+    return content
+
+
+def _call_openai_compat(
+    prompt: str,
+    model: str,
+    base_url: str,
+    api_key: str = "",
+) -> str:
+    """Call any OpenAI-compatible /chat/completions endpoint for reranking."""
+    import httpx
+
+    base_url = base_url.rstrip("/")
+    payload = {
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are a relevance ranker. Respond ONLY with a JSON array. "
+                    "No markdown, no code fences, no extra text, no thinking."
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.1,
+        "max_tokens": 2500,
+    }
+    headers: dict[str, str] = {}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    with httpx.Client(timeout=120.0) as client:
+        resp = client.post(
+            f"{base_url}/chat/completions",
+            json=payload,
+            headers=headers,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    choices = data.get("choices") or []
+    if not choices:
+        return ""
+    return str(choices[0]["message"]["content"]).strip()
 
 
 def _call_ollama(prompt: str, model: str, host: str) -> str:
@@ -241,6 +284,8 @@ def rerank(
     model: str,
     api_key: str | None = None,
     ollama_host: str | None = None,
+    openai_base_url: str | None = None,
+    openai_api_key: str = "",
     top_k: int = 30,
     blend: float = 0.4,
     budget: BudgetTracker | None = None,
@@ -250,6 +295,9 @@ def rerank(
     Returns the full list with LLM-blended ``preference_score`` values and
     ``llm_rerank`` / ``llm_reason`` keys added to ``score_breakdown``.
     Fails silently (original order preserved) when the LLM call or parse fails.
+
+    Provider selection order: OpenRouter (api_key) → OpenAI-compat
+    (openai_base_url) → Ollama (ollama_host).
     """
     if not articles or not profile_narrative:
         return articles
@@ -262,6 +310,10 @@ def rerank(
     try:
         if api_key:
             raw = _call_openrouter(prompt, model, api_key, budget=budget)
+        elif openai_base_url:
+            raw = _call_openai_compat(
+                prompt, model, openai_base_url, api_key=openai_api_key
+            )
         elif ollama_host:
             raw = _call_ollama(prompt, model, ollama_host)
         else:

@@ -564,6 +564,7 @@ def create_admin_router(
             excl_kw = json.loads(kw_raw) if kw_raw else merged.exclude_keywords
         except Exception:
             excl_kw = merged.exclude_keywords
+        digest_lang = store.get_setting("digest_language", "") or merged.digest_language
         return JSONResponse(
             {
                 "max_articles_per_digest": merged.max_articles_per_digest,
@@ -574,6 +575,7 @@ def create_admin_router(
                 "exclude_keywords": excl_kw,
                 "max_key_takeaways": merged.max_key_takeaways,
                 "max_summary_paragraphs": merged.max_summary_paragraphs,
+                "digest_language": digest_lang,
                 "youtube_transcription_enabled": merged.youtube_transcription.enabled,
                 "youtube_transcription_model": merged.youtube_transcription.model,
                 "youtube_transcription_max_duration": merged.youtube_transcription.max_duration_seconds,
@@ -668,6 +670,12 @@ def create_admin_router(
                     {"error": "max_summary_paragraphs must be 1-10"},
                     status_code=422,
                 )
+        if "digest_language" in body:
+            lang_val = str(body["digest_language"]).strip().lower()
+            if lang_val:
+                store.set_setting("digest_language", lang_val)
+            else:
+                store.set_setting("digest_language", "en")
         if "youtube_transcription_enabled" in body:
             store.set_setting(
                 "youtube_transcription_enabled",

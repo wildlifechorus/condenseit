@@ -10,11 +10,12 @@ import httpx
 
 from condenseit.digest.format import build_digest_markdown
 from condenseit.providers.base import (
-    CHAT_SYSTEM_PROMPT,
     ArticleSummary,
     SummarizerProvider,
+    build_chat_system_prompt,
     build_chat_user_prompt,
     parse_summary_response,
+    resolve_digest_language,
 )
 from condenseit.providers.budget import BudgetTracker
 
@@ -31,12 +32,14 @@ class OpenRouterSummarizer(SummarizerProvider):
         budget: BudgetTracker | None = None,
         max_key_takeaways: int = 5,
         max_summary_paragraphs: int = 5,
+        digest_language: str = "en",
     ) -> None:
         self.model = model
         self.api_key = api_key
         self.budget = budget
         self.max_key_takeaways = max_key_takeaways
         self.max_summary_paragraphs = max_summary_paragraphs
+        self.digest_language = digest_language
 
     @property
     def model_name(self) -> str:
@@ -108,8 +111,9 @@ class OpenRouterSummarizer(SummarizerProvider):
     ) -> ArticleSummary:
         content = (article.get("content") or "")[:4000]
         title = article.get("title", "Untitled")
+        language = resolve_digest_language(self.digest_language, content)
         messages = [
-            {"role": "system", "content": CHAT_SYSTEM_PROMPT},
+            {"role": "system", "content": build_chat_system_prompt(language)},
             {
                 "role": "user",
                 "content": build_chat_user_prompt(
@@ -117,6 +121,7 @@ class OpenRouterSummarizer(SummarizerProvider):
                     content,
                     self.max_key_takeaways,
                     self.max_summary_paragraphs,
+                    language=language,
                 ),
             },
         ]

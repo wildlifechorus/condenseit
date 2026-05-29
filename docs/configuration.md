@@ -243,7 +243,13 @@ set in `config.yaml`:
 - `max_summary_paragraphs` (default `5`, range 1-10): number of paragraphs in
   the LLM-generated article summary.
 - `preferred_languages`: ISO 639-1 codes (e.g. `["en", "pt"]`). Leave empty to
-  accept all languages. Language detection uses `langdetect`.
+  accept all languages. Language detection uses `langdetect`. This controls
+  which articles are *collected*; it does not affect the output language.
+- `digest_language` (default `"en"`): language for digest output. Set to an
+  ISO 639-1 code (e.g. `"fr"`, `"de"`, `"es"`) to produce summaries in that
+  language, or `"source"` to auto-detect each article's language and write the
+  summary in the same language as the article. Changeable in **Admin > Settings**
+  without restarting the server.
 - `youtube_transcription.enabled` (default `false`): enable Whisper audio transcription
   for YouTube videos that lack captions. See [YouTube transcription](#youtube-transcription).
 
@@ -358,13 +364,14 @@ content hash, and model), so re-running digests does not re-embed known articles
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `relevance.embedding_provider` | `"off"` | `"ollama"`, `"openrouter"`, or `"off"` |
+| `relevance.embedding_provider` | `"off"` | `"ollama"`, `"openrouter"`, `"openai"`, or `"off"` |
 | `relevance.embedding_model` | `"nomic-embed-text"` | Embedding model name |
 | `relevance.embedding_preference_weight` | `0.5` | Weight of the embedding signal in the final score |
 
 Recommended models:
 - **Ollama (free)**: `nomic-embed-text` - fast, strong quality, requires the model to be pulled once
 - **OpenRouter**: `openai/text-embedding-3-small` - $0.02 per million tokens, high quality; a full digest run typically costs under $0.001
+- **OpenAI-compatible**: set `embedding_provider: "openai"` to use any server that exposes `/v1/embeddings`. Reuses `llm.openai_base_url` and `llm.openai_api_key`, no extra config needed.
 
 ##### Semantic duplicate detection
 
@@ -429,6 +436,11 @@ The reason string is stored in `score_breakdown.llm_reason` and shown in the
 cheap model like `deepseek/deepseek-v3` on OpenRouter costs under $0.005 per run.
 `llm_rerank_blend: 0.3` is a safe starting point; increase it once you are happy
 with the quality.
+
+**Provider selection**: the reranker follows the same priority order as
+summarization, OpenRouter if an API key is present, then OpenAI-compatible
+endpoint if `llm.provider: "openai"` and `llm.openai_base_url` is set, then
+local Ollama. No separate reranker-provider config is needed.
 
 ### Cold-start bootstrap
 
@@ -513,6 +525,11 @@ Use any [IANA timezone name](https://en.wikipedia.org/wiki/List_of_tz_database_t
 stored in the database when saved via the UI, which overrides the YAML value.
 The next-run time shown in the admin panel is displayed in both your local
 timezone and UTC.
+
+> **Docker users**: the `TZ=UTC` environment variable is set by default in
+> `docker-compose.yml` so the container clock matches the default schedule
+> timezone. If you change `schedule.timezone`, you may also want to update
+> `TZ` in your `docker-compose.yml` to keep log timestamps consistent.
 
 If you prefer external scheduling (cron, systemd, launchd), the
 `bash scripts/install.sh` helper can emit ready-to-paste snippets for your

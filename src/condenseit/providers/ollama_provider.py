@@ -12,6 +12,7 @@ from condenseit.providers.base import (
     ArticleSummary,
     SummarizerProvider,
     parse_summary_response,
+    resolve_digest_language,
 )
 
 logger = logging.getLogger(__name__)
@@ -22,8 +23,13 @@ def _build_summary_prompt(
     content: str,
     max_key_takeaways: int = 5,
     max_summary_paragraphs: int = 5,
+    language: str = "English",
 ) -> str:
-    """Build the per-article summarization prompt with configurable output size."""
+    """Build the per-article summarization prompt with configurable output size.
+
+    ``language`` is a human-readable language name such as ``"English"`` or
+    ``"French"``.
+    """
     takeaway_placeholders = ", ".join(
         f'"<takeaway {i + 1}>"' for i in range(max_key_takeaways)
     )
@@ -31,12 +37,12 @@ def _build_summary_prompt(
 
     return (
         "Analyze this article and respond ONLY with a JSON object — no markdown, "
-        "no code fences, no extra text. All values must be written in English.\n\n"
+        f"no code fences, no extra text. All values must be written in {language}.\n\n"
         "Use exactly this structure:\n"
         f"{{\n"
-        f'  "tldr": "<one sentence in English: what happened and why it matters>",\n'
+        f'  "tldr": "<one sentence in {language}: what happened and why it matters>",\n'
         f'  "key_takeaways": [{takeaway_placeholders}],\n'
-        f'  "summary": "<detailed summary in English, {max_summary_paragraphs} {para_word}>",\n'  # noqa: E501
+        f'  "summary": "<detailed summary in {language}, {max_summary_paragraphs} {para_word}>",\n'  # noqa: E501
         f'  "topics": ["<topic-1>", "<topic-2>", "<topic-3>"],\n'
         f'  "entities": ["<person-org-product-1>", "<entity-2>"],\n'
         f'  "novelty": <integer 1-5: how surprising or novel vs mainstream coverage>\n'
@@ -54,11 +60,13 @@ class OllamaSummarizer(SummarizerProvider):
         host: str = "http://localhost:11434",
         max_key_takeaways: int = 5,
         max_summary_paragraphs: int = 5,
+        digest_language: str = "en",
     ) -> None:
         self.model = model
         self.client = ollama.Client(host=host)
         self.max_key_takeaways = max_key_takeaways
         self.max_summary_paragraphs = max_summary_paragraphs
+        self.digest_language = digest_language
 
     @property
     def model_name(self) -> str:
@@ -70,11 +78,13 @@ class OllamaSummarizer(SummarizerProvider):
     ) -> ArticleSummary:
         content = (article.get("content") or "")[:4000]
         title = article.get("title", "Untitled")
+        language = resolve_digest_language(self.digest_language, content)
         prompt = _build_summary_prompt(
             title,
             content,
             self.max_key_takeaways,
             self.max_summary_paragraphs,
+            language=language,
         )
         response = self.client.generate(
             model=self.model,

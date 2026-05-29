@@ -185,7 +185,7 @@ export interface RankingWeights {
   /** Phase 1: weight of the embedding cosine-similarity signal. */
   embedding_preference_weight: number;
   /** Phase 1: embedding provider selection. */
-  embedding_provider: 'off' | 'ollama' | 'openrouter';
+  embedding_provider: 'off' | 'ollama' | 'openrouter' | 'openai';
   /** Phase 1: model used to generate embeddings. */
   embedding_model: string;
   /** Phase 2: weight of the LLM topic overlap signal. */
@@ -272,6 +272,9 @@ export interface DigestConfig {
   exclude_keywords: string[];
   max_key_takeaways: number;
   max_summary_paragraphs: number;
+  /** ISO 639-1 code for the digest output language, or "source" to match
+   *  each article's detected language. Default "en". */
+  digest_language: string;
   youtube_transcription_enabled: boolean;
   youtube_transcription_model: string;
   youtube_transcription_max_duration: number;

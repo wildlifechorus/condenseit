@@ -136,6 +136,8 @@ class DigestPipeline:
             self.config.relevance.embedding_model,
             self.config.llm.ollama_host,
             self._or_key,
+            openai_base_url=self.config.llm.openai_base_url,
+            openai_api_key=self.config.llm.openai_api_key,
             budget=self._ai_budget,
         )
         self.preferences = PreferenceEngine(
@@ -342,9 +344,20 @@ class DigestPipeline:
                     or self.summarizer.model_name
                 )
                 _api_key = self._or_key or None
+                # OpenAI-compat reranking: used when no OpenRouter key and
+                # llm.provider is "openai" with a configured base URL.
+                _openai_base_url: str | None = None
+                _openai_api_key: str = ""
+                if (
+                    not _api_key
+                    and self.config.llm.provider == "openai"
+                    and self.config.llm.openai_base_url
+                ):
+                    _openai_base_url = self.config.llm.openai_base_url
+                    _openai_api_key = self.config.llm.openai_api_key
                 _ollama = (
                     self.config.llm.ollama_host
-                    if not _api_key
+                    if not _api_key and not _openai_base_url
                     else None
                 )
                 ranked = rerank(
@@ -353,6 +366,8 @@ class DigestPipeline:
                     model=_rerank_model,
                     api_key=_api_key,
                     ollama_host=_ollama,
+                    openai_base_url=_openai_base_url,
+                    openai_api_key=_openai_api_key,
                     top_k=self.config.relevance.llm_rerank_top_k,
                     blend=self.config.relevance.llm_rerank_blend,
                     budget=self._ai_budget,

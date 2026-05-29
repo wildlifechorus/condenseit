@@ -1,7 +1,8 @@
 """Semantic embedding providers for article similarity scoring.
 
-Supports local Ollama (nomic-embed-text, free) and OpenRouter
-(text-embedding-3-small, ~$0.002 per full digest run).
+Supports local Ollama (nomic-embed-text, free), OpenRouter
+(text-embedding-3-small, ~$0.002 per full digest run), and any
+OpenAI-compatible /v1/embeddings endpoint (llm.openai_base_url).
 
 Embeddings are cached in the ``article_embeddings`` table keyed by
 (url, model, content_hash) so articles are only re-embedded when their
@@ -141,6 +142,51 @@ class OpenRouterEmbeddingProvider(EmbeddingProvider):
         return None
 
 
+class OpenAIEmbeddingProvider(EmbeddingProvider):
+    """Embedding via any OpenAI-compatible /v1/embeddings endpoint.
+
+    Works with real OpenAI (https://api.openai.com/v1), Azure OpenAI,
+    Ollama's OpenAI-compat layer, LM Studio, vLLM, etc.
+    """
+
+    def __init__(
+        self,
+        base_url: str,
+        model: str = "text-embedding-3-small",
+        api_key: str = "",
+    ) -> None:
+        self._base_url = base_url.rstrip("/")
+        self._model = model
+        self._api_key = api_key
+
+    @property
+    def model_name(self) -> str:
+        return self._model
+
+    def embed(self, text: str) -> list[float] | None:
+        import httpx
+
+        headers: dict[str, str] = {"Content-Type": "application/json"}
+        if self._api_key:
+            headers["Authorization"] = f"Bearer {self._api_key}"
+
+        try:
+            resp = httpx.post(
+                f"{self._base_url}/embeddings",
+                json={"model": self._model, "input": text[:8000]},
+                headers=headers,
+                timeout=30.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            items = data.get("data") or []
+            if items and isinstance(items[0].get("embedding"), list):
+                return items[0]["embedding"]
+        except Exception as exc:
+            logger.warning("OpenAI-compat embedding failed: %s", exc)
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Vector storage utilities
 # ---------------------------------------------------------------------------
@@ -208,6 +254,8 @@ def build_embedding_provider(
     embedding_model: str,
     ollama_host: str,
     openrouter_api_key: str,
+    openai_base_url: str = "",
+    openai_api_key: str = "",
     budget: BudgetTracker | None = None,
 ) -> EmbeddingProvider | None:
     """Return an EmbeddingProvider or None when the feature is disabled."""
@@ -224,6 +272,18 @@ def build_embedding_provider(
             return None
         return OpenRouterEmbeddingProvider(
             api_key=openrouter_api_key, model=embedding_model, budget=budget
+        )
+    if mode == "openai":
+        if not openai_base_url:
+            logger.warning(
+                "embedding_provider=openai but llm.openai_base_url is not set; "
+                "embeddings disabled"
+            )
+            return None
+        return OpenAIEmbeddingProvider(
+            base_url=openai_base_url,
+            model=embedding_model,
+            api_key=openai_api_key,
         )
     logger.warning("Unknown embedding_provider %r; embeddings disabled", mode)
     return None

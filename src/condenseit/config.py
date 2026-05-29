@@ -126,9 +126,10 @@ class RelevanceConfig(BaseModel):
     # Provider for embedding computation. "off" disables semantic similarity.
     # "ollama" uses local Ollama (free, requires nomic-embed-text pulled).
     # "openrouter" uses the OpenRouter embeddings API (small cost).
-    embedding_provider: Literal["ollama", "openrouter", "off"] = "off"
+    # "openai" uses any OpenAI-compatible /v1/embeddings endpoint (llm.openai_base_url).
+    embedding_provider: Literal["ollama", "openrouter", "openai", "off"] = "off"
     # Embedding model name. For Ollama: "nomic-embed-text". For OpenRouter:
-    # "openai/text-embedding-3-small".
+    # "openai/text-embedding-3-small". For OpenAI-compat: model name on that server.
     embedding_model: str = "nomic-embed-text"
     # Weight of the embedding cosine-similarity signal in the score breakdown.
     embedding_preference_weight: float = 0.5
@@ -215,7 +216,13 @@ class AppConfig(BaseModel):
     # Number of articles to summarize concurrently. Higher = faster but more
     # likely to hit provider rate limits. Set to 1 to disable concurrency.
     summarize_workers: int = Field(default=4, ge=1, le=16)
-    schedule: dict[str, list[str]] = Field(
+    # Language for digest output. ISO 639-1 code (e.g. "en", "fr", "de") or
+    # "source" to auto-detect each article's language and summarize in that
+    # language. Default "en" preserves the original English-only behaviour.
+    digest_language: str = "en"
+    # schedule.times: list of "HH:MM" strings; schedule.timezone: IANA name.
+    # Using dict[str, Any] because 'timezone' is a plain string, not a list.
+    schedule: dict[str, Any] = Field(
         default_factory=lambda: {"times": ["07:00", "18:00"]},
     )
     feeds: list[FeedConfig] = Field(default_factory=list)

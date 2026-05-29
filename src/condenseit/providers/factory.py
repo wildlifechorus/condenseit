@@ -31,6 +31,7 @@ def build_summarizer(
             host=config.llm.ollama_host,
             max_key_takeaways=max_takeaways,
             max_summary_paragraphs=max_paragraphs,
+            digest_language=config.digest_language,
         )
 
     if provider == "openai":
@@ -46,6 +47,7 @@ def build_summarizer(
             api_key=api_key,
             max_key_takeaways=max_takeaways,
             max_summary_paragraphs=max_paragraphs,
+            digest_language=config.digest_language,
         )
 
     or_key = keys.get_key("openrouter") or config.llm.openrouter_api_key
@@ -70,6 +72,7 @@ def build_summarizer(
         budget=budget,
         max_key_takeaways=max_takeaways,
         max_summary_paragraphs=max_paragraphs,
+        digest_language=config.digest_language,
     )
 
     if provider == "openrouter":
@@ -81,6 +84,7 @@ def build_summarizer(
             host=config.llm.ollama_host,
             max_key_takeaways=max_takeaways,
             max_summary_paragraphs=max_paragraphs,
+            digest_language=config.digest_language,
         )
         return FallbackChainProvider(ollama, cloud)
 
