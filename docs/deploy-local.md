@@ -158,8 +158,8 @@ Docker Hub, see [docker-image.md](docker-image.md#compose-environment-variables)
 **Build from source (contributors):**
 
 ```bash
-make docker-up
-# or: ./scripts/docker-up.sh
+CONDENSEIT_DOCKER_BUILD=1 ./scripts/docker-up.sh
+# or: CONDENSEIT_DOCKER_BUILD=1 make docker-up
 # or: docker compose up -d --build
 ```
 
