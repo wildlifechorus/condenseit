@@ -1,7 +1,5 @@
 """Build summarizer from config and secrets."""
 
-from __future__ import annotations
-
 from condenseit.config import AppConfig
 from condenseit.providers.base import SummarizerProvider
 from condenseit.providers.budget import BudgetTracker

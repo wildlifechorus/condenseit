@@ -1,7 +1,5 @@
 """Background digest runs triggered from the web UI."""
 
-from __future__ import annotations
-
 import logging
 import threading
 from dataclasses import asdict, dataclass
@@ -26,8 +24,8 @@ class _ListHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         try:
             self._lines.append(self.format(record))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Log record formatting failed: %s", exc)
 
     def get_text(self) -> str:
         return "\n".join(self._lines)

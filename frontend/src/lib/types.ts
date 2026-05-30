@@ -16,13 +16,13 @@ export interface ScoreBreakdown {
   implicit_category: number;
   implicit_source: number;
   synonym_boost: number;
-  /** Phase 1: cosine similarity to the decay-weighted embedding centroid. */
+  /** Cosine similarity to the decay-weighted embedding centroid. */
   embedding_similarity: number;
-  /** Phase 2: overlap with LLM-extracted topic profile. */
+  /** Overlap with LLM-extracted topic profile. */
   topic_score: number;
-  /** Phase 3: blended score component from the LLM reranker. */
+  /** Blended score component from the LLM reranker. */
   llm_rerank: number;
-  /** Phase 3: human-readable reason from the LLM reranker (may be absent). */
+  /** Human-readable reason from the LLM reranker (may be absent). */
   llm_reason?: string;
 }
 
@@ -46,13 +46,13 @@ export interface DigestItem {
   preference_score?: number;
   /** Per-signal breakdown of the preference_score. */
   score_breakdown?: ScoreBreakdown;
-  /** Phase 2: LLM-extracted semantic topics (kebab-case). */
+  /** LLM-extracted semantic topics (kebab-case). */
   topics?: string[];
-  /** Phase 2: Named entities (people, orgs, products) mentioned. */
+  /** Named entities (people, orgs, products) mentioned. */
   entities?: string[];
-  /** Phase 2: Novelty score 1-5 (how surprising vs mainstream). */
+  /** Novelty score 1-5 (how surprising vs mainstream). */
   novelty?: number;
-  /** Phase 4: One-sentence relevance note for this reader. */
+  /** One-sentence relevance note for this reader. */
   relevance_to_you?: string;
   /** True when the article matched a per-source highlight keyword rule. */
   highlighted?: boolean;
@@ -167,11 +167,11 @@ export interface PreferenceProfile {
   top_disliked_bigrams: PreferenceTerm[];
   category_preferences: PreferenceCategoryScore[];
   source_preferences: PreferenceSourceScore[];
-  /** Phase 1: true when an embedding profile centroid has been built. */
+  /** True when an embedding profile centroid has been built. */
   embedding_active?: boolean;
-  /** Phase 2: top semantic topics extracted from liked articles. */
+  /** Top semantic topics extracted from liked articles. */
   top_liked_topics?: PreferenceTerm[];
-  /** Phase 2: top semantic topics extracted from disliked articles. */
+  /** Top semantic topics extracted from disliked articles. */
   top_disliked_topics?: PreferenceTerm[];
 }
 
@@ -182,29 +182,27 @@ export interface RankingWeights {
   implicit_signal_weight: number;
   rating_decay_half_life_days: number;
   min_ratings_for_learning: number;
-  /** Phase 1: weight of the embedding cosine-similarity signal. */
+  /** Weight of the embedding cosine-similarity signal. */
   embedding_preference_weight: number;
-  /** Phase 1: embedding provider selection. */
+  /** Embedding provider selection. */
   embedding_provider: 'off' | 'ollama' | 'openrouter' | 'openai';
-  /** Phase 1: model used to generate embeddings. */
+  /** Model used to generate embeddings. */
   embedding_model: string;
-  /** Phase 2: weight of the LLM topic overlap signal. */
+  /** Weight of the LLM topic overlap signal. */
   topic_score_weight: number;
-  /** Phase 3: enable LLM reranker pass. */
+  /** Enable LLM reranker pass. */
   llm_rerank_enabled: boolean;
-  /** Phase 3: model used for reranking (empty = use summarizer model). */
+  /** Model used for reranking (empty = use summarizer model). */
   llm_rerank_model: string;
-  /** Phase 3: number of top candidates sent to the reranker. */
+  /** Number of top candidates sent to the reranker. */
   llm_rerank_top_k: number;
-  /** Phase 3: blend weight between LLM score and classical score (0-1). */
+  /** Blend weight between LLM score and classical score (0-1). */
   llm_rerank_blend: number;
   /** Semantic dedup: use embeddings to collapse same-story articles. Only active when embedding_provider != "off". */
   semantic_dedup_enabled: boolean;
   /** Cosine similarity threshold above which two articles are treated as the same story (0.5-1.0). */
   semantic_dedup_threshold: number;
 }
-
-// ---------- Budget -------------------------------------------------------
 
 export interface OpenRouterUsage {
   usage_daily: number;
@@ -245,8 +243,6 @@ export interface BudgetData {
   local: LocalBudget;
 }
 
-// ---------- Scheduler ----------------------------------------------------
-
 export interface SchedulerStatus {
   enabled: boolean;
   next_run_utc: string | null;
@@ -260,8 +256,6 @@ export interface ScheduleConfig {
   next_run_utc: string | null;
   timezone: string;
 }
-
-// ---------- Digest settings ----------------------------------------------
 
 export interface DigestConfig {
   max_articles_per_digest: number;
@@ -280,14 +274,10 @@ export interface DigestConfig {
   youtube_transcription_max_duration: number;
 }
 
-// ---------- Budget limits ------------------------------------------------
-
 export interface BudgetLimits {
   daily_budget_usd: number;
   monthly_budget_usd: number;
 }
-
-// ---------- Password / security ------------------------------------------
 
 export interface PasswordInfo {
   /** 'default' | 'env' | 'db' */
@@ -301,8 +291,6 @@ export interface FeedTokenInfo {
   feed_url: string | null;
 }
 
-// ---------- Read Later ---------------------------------------------------
-
 /**
  * A digest item that the user has saved to the read-later list.
  * Mirrors DigestItem plus a `saved_at` timestamp set when it was bookmarked.
@@ -311,8 +299,6 @@ export interface ReadLaterItem extends DigestItem {
   saved_at: string;
 }
 
-// ---------- Starred ------------------------------------------------------
-
 /**
  * A digest item the user has starred for permanent keeping.
  * Mirrors DigestItem plus a `starred_at` timestamp set when it was starred.
@@ -320,8 +306,6 @@ export interface ReadLaterItem extends DigestItem {
 export interface StarredItem extends DigestItem {
   starred_at: string;
 }
-
-// ---------- Run logs -----------------------------------------------------
 
 export interface RunLogSummary {
   id: number;

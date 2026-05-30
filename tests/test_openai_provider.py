@@ -21,6 +21,7 @@ from condenseit.providers.openai_provider import OpenAISummarizer
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_httpx_response(body: dict[str, Any], status_code: int = 200) -> MagicMock:
     resp = MagicMock()
     resp.status_code = status_code
@@ -39,6 +40,7 @@ def _chat_response(content: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Shared helpers in base.py
 # ---------------------------------------------------------------------------
+
 
 class TestSharedPromptHelpers:
     def test_chat_system_prompt_is_exported(self) -> None:
@@ -75,6 +77,7 @@ class TestSharedPromptHelpers:
         import inspect
 
         import condenseit.providers.openrouter_provider as orp
+
         source = inspect.getsource(orp)
         # The old local definitions should be gone (check for assignment, not substring)
         assert "_SYSTEM_PROMPT =" not in source
@@ -88,6 +91,7 @@ class TestSharedPromptHelpers:
 # ---------------------------------------------------------------------------
 # OpenAISummarizer unit tests
 # ---------------------------------------------------------------------------
+
 
 class TestOpenAISummarizerInit:
     def test_model_name_property(self) -> None:
@@ -214,14 +218,16 @@ class TestOpenAISummarizerChat:
 
 
 class TestOpenAISummarizerSummarize:
-    _GOOD_JSON = json.dumps({
-        "tldr": "Quick summary.",
-        "key_takeaways": ["Point A", "Point B"],
-        "summary": "Detailed text here.",
-        "topics": ["ai", "news"],
-        "entities": ["OpenAI"],
-        "novelty": 3,
-    })
+    _GOOD_JSON = json.dumps(
+        {
+            "tldr": "Quick summary.",
+            "key_takeaways": ["Point A", "Point B"],
+            "summary": "Detailed text here.",
+            "topics": ["ai", "news"],
+            "entities": ["OpenAI"],
+            "novelty": 3,
+        }
+    )
 
     def _make_summarizer(self) -> OpenAISummarizer:
         return OpenAISummarizer(
@@ -248,9 +254,11 @@ class TestOpenAISummarizerSummarize:
     def test_summarize_article_sends_system_prompt(self) -> None:
         summarizer = self._make_summarizer()
         captured: list[Any] = []
+
         def capture(messages: list[Any], **kw: Any) -> str:
             captured.extend(messages)
             return self._GOOD_JSON
+
         with patch.object(summarizer, "_chat", side_effect=capture):
             summarizer.summarize_article({"title": "T", "content": "C"})
         assert captured[0]["role"] == "system"
@@ -260,9 +268,11 @@ class TestOpenAISummarizerSummarize:
         summarizer = self._make_summarizer()
         long_content = "x" * 10_000
         sent_content: list[str] = []
+
         def capture(messages: list[Any], **kw: Any) -> str:
             sent_content.append(messages[1]["content"])
             return self._GOOD_JSON
+
         with patch.object(summarizer, "_chat", side_effect=capture):
             summarizer.summarize_article({"title": "T", "content": long_content})
         assert "x" * 4001 not in sent_content[0]
@@ -279,9 +289,11 @@ class TestOpenAISummarizerSummarize:
     def test_summarize_article_uses_untitled_fallback(self) -> None:
         summarizer = self._make_summarizer()
         sent: list[Any] = []
+
         def capture(messages: list[Any], **kw: Any) -> str:
             sent.extend(messages)
             return self._GOOD_JSON
+
         with patch.object(summarizer, "_chat", side_effect=capture):
             summarizer.summarize_article({"content": "C"})
         assert "Untitled" in sent[1]["content"]
@@ -289,10 +301,23 @@ class TestOpenAISummarizerSummarize:
     def test_generate_digest_returns_string(self) -> None:
         summarizer = self._make_summarizer()
         result = summarizer.generate_digest(
-            {"General": [{"title": "X", "url": "https://x.com", "summary": "s",
-                          "tldr": "t", "key_takeaways": [], "source": "src",
-                          "published_at": None, "novelty": 0,
-                          "relevance_to_you": "", "topics": [], "entities": []}]}
+            {
+                "General": [
+                    {
+                        "title": "X",
+                        "url": "https://x.com",
+                        "summary": "s",
+                        "tldr": "t",
+                        "key_takeaways": [],
+                        "source": "src",
+                        "published_at": None,
+                        "novelty": 0,
+                        "relevance_to_you": "",
+                        "topics": [],
+                        "entities": [],
+                    }
+                ]
+            }
         )
         assert isinstance(result, str)
         assert len(result) > 0
@@ -301,6 +326,7 @@ class TestOpenAISummarizerSummarize:
 # ---------------------------------------------------------------------------
 # Config: new LlmConfig fields
 # ---------------------------------------------------------------------------
+
 
 class TestLlmConfigDefaults:
     def test_openai_fields_default_empty(self) -> None:
@@ -377,6 +403,7 @@ class TestLoadConfigOpenAIEnvOverrides:
 # ---------------------------------------------------------------------------
 # Factory: build_summarizer returns correct provider
 # ---------------------------------------------------------------------------
+
 
 class TestBuildSummarizerOpenAI:
     def _make_store(self) -> MagicMock:
@@ -482,11 +509,12 @@ class TestBuildSummarizerOpenAI:
 # Settings overlay: DB overrides
 # ---------------------------------------------------------------------------
 
+
 class TestSettingsOverlayOpenAI:
     def _make_store(self, settings: dict[str, str]) -> MagicMock:
         store = MagicMock()
-        store.get_setting.side_effect = (
-            lambda key, default="": settings.get(key, default)
+        store.get_setting.side_effect = lambda key, default="": settings.get(
+            key, default
         )
         return store
 

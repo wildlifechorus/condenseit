@@ -8,8 +8,6 @@ from the DB on every loop iteration so admin-panel changes take effect without
 a restart.
 """
 
-from __future__ import annotations
-
 import asyncio
 import logging
 import os
@@ -58,7 +56,11 @@ def _seconds_until_next(
     candidates: list[datetime] = []
     for h, m in parsed_times:
         candidate = datetime(
-            today.year, today.month, today.day, h, m,
+            today.year,
+            today.month,
+            today.day,
+            h,
+            m,
             tzinfo=now.tzinfo,
         )
         if candidate <= now:

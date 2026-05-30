@@ -5,15 +5,14 @@ Every public GitHub repository exposes a releases Atom feed at
 or API key is required for public repositories.
 """
 
-from __future__ import annotations
-
 import logging
 from datetime import UTC, datetime
-from email.utils import parsedate_to_datetime
 
 import feedparser
 import httpx
 
+from condenseit.collectors.feed_dates import parse_feed_entry_date
+from condenseit.collectors.health import collect_with_health
 from condenseit.config import GitHubReleasesConfig
 from condenseit.fetch_headers import digest_fetch_headers
 from condenseit.store.database import ContentStore
@@ -41,16 +40,14 @@ class GitHubReleasesCollector:
         articles: list[dict[str, str]] = []
         health: list[tuple[str, str | None, int]] = []
         for cfg in self.sources:
-            atom_url = f'https://github.com/{cfg.repo}/releases.atom'
-            try:
-                items = self._collect_repo(cfg, atom_url)
-                articles.extend(items)
-                health.append((atom_url, None, len(items)))
-            except Exception as exc:
-                logger.exception(
-                    'GitHub Releases collect failed for %s', cfg.repo,
-                )
-                health.append((atom_url, str(exc), 0))
+            atom_url = f"https://github.com/{cfg.repo}/releases.atom"
+            items, entry = collect_with_health(
+                atom_url,
+                lambda cfg=cfg, atom_url=atom_url: self._collect_repo(cfg, atom_url),
+                log_label=f"GitHub Releases collect failed for {cfg.repo}",
+            )
+            articles.extend(items)
+            health.append(entry)
         return articles, health
 
     def _collect_repo(
@@ -64,8 +61,8 @@ class GitHubReleasesCollector:
 
         items: list[dict[str, str]] = []
         for entry in feed.entries[:_MAX_ENTRIES]:
-            link = entry.get('link', '')
-            title = entry.get('title', '')
+            link = entry.get("link", "")
+            title = entry.get("title", "")
             if not title or not link:
                 continue
 
@@ -77,14 +74,14 @@ class GitHubReleasesCollector:
             published = self._parse_published(entry)
             items.append(
                 {
-                    'url': link,
-                    'title': f'{cfg.repo}: {title}',
-                    'content': content,
-                    'source': f'GitHub: {cfg.repo}',
-                    'category': cfg.category,
-                    'content_hash': ContentStore.content_hash(content),
-                    'published_at': published,
-                    'collected_at': datetime.now(UTC).isoformat(),
+                    "url": link,
+                    "title": f"{cfg.repo}: {title}",
+                    "content": content,
+                    "source": f"GitHub: {cfg.repo}",
+                    "category": cfg.category,
+                    "content_hash": ContentStore.content_hash(content),
+                    "published_at": published,
+                    "collected_at": datetime.now(UTC).isoformat(),
                 },
             )
         return items
@@ -95,31 +92,20 @@ class GitHubReleasesCollector:
         import html
         import re
 
-        raw = ''
-        content_list = entry.get('content')
+        raw = ""
+        content_list = entry.get("content")
         if isinstance(content_list, list) and content_list:
-            raw = str(content_list[0].get('value') or '')
+            raw = str(content_list[0].get("value") or "")
         if not raw.strip():
-            raw = str(entry.get('summary') or '')
+            raw = str(entry.get("summary") or "")
         if not raw.strip():
-            return ''
+            return ""
         # Strip HTML tags for a plain-text representation.
-        plain = re.sub(r'<[^>]+>', ' ', raw)
+        plain = re.sub(r"<[^>]+>", " ", raw)
         plain = html.unescape(plain)
-        plain = re.sub(r'\s+', ' ', plain).strip()
+        plain = re.sub(r"\s+", " ", plain).strip()
         return plain[:8000]
 
     @staticmethod
     def _parse_published(entry: feedparser.FeedParserDict) -> str:
-        if entry.get('published_parsed'):
-            t = entry.published_parsed
-            return datetime(*t[:6], tzinfo=UTC).isoformat()
-        if entry.get('published'):
-            try:
-                return parsedate_to_datetime(entry.published).isoformat()
-            except (TypeError, ValueError):
-                pass
-        if entry.get('updated_parsed'):
-            t = entry.updated_parsed
-            return datetime(*t[:6], tzinfo=UTC).isoformat()
-        return datetime.now(UTC).isoformat()
+        return parse_feed_entry_date(entry)

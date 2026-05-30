@@ -5,10 +5,6 @@ import { Card, CardHeader } from '../../components/Card';
 import { Spinner } from '../../components/Spinner';
 import { formatDateOnly } from '../../lib/dates';
 
-// ---------------------------------------------------------------------------
-// Cold-start onboarding panel (Phase 5)
-// ---------------------------------------------------------------------------
-
 function BootstrapPanel({
   onSuccess,
 }: {

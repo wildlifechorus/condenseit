@@ -1,9 +1,8 @@
 """SQLite storage for articles, digests, and ratings."""
 
-from __future__ import annotations
-
 import hashlib
 import json
+import logging
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
@@ -11,6 +10,8 @@ from typing import Any
 
 import sqlite_utils
 from sqlite_utils.db import NotFoundError
+
+logger = logging.getLogger(__name__)
 
 
 class ContentStore:
@@ -26,9 +27,6 @@ class ContentStore:
         # concurrently (e.g. /api/dismiss during a running digest).
         conn = sqlite3.connect(str(db_path), check_same_thread=False, timeout=30)
         self.db = sqlite_utils.Database(conn)
-        # WAL mode allows concurrent readers alongside a single writer,
-        # eliminating the lock contention that causes 500s on write
-        # endpoints while the digest pipeline is committing data.
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=30000")
         self._ensure_schema()
@@ -52,8 +50,8 @@ class ContentStore:
         """
         try:
             self.db.conn.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Database connection already closed: %s", exc)
 
     def _ensure_schema(self) -> None:
         if "articles" not in self.db.table_names():
@@ -72,15 +70,10 @@ class ContentStore:
             )
         # Migration: add image_url column to existing articles tables.
         articles_cols = {
-            row[1]
-            for row in self.db.execute(
-                "PRAGMA table_info(articles)"
-            ).fetchall()
+            row[1] for row in self.db.execute("PRAGMA table_info(articles)").fetchall()
         }
         if "image_url" not in articles_cols:
-            self.db.execute(
-                "ALTER TABLE articles ADD COLUMN image_url TEXT"
-            )
+            self.db.execute("ALTER TABLE articles ADD COLUMN image_url TEXT")
         if "digests" not in self.db.table_names():
             self.db["digests"].create(
                 {
@@ -127,18 +120,12 @@ class ContentStore:
         else:
             existing_cols = {
                 row[1]
-                for row in self.db.execute(
-                    "PRAGMA table_info(spending)"
-                ).fetchall()
+                for row in self.db.execute("PRAGMA table_info(spending)").fetchall()
             }
             if "digest_id" not in existing_cols:
-                self.db.execute(
-                    "ALTER TABLE spending ADD COLUMN digest_id INTEGER"
-                )
+                self.db.execute("ALTER TABLE spending ADD COLUMN digest_id INTEGER")
             if "digest_run_id" not in existing_cols:
-                self.db.execute(
-                    "ALTER TABLE spending ADD COLUMN digest_run_id TEXT"
-                )
+                self.db.execute("ALTER TABLE spending ADD COLUMN digest_run_id TEXT")
         if "api_keys" not in self.db.table_names():
             self.db["api_keys"].create(
                 {
@@ -178,9 +165,7 @@ class ContentStore:
                 ).fetchall()
             }
             if "title" not in existing_cols:
-                self.db.execute(
-                    "ALTER TABLE read_articles ADD COLUMN title TEXT"
-                )
+                self.db.execute("ALTER TABLE read_articles ADD COLUMN title TEXT")
         if "digest_run_logs" not in self.db.table_names():
             self.db["digest_run_logs"].create(
                 {
@@ -210,21 +195,15 @@ class ContentStore:
         # Migration: add image_url column to existing read_later tables.
         read_later_cols = {
             row[1]
-            for row in self.db.execute(
-                "PRAGMA table_info(read_later)"
-            ).fetchall()
+            for row in self.db.execute("PRAGMA table_info(read_later)").fetchall()
         }
         if "image_url" not in read_later_cols:
-            self.db.execute(
-                "ALTER TABLE read_later ADD COLUMN image_url TEXT"
-            )
+            self.db.execute("ALTER TABLE read_later ADD COLUMN image_url TEXT")
         # Migration: add removed_at for soft-delete so historical saves are
         # retained in learning signals and engagement stats even after the
         # article is cleared from the queue.
         if "removed_at" not in read_later_cols:
-            self.db.execute(
-                "ALTER TABLE read_later ADD COLUMN removed_at TEXT"
-            )
+            self.db.execute("ALTER TABLE read_later ADD COLUMN removed_at TEXT")
         if "starred" not in self.db.table_names():
             self.db["starred"].create(
                 {
@@ -312,8 +291,6 @@ class ContentStore:
             return None
 
     def save_article(self, article: dict[str, Any]) -> None:
-        # Strip transient in-memory keys (prefixed with "_") that are not
-        # database columns, e.g. "_highlight_boost" used by the pipeline.
         row = {k: v for k, v in article.items() if not k.startswith("_")}
         self.db["articles"].upsert(row, pk="url")
 
@@ -519,7 +496,7 @@ class ContentStore:
         try:
             self.db["read_articles"].delete(url)
         except NotFoundError:
-            pass
+            logger.debug("URL %r was not in read set", url)
 
     def get_read_urls(self) -> set[str]:
         """Return the set of all URLs the user has marked as read."""
@@ -661,7 +638,7 @@ class ContentStore:
         try:
             self.db["starred"].delete(url)
         except NotFoundError:
-            pass
+            logger.debug("URL %r was not starred", url)
 
     def get_starred_urls(self) -> set[str]:
         """Return the set of all URLs currently starred."""
@@ -695,7 +672,7 @@ class ContentStore:
 
         Returns the number of rows updated across both tables.
         """
-        from condenseit.providers.base import parse_summary_response  # local to avoid circular
+        from condenseit.providers.base import parse_summary_response
 
         updated = 0
         for table in ("read_later", "starred"):
@@ -716,7 +693,8 @@ class ContentStore:
                     continue
                 new_kt = json.dumps(parsed["key_takeaways"])
                 self.db.execute(
-                    f"UPDATE {table} SET summary=?, tldr=?, key_takeaways=? WHERE url=?",  # noqa: S608
+                    f"UPDATE {table} SET summary=?, tldr=?, key_takeaways=? "
+                    f"WHERE url=?",  # noqa: S608
                     [parsed["summary"], parsed["tldr"], new_kt, row["url"]],
                 )
                 updated += 1
@@ -764,13 +742,7 @@ class ContentStore:
         )
         return dict(rows[0]) if rows else None
 
-    # ------------------------------------------------------------------
-    # Embedding cache
-    # ------------------------------------------------------------------
-
-    def get_embedding(
-        self, url: str, model: str, content_hash: str
-    ) -> bytes | None:
+    def get_embedding(self, url: str, model: str, content_hash: str) -> bytes | None:
         """Return the cached raw vector BLOB or None if stale/missing."""
         if "article_embeddings" not in self.db.table_names():
             return None
@@ -807,18 +779,12 @@ class ContentStore:
             pk=["url", "model"],
         )
 
-    # ------------------------------------------------------------------
-    # Article enrichment (LLM-extracted topics/entities/novelty)
-    # ------------------------------------------------------------------
-
     def get_enrichment(self, url: str) -> dict[str, Any] | None:
         """Return the enrichment row for a URL, or None if not found."""
         if "article_enrichment" not in self.db.table_names():
             return None
         rows = list(
-            self.db.query(
-                "SELECT * FROM article_enrichment WHERE url = ?", [url]
-            )
+            self.db.query("SELECT * FROM article_enrichment WHERE url = ?", [url])
         )
         return dict(rows[0]) if rows else None
 
@@ -845,9 +811,7 @@ class ContentStore:
             pk="url",
         )
 
-    def get_enrichment_for_urls(
-        self, urls: list[str]
-    ) -> dict[str, dict[str, Any]]:
+    def get_enrichment_for_urls(self, urls: list[str]) -> dict[str, dict[str, Any]]:
         """Return enrichment rows keyed by URL for a batch of URLs."""
         if not urls or "article_enrichment" not in self.db.table_names():
             return {}

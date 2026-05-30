@@ -1,21 +1,13 @@
 """LLM provider abstraction."""
 
-from __future__ import annotations
-
 import json
 import logging
 import re
 from abc import ABC, abstractmethod
-from typing import Any
-
-from typing_extensions import TypedDict
+from typing import Any, TypedDict
 
 logger = logging.getLogger(__name__)
 
-
-# ---------------------------------------------------------------------------
-# Language helpers (Issue #7)
-# ---------------------------------------------------------------------------
 
 # Map of ISO 639-1 codes (and common langdetect outputs) to human-readable
 # language names suitable for embedding in LLM prompts.
@@ -103,7 +95,7 @@ def resolve_digest_language(digest_language: str, content: str = "") -> str:
         if not content:
             return "English"
         try:
-            from langdetect import detect  # type: ignore[import-untyped]
+            from langdetect import detect
 
             detected = detect(content[:1000])
             return _lang_code_to_name(detected)
@@ -118,18 +110,20 @@ class ArticleSummary(TypedDict):
     tldr: str
     key_takeaways: list[str]
     summary: str
-    # Phase 2: LLM-extracted enrichment fields (always populated, default empty).
     topics: list[str]
     entities: list[str]
     novelty: int
-    # Phase 2: One-sentence note the LLM may include if it infers relevance.
-    # Passively extracted from the summary JSON; not personalized.
     relevance_to_you: str
 
 
 _EMPTY_SUMMARY = ArticleSummary(
-    tldr="", key_takeaways=[], summary="",
-    topics=[], entities=[], novelty=0, relevance_to_you="",
+    tldr="",
+    key_takeaways=[],
+    summary="",
+    topics=[],
+    entities=[],
+    novelty=0,
+    relevance_to_you="",
 )
 
 # Matches an optional ```json ... ``` or ``` ... ``` fence around JSON.
@@ -181,7 +175,7 @@ def _strip_non_latin_tail(value: str) -> str:
     there, returning a clean Latin-script prefix.
     """
     for m in _CJK_BLOCK_RE.finditer(value):
-        tail = value[m.start():]
+        tail = value[m.start() :]
         non_ascii_in_tail = sum(1 for c in tail if ord(c) > 127)
         if len(tail) > 0 and non_ascii_in_tail / len(tail) > 0.3:
             return value[: m.start()].rstrip()
@@ -221,14 +215,14 @@ def _extract_partial_fields(text: str) -> ArticleSummary | None:
             try:
                 result[field] = json.loads(m.group(1))
             except (json.JSONDecodeError, ValueError):
-                pass
+                logger.debug("Could not parse partial array field %s", field)
 
     m_nov = _PARTIAL_INT_FIELD_RE.search(body)
     if m_nov:
         try:
             result["novelty"] = max(1, min(5, int(m_nov.group(1))))
         except (TypeError, ValueError):
-            pass
+            logger.debug("Could not parse novelty score from partial JSON")
 
     # Require at least tldr to have been found; otherwise not useful.
     if not result.get("tldr"):
@@ -241,9 +235,17 @@ def _extract_partial_fields(text: str) -> ArticleSummary | None:
         takeaways = []
 
     raw_topics = result.get("topics", [])
-    topics = [str(t).lower().strip() for t in raw_topics if t] if isinstance(raw_topics, list) else []
+    topics = (
+        [str(t).lower().strip() for t in raw_topics if t]
+        if isinstance(raw_topics, list)
+        else []
+    )
     raw_entities = result.get("entities", [])
-    entities = [str(e).strip() for e in raw_entities if e] if isinstance(raw_entities, list) else []
+    entities = (
+        [str(e).strip() for e in raw_entities if e]
+        if isinstance(raw_entities, list)
+        else []
+    )
 
     return ArticleSummary(
         tldr=_strip_non_latin_tail(str(result.get("tldr", "") or "").strip()),
@@ -326,14 +328,8 @@ def parse_summary_response(raw: str) -> ArticleSummary:
                 novelty = 0
 
             return ArticleSummary(
-                tldr=_strip_non_latin_tail(
-                    str(data.get("tldr", "") or "").strip()
-                ),
-                key_takeaways=[
-                    _strip_non_latin_tail(str(t))
-                    for t in takeaways
-                    if t
-                ],
+                tldr=_strip_non_latin_tail(str(data.get("tldr", "") or "").strip()),
+                key_takeaways=[_strip_non_latin_tail(str(t)) for t in takeaways if t],
                 summary=_strip_non_latin_tail(
                     str(data.get("summary", "") or "").strip()
                 ),
@@ -350,12 +346,11 @@ def parse_summary_response(raw: str) -> ArticleSummary:
     # Partial-field recovery for truncated responses (max_tokens hit).
     partial = _extract_partial_fields(text)
     if partial is not None:
-        logger.debug("parse_summary_response: recovered partial fields from truncated JSON")
+        logger.debug(
+            "parse_summary_response: recovered partial fields from truncated JSON"
+        )
         return partial
 
-    # Final fallback: treat the whole text as a plain summary, but refuse to
-    # store raw JSON blobs or code fences in the summary column — they render
-    # as garbage in the UI and indicate a parse failure, not prose content.
     if text:
         non_ascii = sum(1 for c in text if ord(c) > 127)
         if non_ascii / len(text) > 0.2:
@@ -369,8 +364,13 @@ def parse_summary_response(raw: str) -> ArticleSummary:
             return _EMPTY_SUMMARY
 
     return ArticleSummary(
-        tldr="", key_takeaways=[], summary=text,
-        topics=[], entities=[], novelty=0, relevance_to_you="",
+        tldr="",
+        key_takeaways=[],
+        summary=text,
+        topics=[],
+        entities=[],
+        novelty=0,
+        relevance_to_you="",
     )
 
 
@@ -384,7 +384,8 @@ def build_chat_system_prompt(language: str = "English") -> str:
     return (
         "You are a concise news analyst. Respond ONLY with a JSON object — "
         "no markdown, no code fences, no additional text. "
-        f"Write all JSON field values in {language} regardless of the article's language."
+        f"Write all JSON field values in {language} "
+        "regardless of the article's language."
     )
 
 
@@ -440,8 +441,7 @@ class SummarizerProvider(ABC):
         categorized: dict[str, list[dict[str, Any]]],
         changes: list[dict[str, str]] | None = None,
         videos: list[dict[str, Any]] | None = None,
-    ) -> str:
-        ...
+    ) -> str: ...
 
     @property
     def model_name(self) -> str:

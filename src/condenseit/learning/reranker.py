@@ -9,8 +9,6 @@ Cost: ~1 call per digest run, ~5K tokens in / ~500 out.
 Recommended model: qwen/qwen3.5-flash-02-23 (~$0.001/digest run on OpenRouter).
 """
 
-from __future__ import annotations
-
 import json
 import logging
 import re
@@ -20,17 +18,16 @@ if TYPE_CHECKING:
     from condenseit.learning.preference_engine import PreferenceEngine
     from condenseit.providers.budget import BudgetTracker
 
+import httpx
+
+from condenseit.api_urls import OPENROUTER_CHAT_URL
+
 logger = logging.getLogger(__name__)
 
 _FENCE_RE = re.compile(r"```(?:json)?\s*(\[.*?\])\s*```", re.DOTALL | re.IGNORECASE)
 _BRACKET_RE = re.compile(r"\[.*\]", re.DOTALL)
 # Reasoning models (Qwen3, DeepSeek-R1, etc.) emit <think>...</think> before output.
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
-
-
-# ---------------------------------------------------------------------------
-# Profile narrative
-# ---------------------------------------------------------------------------
 
 
 def build_profile_narrative(engine: PreferenceEngine) -> str:
@@ -40,7 +37,6 @@ def build_profile_narrative(engine: PreferenceEngine) -> str:
     Returns an empty string when the profile is not yet active.
     """
     engine.learn_from_ratings()
-
 
     liked_terms = [t for t, _ in engine._liked_terms.most_common(10)]
     disliked_terms = [t for t, _ in engine._disliked_terms.most_common(8)]
@@ -82,14 +78,7 @@ def build_profile_narrative(engine: PreferenceEngine) -> str:
     return "\n".join(parts)
 
 
-# ---------------------------------------------------------------------------
-# Reranker
-# ---------------------------------------------------------------------------
-
-
-def _build_rerank_prompt(
-    candidates: list[dict[str, Any]], profile: str
-) -> str:
+def _build_rerank_prompt(candidates: list[dict[str, Any]], profile: str) -> str:
     articles_json = json.dumps(
         [
             {
@@ -165,7 +154,6 @@ def _call_openrouter(
     api_key: str,
     budget: BudgetTracker | None = None,
 ) -> str:
-    import httpx
 
     payload = {
         "model": model,
@@ -189,7 +177,7 @@ def _call_openrouter(
     }
     with httpx.Client(timeout=120.0) as client:
         resp = client.post(
-            "https://openrouter.ai/api/v1/chat/completions",
+            OPENROUTER_CHAT_URL,
             json=payload,
             headers=headers,
         )
@@ -205,9 +193,10 @@ def _call_openrouter(
     choices = data.get("choices") or []
     if not choices:
         return ""
-    content = str(choices[0]["message"]["content"]).strip()
-    # Some OpenRouter models expose reasoning in a separate field; strip it.
-    reasoning = choices[0].get("message", {}).get("reasoning", "") or ""
+    message_raw = choices[0].get("message")
+    message = message_raw if isinstance(message_raw, dict) else {}
+    content = str(message.get("content", "")).strip()
+    reasoning = message.get("reasoning", "") or ""
     if reasoning:
         # Only keep content that is not just the reasoning repeated.
         content = content.replace(reasoning.strip(), "").strip()
@@ -221,7 +210,6 @@ def _call_openai_compat(
     api_key: str = "",
 ) -> str:
     """Call any OpenAI-compatible /chat/completions endpoint for reranking."""
-    import httpx
 
     base_url = base_url.rstrip("/")
     payload = {
@@ -258,7 +246,6 @@ def _call_openai_compat(
 
 
 def _call_ollama(prompt: str, model: str, host: str) -> str:
-    import httpx
 
     host = host.rstrip("/")
     with httpx.Client(timeout=120.0) as client:

@@ -49,6 +49,7 @@ def test_deduplicate_new_article(tmp_path: Path) -> None:
     fresh_again = store.deduplicate([same_hash_again])
     assert len(fresh_again) == 0
     row = store.db["articles"].get(article["url"])
-    assert row["collected_at"] == "2026-06-01T12:00:00+00:00"
+    # collected_at stays at first-seen time so same-day pooling is stable.
+    assert row["collected_at"] == "2026-01-01T00:00:00+00:00"
     assert row["title"] == "Test renamed"
     assert row["content_hash"] == expected_hash

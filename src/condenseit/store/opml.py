@@ -1,7 +1,5 @@
 """OPML import and export for RSS sources."""
 
-from __future__ import annotations
-
 import html
 import re
 import xml.etree.ElementTree as ET

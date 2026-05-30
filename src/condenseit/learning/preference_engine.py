@@ -24,9 +24,8 @@ Implicit signals use the same decay but are scaled by `implicit_signal_weight`
 (default 0.5) so explicit star ratings always dominate.
 """
 
-from __future__ import annotations
-
 import json
+import logging
 import math
 import re
 from collections import Counter
@@ -37,42 +36,216 @@ import numpy as np
 
 from condenseit.store.database import ContentStore
 
+logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     from condenseit.learning.embeddings import EmbeddingProvider
 
-# ---------------------------------------------------------------------------
-# Stop-words: common English + tech-digest filler that dilutes term profiles.
-# ---------------------------------------------------------------------------
 _STOP_WORDS: frozenset[str] = frozenset(
     {
         # 3-letter common words (newly included since min token length dropped to 3)
-        "the", "and", "for", "are", "but", "not", "you", "all", "can", "had",
-        "has", "him", "his", "its", "may", "nor", "now", "one", "our", "out",
-        "own", "per", "run", "see", "set", "she", "sit", "six", "ten", "too",
-        "two", "use", "was", "way", "who", "why", "yet", "ago", "any", "big",
-        "bit", "day", "did", "end", "far", "few", "get", "got", "how", "job",
-        "key", "let", "lot", "low", "man", "met", "new", "old", "put", "say",
-        "via", "web", "app", "add", "fix", "bug", "log", "off",
-        "try", "top", "sub", "hit", "ask", "buy", "cut", "due", "era",
-        "fly", "gap", "gen", "map", "mix", "opt", "pop", "raw",
-        "red", "row", "tip", "tri", "url", "win", "yes",
+        "the",
+        "and",
+        "for",
+        "are",
+        "but",
+        "not",
+        "you",
+        "all",
+        "can",
+        "had",
+        "has",
+        "him",
+        "his",
+        "its",
+        "may",
+        "nor",
+        "now",
+        "one",
+        "our",
+        "out",
+        "own",
+        "per",
+        "run",
+        "see",
+        "set",
+        "she",
+        "sit",
+        "six",
+        "ten",
+        "too",
+        "two",
+        "use",
+        "was",
+        "way",
+        "who",
+        "why",
+        "yet",
+        "ago",
+        "any",
+        "big",
+        "bit",
+        "day",
+        "did",
+        "end",
+        "far",
+        "few",
+        "get",
+        "got",
+        "how",
+        "job",
+        "key",
+        "let",
+        "lot",
+        "low",
+        "man",
+        "met",
+        "new",
+        "old",
+        "put",
+        "say",
+        "via",
+        "web",
+        "app",
+        "add",
+        "fix",
+        "bug",
+        "log",
+        "off",
+        "try",
+        "top",
+        "sub",
+        "hit",
+        "ask",
+        "buy",
+        "cut",
+        "due",
+        "era",
+        "fly",
+        "gap",
+        "gen",
+        "map",
+        "mix",
+        "opt",
+        "pop",
+        "raw",
+        "red",
+        "row",
+        "tip",
+        "tri",
+        "url",
+        "win",
+        "yes",
         # 4-letter+ generic connectives
-        "that", "this", "with", "from", "have", "will", "your", "about",
-        "into", "than", "been", "also", "more", "just", "some", "like",
-        "over", "when", "only", "most", "very", "after", "other", "which",
-        "these", "those", "their", "would", "could", "should", "first",
-        "there", "then", "each", "such", "both", "even", "back", "well",
-        "what", "where", "here", "make", "made", "come", "know", "take",
-        "time", "year", "week", "month", "many", "last", "next",
+        "that",
+        "this",
+        "with",
+        "from",
+        "have",
+        "will",
+        "your",
+        "about",
+        "into",
+        "than",
+        "been",
+        "also",
+        "more",
+        "just",
+        "some",
+        "like",
+        "over",
+        "when",
+        "only",
+        "most",
+        "very",
+        "after",
+        "other",
+        "which",
+        "these",
+        "those",
+        "their",
+        "would",
+        "could",
+        "should",
+        "first",
+        "there",
+        "then",
+        "each",
+        "such",
+        "both",
+        "even",
+        "back",
+        "well",
+        "what",
+        "where",
+        "here",
+        "make",
+        "made",
+        "come",
+        "know",
+        "take",
+        "time",
+        "year",
+        "week",
+        "month",
+        "many",
+        "last",
+        "next",
         # Tech-digest filler
-        "article", "update", "release", "using", "https", "http", "news",
-        "read", "version", "post", "blog", "link", "share", "learn", "find",
-        "help", "need", "want", "look", "said", "says", "note", "docs",
-        "page", "site", "team", "repo", "code", "data", "user", "tool",
-        "type", "list", "example", "based", "added", "fixed", "changed",
-        "support", "works", "working", "check", "getting", "please",
-        "allows", "without", "between", "through", "including", "following",
-        "available", "provides", "requires", "improved",
+        "article",
+        "update",
+        "release",
+        "using",
+        "https",
+        "http",
+        "news",
+        "read",
+        "version",
+        "post",
+        "blog",
+        "link",
+        "share",
+        "learn",
+        "find",
+        "help",
+        "need",
+        "want",
+        "look",
+        "said",
+        "says",
+        "note",
+        "docs",
+        "page",
+        "site",
+        "team",
+        "repo",
+        "code",
+        "data",
+        "user",
+        "tool",
+        "type",
+        "list",
+        "example",
+        "based",
+        "added",
+        "fixed",
+        "changed",
+        "support",
+        "works",
+        "working",
+        "check",
+        "getting",
+        "please",
+        "allows",
+        "without",
+        "between",
+        "through",
+        "including",
+        "following",
+        "available",
+        "provides",
+        "requires",
+        "improved",
     },
 )
 
@@ -116,7 +289,6 @@ class PreferenceEngine:
                 if others:
                     self._synonym_map.setdefault(term, []).extend(others)
 
-        # --- Explicit ratings profile (from star ratings) ---
         self._liked_terms: Counter[str] = Counter()
         self._disliked_terms: Counter[str] = Counter()
         self._liked_bigrams: Counter[str] = Counter()
@@ -125,24 +297,17 @@ class PreferenceEngine:
         self._category_scores: dict[str, float] = {}
         self._source_scores: dict[str, float] = {}
 
-        # --- Implicit signals profile (from read/saved/dismissed) ---
         self._implicit_liked_terms: Counter[str] = Counter()
         self._implicit_disliked_terms: Counter[str] = Counter()
         self._implicit_profile_vec: Counter[str] = Counter()
         self._implicit_category_scores: dict[str, float] = {}
         self._implicit_source_scores: dict[str, float] = {}
 
-        # --- Phase 1: Semantic embedding centroids ---
         self._liked_centroid: np.ndarray | None = None
         self._disliked_centroid: np.ndarray | None = None
 
-        # --- Phase 2: Topic scoring profile ---
         self._liked_topics: Counter[str] = Counter()
         self._disliked_topics: Counter[str] = Counter()
-
-    # ------------------------------------------------------------------
-    # Public interface
-    # ------------------------------------------------------------------
 
     def learn_from_ratings(self) -> None:
         """Rebuild all internal preference state from the ratings table."""
@@ -217,11 +382,9 @@ class PreferenceEngine:
         if self.implicit_signal_weight > 0:
             self._learn_implicit_signals(now, lam)
 
-        # Phase 1: Semantic embedding centroids.
         if self._embedding_provider is not None:
             self._build_embedding_centroids(rows, now, lam)
 
-        # Phase 2: Topic scoring from article enrichment.
         if self.topic_score_weight > 0:
             self._build_topic_profile(rows)
 
@@ -245,9 +408,7 @@ class PreferenceEngine:
 
         scored: list[tuple[float, dict[str, Any]]] = []
         for art in articles:
-            text_lower = (
-                f"{art.get('title', '')} {art.get('content', '')}".lower()
-            )
+            text_lower = f"{art.get('title', '')} {art.get('content', '')}".lower()
             title_lower = str(art.get("title", "")).lower()
             article_tokens = set(_tokenize(text_lower))
             article_bigrams_list = _bigrams(title_lower)
@@ -344,9 +505,7 @@ class PreferenceEngine:
                 for term, count in self._implicit_liked_terms.most_common(50):
                     if term in expanded_tokens:
                         imp_term += 0.15 * min(count, 5)
-                for term, count in self._implicit_disliked_terms.most_common(
-                    50
-                ):
+                for term, count in self._implicit_disliked_terms.most_common(50):
                     if term in expanded_tokens:
                         imp_term -= 0.2 * min(count, 5)
                 if (
@@ -379,11 +538,7 @@ class PreferenceEngine:
                     )
 
                 # Implicit source preference.
-                if (
-                    src
-                    and src in self._implicit_source_scores
-                    and self.source_weight
-                ):
+                if src and src in self._implicit_source_scores and self.source_weight:
                     breakdown["implicit_source"] = round(
                         self.implicit_signal_weight
                         * self.source_weight
@@ -391,7 +546,7 @@ class PreferenceEngine:
                         3,
                     )
 
-            # 9. Semantic embedding similarity (Phase 1).
+            # 9. Semantic embedding similarity.
             if (
                 self._embedding_provider is not None
                 and self.embedding_weight > 0
@@ -402,9 +557,7 @@ class PreferenceEngine:
             ):
                 url = str(art.get("url", ""))
                 content_hash = str(art.get("content_hash", ""))
-                text = (
-                    f"{art.get('title', '')} {art.get('content', '')}"
-                )
+                text = f"{art.get('title', '')} {art.get('content', '')}"
                 from condenseit.learning.embeddings import (
                     cosine_similarity,
                     get_or_compute_embedding,
@@ -429,7 +582,7 @@ class PreferenceEngine:
                         self.embedding_weight * emb_score, 3
                     )
 
-            # 10. Topic score from LLM enrichment (Phase 2).
+            # 10. Topic score from LLM enrichment.
             if self.topic_score_weight > 0 and (
                 self._liked_topics or self._disliked_topics
             ):
@@ -488,7 +641,11 @@ class PreferenceEngine:
 
         # Rating distribution (count of each star level).
         rating_distribution: dict[str, int] = {
-            "1": 0, "2": 0, "3": 0, "4": 0, "5": 0,
+            "1": 0,
+            "2": 0,
+            "3": 0,
+            "4": 0,
+            "5": 0,
         }
         if self.store.rating_count() > 0:
             for dist_row in self.store.db.query(
@@ -505,19 +662,16 @@ class PreferenceEngine:
         if "read_articles" in self.store.db.table_names():
             try:
                 read_count = self.store.db["read_articles"].count
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Could not count read articles: %s", exc)
         if "read_later" in self.store.db.table_names():
             try:
-                # Count all rows — including soft-deleted ones — so the stat
-                # reflects articles the user has ever saved, not just the
-                # current queue length.
                 row = self.store.db.execute(
                     "SELECT COUNT(*) FROM read_later"
                 ).fetchone()
                 saved_count = int(row[0]) if row else 0
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Could not count saved articles: %s", exc)
         dismissed_count = self.store.dismissed_count()
 
         # Decay weight for oldest rating (for transparency in the UI).
@@ -573,9 +727,7 @@ class PreferenceEngine:
                     reverse=True,
                 )
             ],
-            # Phase 1: embedding profile status.
             "embedding_active": self._liked_centroid is not None,
-            # Phase 2: top topics from enrichment.
             "top_liked_topics": [
                 {"term": t, "score": round(float(c), 2)}
                 for t, c in self._liked_topics.most_common(15)
@@ -585,10 +737,6 @@ class PreferenceEngine:
                 for t, c in self._disliked_topics.most_common(15)
             ],
         }
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
 
     def _clear_profiles(self) -> None:
         """Reset all in-memory profile state."""
@@ -674,8 +822,8 @@ class PreferenceEngine:
                     )
                 )
                 _accumulate(read_rows, "ts", 3.8, liked=True)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Could not load read-article signals: %s", exc)
 
         # Saved for later: strong positive signal (virtual rating 4.5).
         if "read_later" in self.store.db.table_names():
@@ -688,8 +836,8 @@ class PreferenceEngine:
                     )
                 )
                 _accumulate(saved_rows, "ts", 4.5, liked=True)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Could not load saved-article signals: %s", exc)
 
         # Dismissed: mild negative signal (virtual rating 1.5).
         if "dismissed_articles" in self.store.db.table_names():
@@ -703,8 +851,8 @@ class PreferenceEngine:
                     )
                 )
                 _accumulate(dismissed_rows, "ts", 1.5, liked=False)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Could not load dismissed-article signals: %s", exc)
 
         # Convert implicit weighted sums to mean-minus-midpoint scores.
         self._implicit_category_scores = {
@@ -717,7 +865,6 @@ class PreferenceEngine:
             for src in imp_src_sum
             if imp_src_w.get(src, 0) > 0
         }
-
 
     def _build_embedding_centroids(
         self,
@@ -753,9 +900,7 @@ class PreferenceEngine:
             if vec is None:
                 continue
 
-            decay = _time_decay(
-                str(row.get("rated_at") or ""), now, lam
-            )
+            decay = _time_decay(str(row.get("rated_at") or ""), now, lam)
             if rating >= 4:
                 liked_vecs.append(vec)
                 liked_weights.append(decay)
@@ -765,17 +910,13 @@ class PreferenceEngine:
 
         if liked_vecs:
             w = np.array(liked_weights, dtype=np.float32)
-            centroid = np.average(
-                np.stack(liked_vecs), axis=0, weights=w
-            )
+            centroid = np.average(np.stack(liked_vecs), axis=0, weights=w)
             norm = np.linalg.norm(centroid)
             self._liked_centroid = centroid / (norm + 1e-9)
 
         if disliked_vecs:
             w = np.array(disliked_weights, dtype=np.float32)
-            centroid = np.average(
-                np.stack(disliked_vecs), axis=0, weights=w
-            )
+            centroid = np.average(np.stack(disliked_vecs), axis=0, weights=w)
             norm = np.linalg.norm(centroid)
             self._disliked_centroid = centroid / (norm + 1e-9)
 
@@ -789,9 +930,7 @@ class PreferenceEngine:
         if not enrichment_map:
             return
 
-        url_to_rating = {
-            str(row.get("url", "")): int(row["rating"]) for row in rows
-        }
+        url_to_rating = {str(row.get("url", "")): int(row["rating"]) for row in rows}
 
         for url, enrich in enrichment_map.items():
             rating = url_to_rating.get(url, 3)
@@ -809,11 +948,6 @@ class PreferenceEngine:
                     self._liked_topics[topic] += 1.0
                 elif rating <= 2:
                     self._disliked_topics[topic] += 1.0
-
-
-# ---------------------------------------------------------------------------
-# Module-level helpers
-# ---------------------------------------------------------------------------
 
 
 def _time_decay(rated_at: str, now: datetime, lam: float) -> float:
@@ -847,10 +981,7 @@ def _bigrams(title: str) -> list[str]:
     """
     words = re.findall(r"[a-z0-9]{3,}", title.lower())
     filtered = [w for w in words if w not in _STOP_WORDS]
-    return [
-        f"{filtered[i]} {filtered[i + 1]}"
-        for i in range(len(filtered) - 1)
-    ]
+    return [f"{filtered[i]} {filtered[i + 1]}" for i in range(len(filtered) - 1)]
 
 
 def _term_counts(text: str) -> Counter[str]:

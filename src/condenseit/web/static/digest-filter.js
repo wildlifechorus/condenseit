@@ -205,7 +205,7 @@
 
   function applyFilters() {
     const matched = items.filter((it) => passes(it));
-    listEl.innerHTML = '';
+    listEl.replaceChildren();
     matched.forEach((it) => {
       listEl.appendChild(renderCard(it));
     });

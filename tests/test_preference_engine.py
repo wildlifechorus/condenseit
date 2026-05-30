@@ -530,9 +530,16 @@ def test_rank_articles_returns_score_breakdown(store: ContentStore) -> None:
     assert isinstance(bd, dict)
     # Core classical keys must always be present.
     expected_core_keys = {
-        "keyword_high", "keyword_medium", "term_overlap", "bigram_overlap",
-        "tfidf_cosine", "category", "source",
-        "implicit_content", "implicit_category", "implicit_source",
+        "keyword_high",
+        "keyword_medium",
+        "term_overlap",
+        "bigram_overlap",
+        "tfidf_cosine",
+        "category",
+        "source",
+        "implicit_content",
+        "implicit_category",
+        "implicit_source",
         "synonym_boost",
     }
     # New AI-signal keys are also always present (default 0.0 when disabled).
@@ -574,9 +581,7 @@ def test_score_breakdown_sums_to_preference_score(store: ContentStore) -> None:
     }
     ranked = eng.rank_articles([art])
     bd = ranked[0]["score_breakdown"]
-    numeric_total = round(
-        sum(v for v in bd.values() if isinstance(v, (int, float))), 3
-    )
+    numeric_total = round(sum(v for v in bd.values() if isinstance(v, (int, float))), 3)
     assert numeric_total == pytest.approx(ranked[0]["preference_score"], abs=0.01)
 
 
@@ -612,9 +617,12 @@ def test_liked_bigrams_boost_score(store: ContentStore) -> None:
     for i in range(5):
         url = f"https://sc.test/{i}"
         _save_article(
-            store, url,
-            "supply chain vulnerability", "attack supply chain",
-            "Infosec", "Feed",
+            store,
+            url,
+            "supply chain vulnerability",
+            "attack supply chain",
+            "Infosec",
+            "Feed",
         )
         _rate(store, url, 5)
 
@@ -712,9 +720,12 @@ def test_implicit_dismissed_lowers_score(store: ContentStore) -> None:
     for i in range(5):
         url = f"https://dis-cat.test/{i}"
         _save_article(
-            store, url,
-            f"Recipe {i}", "cooking pasta kitchen recipe",
-            "Lifestyle", "LifeFeed",
+            store,
+            url,
+            f"Recipe {i}",
+            "cooking pasta kitchen recipe",
+            "Lifestyle",
+            "LifeFeed",
         )
         _rate(store, url, 3)  # neutral explicit rating
 
@@ -723,8 +734,11 @@ def test_implicit_dismissed_lowers_score(store: ContentStore) -> None:
         _dismiss(store, f"https://dis-cat.test/{i}")
 
     eng = PreferenceEngine(
-        store, min_ratings=1, tfidf_weight=0.0,
-        category_weight=0.6, source_weight=0.0,
+        store,
+        min_ratings=1,
+        tfidf_weight=0.0,
+        category_weight=0.6,
+        source_weight=0.0,
         implicit_signal_weight=0.8,
     )
     eng.learn_from_ratings()
@@ -746,17 +760,26 @@ def test_implicit_saved_boosts_score(store: ContentStore) -> None:
         _rate(store, url, 3)  # neutral explicit
         store.db["read_later"].upsert(
             {
-                "url": url, "title": f"Infosec {i}", "summary": "security exploit cve",
-                "tldr": "", "key_takeaways": "[]", "source": "SecFeed",
-                "category": "Infosec", "kind": "article", "published_at": "",
+                "url": url,
+                "title": f"Infosec {i}",
+                "summary": "security exploit cve",
+                "tldr": "",
+                "key_takeaways": "[]",
+                "source": "SecFeed",
+                "category": "Infosec",
+                "kind": "article",
+                "published_at": "",
                 "saved_at": datetime.now(UTC).isoformat(),
             },
             pk="url",
         )
 
     eng = PreferenceEngine(
-        store, min_ratings=1, tfidf_weight=0.0,
-        category_weight=0.6, source_weight=0.0,
+        store,
+        min_ratings=1,
+        tfidf_weight=0.0,
+        category_weight=0.6,
+        source_weight=0.0,
         implicit_signal_weight=0.8,
     )
     eng.learn_from_ratings()
@@ -791,16 +814,22 @@ def test_synonym_boost_applies_when_synonym_present(store: ContentStore) -> None
     for i in range(5):
         url = f"https://k8s.test/{i}"
         _save_article(
-            store, url,
-            f"Kubernetes deploy {i}", "kubernetes cluster deployment",
-            "Dev", "Feed",
+            store,
+            url,
+            f"Kubernetes deploy {i}",
+            "kubernetes cluster deployment",
+            "Dev",
+            "Feed",
         )
         _rate(store, url, 5)
 
     synonyms = {"kube": ["kubernetes", "k8s", "kubectl", "helm"]}
     eng = PreferenceEngine(
-        store, min_ratings=5, tfidf_weight=0.0,
-        category_weight=0.0, source_weight=0.0,
+        store,
+        min_ratings=5,
+        tfidf_weight=0.0,
+        category_weight=0.0,
+        source_weight=0.0,
         implicit_signal_weight=0.0,
         topic_synonyms=synonyms,
     )
@@ -870,9 +899,7 @@ def test_profile_summary_rating_distribution_structure(
 # ---------------------------------------------------------------------------
 
 
-def test_api_dismiss_endpoint(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_api_dismiss_endpoint(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """POST /api/dismiss must record the URL in dismissed_articles."""
     from fastapi.testclient import TestClient
 

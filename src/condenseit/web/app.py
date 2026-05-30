@@ -1,7 +1,5 @@
 """FastAPI application: digest, ratings, admin."""
 
-from __future__ import annotations
-
 import asyncio
 import json
 import logging
@@ -18,6 +16,7 @@ import httpx
 import markdown
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import (
+    FileResponse,
     HTMLResponse,
     JSONResponse,
     PlainTextResponse,
@@ -26,9 +25,16 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from condenseit.config import load_config
+from condenseit.api_urls import (
+    OPENROUTER_CHAT_URL,
+    OPENROUTER_KEY_URL,
+    youtube_channel_feed_url,
+    youtube_handle_page_url,
+)
+from condenseit.config import LOCAL_INSTALL_FALLBACK_CREDENTIAL, load_config
 from condenseit.learning.preference_engine import PreferenceEngine
 from condenseit.providers.base import parse_summary_response
+from condenseit.setting_parsers import parse_json_list
 from condenseit.settings_overlay import apply_db_settings
 from condenseit.store.database import ContentStore
 from condenseit.web.admin.routes import create_admin_router
@@ -85,9 +91,6 @@ def _normalize_item(row: dict[str, Any]) -> dict[str, Any]:
         row["key_takeaways"] = parsed["key_takeaways"]
         row["summary"] = parsed["summary"]
     elif str(row.get("summary") or "").strip().startswith("{"):
-        # Structured fields are already populated but the summary column still
-        # holds the raw JSON blob from the old storage format.  Extract just
-        # the prose text so the UI never renders raw JSON.
         parsed = parse_summary_response(str(row["summary"]))
         row["summary"] = parsed["summary"] or parsed["tldr"] or row["summary"]
     row["summary"] = _clean_summary(str(row.get("summary") or ""))
@@ -130,13 +133,9 @@ def create_app(config_path: str | None = None) -> FastAPI:
     def _get_schedule_times() -> list[str]:
         """Return current schedule times from DB, falling back to config."""
         raw = store.get_setting("schedule_times", "")
-        if raw:
-            try:
-                times = json.loads(raw)
-                if isinstance(times, list):
-                    return [str(t) for t in times]
-            except Exception:
-                pass
+        times = parse_json_list(raw, "schedule_times")
+        if times is not None:
+            return times
         return config.schedule.get("times", [])
 
     def _get_schedule_timezone() -> str:
@@ -182,7 +181,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
     app.state.job_manager = job_manager
     templates.env.globals["digest_job"] = job_manager.snapshot
 
-    default_auth_password = "condenseit"
+    default_auth_password = LOCAL_INSTALL_FALLBACK_CREDENTIAL
     _env_auth_password = (
         os.environ.get("CONDENSEIT_AUTH_PASSWORD", "").strip()
         or os.environ.get("DIGEST_PWA_AUTH_PASSWORD", "").strip()
@@ -239,7 +238,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
             effective_pw = _get_auth_password()
             auth_header = request.headers.get("Authorization", "")
             bearer_ok = auth_header.startswith("Bearer ") and secrets.compare_digest(
-                auth_header[len("Bearer "):].strip(),
+                auth_header[len("Bearer ") :].strip(),
                 effective_pw,
             )
             # Feed readers pass the token as a query param; validate it
@@ -273,12 +272,6 @@ def create_app(config_path: str | None = None) -> FastAPI:
     app.include_router(create_admin_router(config_path, store))
     app.include_router(create_feed_router(store))
 
-    # ==================================================================
-    # JSON API routes
-    # ==================================================================
-
-    # --- Digest list / detail -----------------------------------------
-
     @app.get("/api/digests", response_model=None)
     async def api_list_digests() -> JSONResponse:
         rows = store.list_digests(limit=20)
@@ -295,14 +288,10 @@ def create_app(config_path: str | None = None) -> FastAPI:
 
     @app.get("/api/digests/{digest_id}", response_model=None)
     async def api_get_digest(digest_id: int) -> JSONResponse:
-        rows = list(
-            store.db.query("SELECT * FROM digests WHERE id = ?", [digest_id])
-        )
+        rows = list(store.db.query("SELECT * FROM digests WHERE id = ?", [digest_id]))
         if not rows:
             return JSONResponse(None, status_code=404)
         return JSONResponse(_build_digest_detail(dict(rows[0]), store))
-
-    # --- Job status / control -----------------------------------------
 
     @app.get("/api/digest/status")
     async def api_digest_status() -> dict[str, Any]:
@@ -326,8 +315,6 @@ def create_app(config_path: str | None = None) -> FastAPI:
         job_manager.dismiss()
         return job_manager.snapshot()
 
-    # --- Scheduler status / config ------------------------------------
-
     @app.get("/api/scheduler/status", response_model=None)
     async def api_scheduler_status() -> JSONResponse:
         return JSONResponse(get_scheduler_status())
@@ -346,14 +333,12 @@ def create_app(config_path: str | None = None) -> FastAPI:
 
     @app.put("/api/config/schedule", response_model=None)
     async def api_save_schedule(body: dict[str, Any]) -> JSONResponse:
-        # Handle enabled toggle
         if "enabled" in body:
             store.set_setting(
                 "scheduler_enabled",
                 "1" if body["enabled"] else "0",
             )
 
-        # Handle times update
         if "times" in body:
             times = body["times"]
             if not isinstance(times, list):
@@ -371,14 +356,19 @@ def create_app(config_path: str | None = None) -> FastAPI:
             store.set_setting("schedule_times", json.dumps(validated))
             _SCHEDULER_STATE["schedule_times"] = validated
 
-        # Handle timezone update
         if "timezone" in body:
             tz_name = str(body["timezone"]).strip()
             try:
                 ZoneInfo(tz_name)
             except (ZoneInfoNotFoundError, KeyError):
                 return JSONResponse(
-                    {"error": f"Unknown timezone: {tz_name!r}. Use an IANA timezone name such as 'America/New_York'."},
+                    {
+                        "error": (
+                            f"Unknown timezone: {tz_name!r}. "
+                            "Use an IANA timezone name such as "
+                            "'America/New_York'."
+                        )
+                    },
                     status_code=422,
                 )
             store.set_setting("schedule_timezone", tz_name)
@@ -387,14 +377,13 @@ def create_app(config_path: str | None = None) -> FastAPI:
         await trigger_reschedule()
         return JSONResponse({"ok": True})
 
-    # --- Budget -------------------------------------------------------
-
     @app.get("/api/config/budget", response_model=None)
     async def api_budget() -> JSONResponse:
         merged = apply_db_settings(load_config(config_path), store)
         or_key = merged.llm.openrouter_api_key
         if not or_key:
             from condenseit.store.secure_keys import SecureKeyStore
+
             or_key = SecureKeyStore(store).get_key("openrouter") or ""
 
         openrouter_data: dict[str, Any] | None = None
@@ -402,7 +391,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
             try:
                 async with httpx.AsyncClient(timeout=10.0) as client:
                     resp = await client.get(
-                        "https://openrouter.ai/api/v1/key",
+                        OPENROUTER_KEY_URL,
                         headers={"Authorization": f"Bearer {or_key}"},
                     )
                     resp.raise_for_status()
@@ -429,10 +418,12 @@ def create_app(config_path: str | None = None) -> FastAPI:
 
         by_model: list[dict[str, Any]] = []
         if "spending" in store.db.table_names():
-            rows = list(store.db.query(
-                "SELECT model, SUM(amount_usd) as total_usd, COUNT(*) as requests"
-                " FROM spending GROUP BY model ORDER BY total_usd DESC"
-            ))
+            rows = list(
+                store.db.query(
+                    "SELECT model, SUM(amount_usd) as total_usd, COUNT(*) as requests"
+                    " FROM spending GROUP BY model ORDER BY total_usd DESC"
+                )
+            )
             by_model = [
                 {
                     "model": str(r["model"] or ""),
@@ -453,51 +444,60 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 parsed_stats = json.loads(stats_raw)
                 stats = parsed_stats if isinstance(parsed_stats, dict) else {}
                 articles = int(stats.get("articles_count", 0))
-            except (json.JSONDecodeError, TypeError, ValueError):
-                pass
+            except (json.JSONDecodeError, TypeError, ValueError) as exc:
+                logging.getLogger(__name__).debug(
+                    "Could not parse digest stats for digest %s: %s",
+                    d_id,
+                    exc,
+                )
             cost = _digest_cost_usd(store, d_id, d_at, stats)
-            recent_digests.append({
-                "digest_id": d_id,
-                "created_at": d_at,
-                "cost_usd": cost,
-                "articles": articles,
-            })
+            recent_digests.append(
+                {
+                    "digest_id": d_id,
+                    "created_at": d_at,
+                    "cost_usd": cost,
+                    "articles": articles,
+                }
+            )
 
         # Average cost per digest: total all-time spending / total digest count.
         avg_cost_per_digest_usd = 0.0
         if "spending" in store.db.table_names() and "digests" in store.db.table_names():
             try:
-                digest_count_rows = list(store.db.query(
-                    "SELECT COUNT(*) as n FROM digests"
-                ))
-                total_digests = int(
-                    digest_count_rows[0]["n"] or 0
-                ) if digest_count_rows else 0
-                all_spend_rows = list(store.db.query(
-                    "SELECT SUM(amount_usd) as total FROM spending"
-                ))
-                all_time_usd = float(
-                    all_spend_rows[0]["total"] or 0
-                ) if all_spend_rows else 0.0
+                digest_count_rows = list(
+                    store.db.query("SELECT COUNT(*) as n FROM digests")
+                )
+                total_digests = (
+                    int(digest_count_rows[0]["n"] or 0) if digest_count_rows else 0
+                )
+                all_spend_rows = list(
+                    store.db.query("SELECT SUM(amount_usd) as total FROM spending")
+                )
+                all_time_usd = (
+                    float(all_spend_rows[0]["total"] or 0) if all_spend_rows else 0.0
+                )
                 if total_digests > 0:
                     avg_cost_per_digest_usd = all_time_usd / total_digests
-            except Exception:
-                pass
+            except Exception as exc:
+                logging.getLogger(__name__).debug(
+                    "Could not compute average digest cost: %s",
+                    exc,
+                )
 
-        return JSONResponse({
-            "openrouter": openrouter_data,
-            "local": {
-                "today_usd": today_usd,
-                "month_usd": month_usd,
-                "daily_limit_usd": merged.llm.openrouter_daily_budget_usd,
-                "monthly_limit_usd": merged.llm.openrouter_monthly_budget_usd,
-                "avg_cost_per_digest_usd": avg_cost_per_digest_usd,
-                "by_model": by_model,
-                "recent_digests": recent_digests,
-            },
-        })
-
-    # --- Ratings -------------------------------------------------------
+        return JSONResponse(
+            {
+                "openrouter": openrouter_data,
+                "local": {
+                    "today_usd": today_usd,
+                    "month_usd": month_usd,
+                    "daily_limit_usd": merged.llm.openrouter_daily_budget_usd,
+                    "monthly_limit_usd": merged.llm.openrouter_monthly_budget_usd,
+                    "avg_cost_per_digest_usd": avg_cost_per_digest_usd,
+                    "by_model": by_model,
+                    "recent_digests": recent_digests,
+                },
+            }
+        )
 
     @app.get("/api/ratings", response_model=None)
     async def api_ratings() -> JSONResponse:
@@ -512,8 +512,6 @@ def create_app(config_path: str | None = None) -> FastAPI:
             return JSONResponse({"error": "Invalid url or rating"}, status_code=422)
         store.rate_article(url, rating)
         return JSONResponse({"ok": True})
-
-    # --- Dismiss tracking ----------------------------------------------
 
     @app.post("/api/dismiss", response_model=None)
     async def api_dismiss(body: dict[str, Any]) -> JSONResponse:
@@ -531,8 +529,6 @@ def create_app(config_path: str | None = None) -> FastAPI:
         title = str(body.get("title", "")).strip() or None
         store.dismiss_article(url, title=title)
         return JSONResponse({"ok": True})
-
-    # --- Read tracking -------------------------------------------------
 
     @app.get("/api/read", response_model=None)
     async def api_get_read() -> JSONResponse:
@@ -556,8 +552,6 @@ def create_app(config_path: str | None = None) -> FastAPI:
         else:
             store.mark_article_unread(url)
         return JSONResponse({"ok": True})
-
-    # --- Read Later ----------------------------------------------------
 
     @app.get("/api/read-later", response_model=None)
     async def api_get_read_later() -> JSONResponse:
@@ -596,8 +590,6 @@ def create_app(config_path: str | None = None) -> FastAPI:
         urls = sorted(store.get_read_later_urls())
         return JSONResponse({"urls": urls})
 
-    # --- Starred (permanent saves) ------------------------------------
-
     @app.get("/api/starred", response_model=None)
     async def api_get_starred() -> JSONResponse:
         """Return all starred items, newest first."""
@@ -633,13 +625,9 @@ def create_app(config_path: str | None = None) -> FastAPI:
         urls = sorted(store.get_starred_urls())
         return JSONResponse({"urls": urls})
 
-    # --- Preference profile --------------------------------------------
-
     @app.get("/api/preferences/profile", response_model=None)
     async def api_preferences_profile() -> JSONResponse:
         return JSONResponse(preferences.profile_summary())
-
-    # --- Cold-start bootstrap (Phase 5) --------------------------------
 
     @app.post("/api/preferences/bootstrap", response_model=None)
     async def api_preferences_bootstrap(body: dict[str, Any]) -> JSONResponse:
@@ -662,6 +650,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
         or_key = merged.llm.openrouter_api_key
         if not or_key:
             from condenseit.store.secure_keys import SecureKeyStore
+
             or_key = SecureKeyStore(store).get_key("openrouter") or ""
         ollama_host = merged.llm.ollama_host
         model = merged.llm.openrouter_model if or_key else merged.model
@@ -682,8 +671,9 @@ def create_app(config_path: str | None = None) -> FastAPI:
         try:
             if or_key:
                 import httpx
+
                 resp = httpx.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
+                    OPENROUTER_CHAT_URL,
                     json={
                         "model": model,
                         "messages": [
@@ -712,6 +702,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 raw = str(choices[0]["message"]["content"]).strip() if choices else ""
             elif ollama_host:
                 import httpx
+
                 resp = httpx.post(
                     f"{ollama_host.rstrip('/')}/api/generate",
                     json={
@@ -730,8 +721,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 status_code=502,
             )
 
-        # Parse the LLM response.
         import re as _re
+
         fence = _re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", _re.DOTALL)
         brace = _re.compile(r"\{.*\}", _re.DOTALL)
         candidates = [raw]
@@ -766,8 +757,11 @@ def create_app(config_path: str | None = None) -> FastAPI:
         if existing_raw:
             try:
                 existing = json.loads(existing_raw)
-            except (json.JSONDecodeError, ValueError):
-                pass
+            except (json.JSONDecodeError, ValueError) as exc:
+                logging.getLogger(__name__).debug(
+                    "Could not parse bootstrap keywords JSON: %s",
+                    exc,
+                )
 
         merged_high = list({*existing.get("high", []), *high})[:20]
         merged_medium = list({*existing.get("medium", []), *medium})[:20]
@@ -788,16 +782,16 @@ def create_app(config_path: str | None = None) -> FastAPI:
         if profile_text:
             store.set_setting("bootstrap_profile_summary", profile_text)
 
-        return JSONResponse({
-            "ok": True,
-            "high_keywords": merged_high,
-            "medium_keywords": merged_medium,
-            "dislikes": dislikes,
-            "synonyms": synonyms,
-            "profile_summary": profile_text,
-        })
-
-    # --- Ranking weights (admin-tunable) --------------------------------
+        return JSONResponse(
+            {
+                "ok": True,
+                "high_keywords": merged_high,
+                "medium_keywords": merged_medium,
+                "dislikes": dislikes,
+                "synonyms": synonyms,
+                "profile_summary": profile_text,
+            }
+        )
 
     _WEIGHT_FLOAT_KEYS = {  # noqa: N806
         "tfidf_preference_weight": (0.0, 5.0),
@@ -826,24 +820,26 @@ def create_app(config_path: str | None = None) -> FastAPI:
         """Return the current effective ranking weights (DB overrides + defaults)."""
         merged = apply_db_settings(load_config(config_path), store)
         rel = merged.relevance
-        return JSONResponse({
-            "tfidf_preference_weight": rel.tfidf_preference_weight,
-            "category_preference_weight": rel.category_preference_weight,
-            "source_preference_weight": rel.source_preference_weight,
-            "implicit_signal_weight": rel.implicit_signal_weight,
-            "rating_decay_half_life_days": rel.rating_decay_half_life_days,
-            "min_ratings_for_learning": rel.min_ratings_for_learning,
-            "embedding_preference_weight": rel.embedding_preference_weight,
-            "topic_score_weight": rel.topic_score_weight,
-            "embedding_provider": rel.embedding_provider,
-            "embedding_model": rel.embedding_model,
-            "llm_rerank_enabled": rel.llm_rerank_enabled,
-            "llm_rerank_model": rel.llm_rerank_model,
-            "llm_rerank_top_k": rel.llm_rerank_top_k,
-            "llm_rerank_blend": rel.llm_rerank_blend,
-            "semantic_dedup_enabled": rel.semantic_dedup_enabled,
-            "semantic_dedup_threshold": rel.semantic_dedup_threshold,
-        })
+        return JSONResponse(
+            {
+                "tfidf_preference_weight": rel.tfidf_preference_weight,
+                "category_preference_weight": rel.category_preference_weight,
+                "source_preference_weight": rel.source_preference_weight,
+                "implicit_signal_weight": rel.implicit_signal_weight,
+                "rating_decay_half_life_days": rel.rating_decay_half_life_days,
+                "min_ratings_for_learning": rel.min_ratings_for_learning,
+                "embedding_preference_weight": rel.embedding_preference_weight,
+                "topic_score_weight": rel.topic_score_weight,
+                "embedding_provider": rel.embedding_provider,
+                "embedding_model": rel.embedding_model,
+                "llm_rerank_enabled": rel.llm_rerank_enabled,
+                "llm_rerank_model": rel.llm_rerank_model,
+                "llm_rerank_top_k": rel.llm_rerank_top_k,
+                "llm_rerank_blend": rel.llm_rerank_blend,
+                "semantic_dedup_enabled": rel.semantic_dedup_enabled,
+                "semantic_dedup_threshold": rel.semantic_dedup_threshold,
+            }
+        )
 
     @app.put("/api/preferences/weights", response_model=None)
     async def api_save_ranking_weights(body: dict[str, Any]) -> JSONResponse:
@@ -856,9 +852,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
                     if lo <= val <= hi:
                         store.set_setting(key, str(val))
                     else:
-                        errors.append(
-                            f"{key} must be between {lo} and {hi}, got {val}"
-                        )
+                        errors.append(f"{key} must be between {lo} and {hi}, got {val}")
                 except (ValueError, TypeError):
                     errors.append(f"{key} must be a number")
         for key, (lo, hi) in _WEIGHT_INT_KEYS.items():
@@ -868,9 +862,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
                     if lo <= val <= hi:
                         store.set_setting(key, str(val))
                     else:
-                        errors.append(
-                            f"{key} must be between {lo} and {hi}, got {val}"
-                        )
+                        errors.append(f"{key} must be between {lo} and {hi}, got {val}")
                 except (ValueError, TypeError):
                     errors.append(f"{key} must be an integer")
         for key in _WEIGHT_BOOL_KEYS:
@@ -880,9 +872,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
             if key in body:
                 val = str(body[key]).strip()
                 if allowed is not None and val not in allowed:
-                    errors.append(
-                        f"{key} must be one of {allowed}, got {val!r}"
-                    )
+                    errors.append(f"{key} must be one of {allowed}, got {val!r}")
                 else:
                     store.set_setting(key, val)
         if errors:
@@ -894,7 +884,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
         """Resolve a YouTube handle or URL to a channel ID using yt-dlp.
 
         Query param ``handle`` accepts formats such as ``@ThePrimeagen``,
-        ``ThePrimeagen``, or a full ``https://www.youtube.com/@ThePrimeagen`` URL.
+        ``ThePrimeagen``, or a full channel page URL on youtube.com.
         Requires ``yt-dlp`` to be installed on the server (``pip install yt-dlp``).
         """
         import re
@@ -911,10 +901,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
         # Normalise to a full URL
         if raw.startswith("http"):
             url = raw.rstrip("/")
-        elif raw.startswith("@"):
-            url = f"https://www.youtube.com/{raw}"
         else:
-            url = f"https://www.youtube.com/@{raw}"
+            url = youtube_handle_page_url(raw)
 
         # Append /videos so yt-dlp treats it as a channel playlist
         if not url.endswith("/videos"):
@@ -942,12 +930,11 @@ def create_app(config_path: str | None = None) -> FastAPI:
 
         if result.returncode != 0 or not result.stdout.strip():
             err = result.stderr.strip()[:300] if result.stderr else "no output"
-            return JSONResponse(
-                {"error": f"yt-dlp failed: {err}"}, status_code=422
-            )
+            return JSONResponse({"error": f"yt-dlp failed: {err}"}, status_code=422)
 
         try:
             import json as _json
+
             data = _json.loads(result.stdout)
         except Exception:
             return JSONResponse(
@@ -957,16 +944,13 @@ def create_app(config_path: str | None = None) -> FastAPI:
         channel_id = data.get("channel_id") or data.get("id") or ""
         channel_name = data.get("channel") or data.get("title") or ""
 
-        # Validate it looks like a real channel ID
         if not re.match(r"^UC[a-zA-Z0-9_-]{22}$", channel_id):
             return JSONResponse(
                 {"error": f"could not extract channel ID (got: {channel_id!r})"},
                 status_code=422,
             )
 
-        feed_url = (
-            f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
-        )
+        feed_url = youtube_channel_feed_url(channel_id)
         return JSONResponse(
             {
                 "channel_id": channel_id,
@@ -975,10 +959,6 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 "handle": handle.strip(),
             }
         )
-
-    # ==================================================================
-    # Legacy Jinja2 HTML routes (kept during transition)
-    # ==================================================================
 
     def _digest_list() -> list[dict[str, Any]]:
         return store.list_digests(limit=12)
@@ -996,7 +976,6 @@ def create_app(config_path: str | None = None) -> FastAPI:
         selected_id = row.get("id") if row else None
 
         if spa_dist.is_dir() and not raw:
-            from starlette.responses import FileResponse
             return FileResponse(spa_dist / "index.html")
 
         return templates.TemplateResponse(
@@ -1019,8 +998,6 @@ def create_app(config_path: str | None = None) -> FastAPI:
         return {"status": "ok"}
 
     if spa_dist.is_dir():
-        from starlette.responses import FileResponse
-
         assets_dir = spa_dist / "assets"
         if assets_dir.is_dir():
             app.mount(
@@ -1039,13 +1016,9 @@ def create_app(config_path: str | None = None) -> FastAPI:
     return app
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _today_iso() -> str:
     from datetime import UTC, datetime
+
     return datetime.now(UTC).strftime("%Y-%m-%d")
 
 
@@ -1053,9 +1026,11 @@ def _sum_spending(store: ContentStore, where: str) -> float:
     if "spending" not in store.db.table_names():
         return 0.0
     try:
-        rows = list(store.db.query(
-            f"SELECT SUM(amount_usd) as total FROM spending WHERE {where}"
-        ))
+        rows = list(
+            store.db.query(
+                f"SELECT SUM(amount_usd) as total FROM spending WHERE {where}"
+            )
+        )
         return float(rows[0]["total"] or 0) if rows else 0.0
     except Exception:
         return 0.0
@@ -1097,10 +1072,12 @@ def _explicit_digest_cost_usd(store: ContentStore, digest_id: int) -> float:
     if digest_id <= 0 or not _spending_has_column(store, "digest_id"):
         return 0.0
     try:
-        rows = list(store.db.query(
-            "SELECT SUM(amount_usd) as total FROM spending WHERE digest_id = ?",
-            [digest_id],
-        ))
+        rows = list(
+            store.db.query(
+                "SELECT SUM(amount_usd) as total FROM spending WHERE digest_id = ?",
+                [digest_id],
+            )
+        )
         return float(rows[0]["total"] or 0) if rows else 0.0
     except Exception:
         return 0.0
@@ -1112,24 +1089,26 @@ def _historical_digest_cost_usd(
     created_at: str,
 ) -> float:
     try:
-        previous_rows = list(store.db.query(
-            "SELECT created_at FROM digests"
-            " WHERE id < ? ORDER BY id DESC LIMIT 1",
-            [digest_id],
-        ))
+        previous_rows = list(
+            store.db.query(
+                "SELECT created_at FROM digests WHERE id < ? ORDER BY id DESC LIMIT 1",
+                [digest_id],
+            )
+        )
         previous_created_at = (
-            str(previous_rows[0]["created_at"] or "")
-            if previous_rows else ""
+            str(previous_rows[0]["created_at"] or "") if previous_rows else ""
         )
         where = "recorded_at <= ?"
         params: list[Any] = [created_at]
         if previous_created_at:
             where = f"recorded_at > ? AND {where}"
             params.insert(0, previous_created_at)
-        rows = list(store.db.query(
-            f"SELECT SUM(amount_usd) as total FROM spending WHERE {where}",
-            params,
-        ))
+        rows = list(
+            store.db.query(
+                f"SELECT SUM(amount_usd) as total FROM spending WHERE {where}",
+                params,
+            )
+        )
         return float(rows[0]["total"] or 0) if rows else 0.0
     except Exception:
         return 0.0
@@ -1153,9 +1132,7 @@ def _build_digest_detail(
     html = markdown.markdown(md, extensions=["tables", "fenced_code"])
     meta = _parse_stats(row.get("stats_json", ""))
     raw_items = meta.pop("digest_items", None)
-    items: list[dict[str, Any]] = (
-        raw_items if isinstance(raw_items, list) else []
-    )
+    items: list[dict[str, Any]] = raw_items if isinstance(raw_items, list) else []
     meta["created_at"] = row.get("created_at", "")
     meta["id"] = row.get("id")
     cleaned = _clean_items(items)
@@ -1184,9 +1161,7 @@ def _load_digest(
 ) -> tuple[dict[str, Any] | None, str, dict[str, Any], list[dict[str, Any]]]:
     row: dict[str, Any] | None
     if digest_id is not None:
-        rows = list(
-            store.db.query("SELECT * FROM digests WHERE id = ?", [digest_id])
-        )
+        rows = list(store.db.query("SELECT * FROM digests WHERE id = ?", [digest_id]))
         row = dict(rows[0]) if rows else None
     else:
         row = store.latest_digest()
@@ -1215,10 +1190,7 @@ def _attach_ratings(
         return rows
     placeholders = ", ".join(["?"] * len(urls))
     q = f"SELECT url, rating FROM ratings WHERE url IN ({placeholders})"
-    by_url = {
-        str(row["url"]): row["rating"]
-        for row in store.db.query(q, urls)
-    }
+    by_url = {str(row["url"]): row["rating"] for row in store.db.query(q, urls)}
     for r in rows:
         u = str(r.get("url", ""))
         r["rating"] = by_url.get(u)

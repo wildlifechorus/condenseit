@@ -1,16 +1,15 @@
 """Podcast episode collector via RSS/Atom feeds with iTunes namespace support."""
 
-from __future__ import annotations
-
 import html
 import logging
 import re
 from datetime import UTC, datetime
-from email.utils import parsedate_to_datetime
 
 import feedparser
 import httpx
 
+from condenseit.collectors.feed_dates import parse_feed_entry_date
+from condenseit.collectors.health import collect_with_health
 from condenseit.config import PodcastConfig
 from condenseit.fetch_headers import digest_fetch_headers
 from condenseit.store.database import ContentStore
@@ -45,13 +44,13 @@ class PodcastCollector:
         articles: list[dict[str, str]] = []
         health: list[tuple[str, str | None, int]] = []
         for cfg in self.sources:
-            try:
-                items = self._collect_feed(cfg)
-                articles.extend(items)
-                health.append((cfg.feed_url, None, len(items)))
-            except Exception as exc:
-                logger.exception("Podcast collect failed for %s", cfg.feed_url)
-                health.append((cfg.feed_url, str(exc), 0))
+            items, entry = collect_with_health(
+                cfg.feed_url,
+                lambda cfg=cfg: self._collect_feed(cfg),
+                log_label=f"Podcast collect failed for {cfg.feed_url}",
+            )
+            articles.extend(items)
+            health.append(entry)
         return articles, health
 
     def _collect_feed(self, cfg: PodcastConfig) -> list[dict[str, str]]:
@@ -149,15 +148,4 @@ class PodcastCollector:
 
     @staticmethod
     def _parse_published(entry: feedparser.FeedParserDict) -> str:
-        if entry.get("published_parsed"):
-            t = entry.published_parsed
-            return datetime(*t[:6], tzinfo=UTC).isoformat()
-        if entry.get("published"):
-            try:
-                return parsedate_to_datetime(entry.published).isoformat()
-            except (TypeError, ValueError):
-                pass
-        if entry.get("updated_parsed"):
-            t = entry.updated_parsed
-            return datetime(*t[:6], tzinfo=UTC).isoformat()
-        return datetime.now(UTC).isoformat()
+        return parse_feed_entry_date(entry)

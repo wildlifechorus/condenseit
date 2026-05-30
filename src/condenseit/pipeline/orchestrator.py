@@ -1,7 +1,5 @@
 """Main digest pipeline orchestration."""
 
-from __future__ import annotations
-
 import json
 import logging
 import shutil
@@ -10,10 +8,10 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
-import numpy as np
 import markdown
+import numpy as np
 
 from condenseit.collectors.github_releases import GitHubReleasesCollector
 from condenseit.collectors.google_news import GoogleNewsCollector
@@ -70,7 +68,9 @@ def _article_matches_keywords(article: dict[str, Any], keywords: list[str]) -> b
     if not keywords:
         return False
     title = str(article.get("title") or "").lower()
-    content = str(article.get("content") or article.get("description") or "")[:500].lower()
+    content = str(article.get("content") or article.get("description") or "")[
+        :500
+    ].lower()
     combined = title + " " + content
     return any(_keyword_matches_text(kw, combined) for kw in keywords)
 
@@ -118,9 +118,6 @@ class DigestPipeline:
         self._or_key: str = (
             _keys.get_key("openrouter") or self.config.llm.openrouter_api_key or ""
         )
-        # Shared budget tracker for AI features (embeddings, reranker).
-        # Writes to the same spending table as the summarizer tracker so all
-        # OpenRouter costs aggregate correctly on the Budget page.
         self._ai_budget: BudgetTracker | None = (
             BudgetTracker(
                 self.store,
@@ -157,11 +154,7 @@ class DigestPipeline:
         self.digest_html = ""
         self.stats: dict[str, Any] = {}
 
-    # ------------------------------------------------------------------
-    # Context-manager support
-    # ------------------------------------------------------------------
-
-    def __enter__(self) -> DigestPipeline:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *args: object) -> None:
@@ -240,7 +233,10 @@ class DigestPipeline:
             ).collect_all_with_health()
             articles.extend(
                 _apply_source_rules(
-                    src_articles, cfg.hide_keywords, cfg.highlight_keywords, cfg.require_keywords
+                    src_articles,
+                    cfg.hide_keywords,
+                    cfg.highlight_keywords,
+                    cfg.require_keywords,
                 )
             )
             self._record_health(src_health)
@@ -251,7 +247,10 @@ class DigestPipeline:
             ).collect_all_with_health()
             articles.extend(
                 _apply_source_rules(
-                    src_articles, cfg.hide_keywords, cfg.highlight_keywords, cfg.require_keywords
+                    src_articles,
+                    cfg.hide_keywords,
+                    cfg.highlight_keywords,
+                    cfg.require_keywords,
                 )
             )
             self._record_health(src_health)
@@ -262,7 +261,10 @@ class DigestPipeline:
             ).collect_all_with_health()
             articles.extend(
                 _apply_source_rules(
-                    src_articles, cfg.hide_keywords, cfg.highlight_keywords, cfg.require_keywords
+                    src_articles,
+                    cfg.hide_keywords,
+                    cfg.highlight_keywords,
+                    cfg.require_keywords,
                 )
             )
             self._record_health(src_health)
@@ -273,7 +275,10 @@ class DigestPipeline:
             ).collect_all_with_health()
             articles.extend(
                 _apply_source_rules(
-                    src_articles, cfg.hide_keywords, cfg.highlight_keywords, cfg.require_keywords
+                    src_articles,
+                    cfg.hide_keywords,
+                    cfg.highlight_keywords,
+                    cfg.require_keywords,
                 )
             )
             self._record_health(src_health)
@@ -284,7 +289,10 @@ class DigestPipeline:
             ).collect_all_with_health()
             articles.extend(
                 _apply_source_rules(
-                    src_articles, cfg.hide_keywords, cfg.highlight_keywords, cfg.require_keywords
+                    src_articles,
+                    cfg.hide_keywords,
+                    cfg.highlight_keywords,
+                    cfg.require_keywords,
                 )
             )
             self._record_health(src_health)
@@ -294,9 +302,6 @@ class DigestPipeline:
         # Persist new articles and identify the truly fresh subset.
         fresh = self.store.deduplicate(articles)
 
-        # Accumulate the full same-day pool so that re-runs on the same day
-        # distil *all* articles collected today rather than only the net-new
-        # batch (which shrinks toward zero with each subsequent run).
         today_midnight = datetime.now(UTC).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
@@ -335,13 +340,11 @@ class DigestPipeline:
         # story cluster is the one that survives.
         ranked = self._deduplicate_stories(ranked)
 
-        # Phase 3: LLM reranker (optional, single call, fail-open).
         if self.config.relevance.llm_rerank_enabled and not dry_run:
             profile_narrative = build_profile_narrative(self.preferences)
             if profile_narrative:
                 _rerank_model = (
-                    self.config.relevance.llm_rerank_model
-                    or self.summarizer.model_name
+                    self.config.relevance.llm_rerank_model or self.summarizer.model_name
                 )
                 _api_key = self._or_key or None
                 # OpenAI-compat reranking: used when no OpenRouter key and
@@ -404,17 +407,13 @@ class DigestPipeline:
             # Parallelize LLM API calls (the bottleneck). executor.map preserves
             # input order so zip(ranked, summaries) pairs correctly.
             with ThreadPoolExecutor(max_workers=workers) as pool:
-                summaries = list(
-                    pool.map(self.summarizer.summarize_article, ranked)
-                )
+                summaries = list(pool.map(self.summarizer.summarize_article, ranked))
 
             # Process results sequentially to keep DB writes off worker threads.
             for art, result in zip(ranked, summaries):
                 category = str(art.get("category", "General"))
                 is_video = art["url"] in video_urls
-                entry_kind = (
-                    "video" if is_video else str(art.get("kind") or "article")
-                )
+                entry_kind = "video" if is_video else str(art.get("kind") or "article")
                 entry = {
                     "title": art["title"],
                     "url": art["url"],
@@ -428,7 +427,6 @@ class DigestPipeline:
                     "preference_score": art.get("preference_score"),
                     "score_breakdown": art.get("score_breakdown"),
                     "image_url": art.get("image_url"),
-                    # Phase 2: enrichment fields.
                     "topics": result.get("topics") or [],
                     "entities": result.get("entities") or [],
                     "novelty": result.get("novelty") or 0,
@@ -444,8 +442,12 @@ class DigestPipeline:
                         signals=result.get("relevance_signals") or [],
                         model=self.summarizer.model_name,
                     )
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to persist enrichment for %s: %s",
+                        art["url"],
+                        exc,
+                    )
                 if is_video:
                     video_summaries.append(entry)
                 else:
@@ -491,16 +493,12 @@ class DigestPipeline:
         )
         if not dry_run:
             self.store.attach_spending_to_digest(self.digest_run_id, digest_id)
-            self.stats["cost_usd"] = self.store.sum_spending_for_digest(
-                digest_id
-            )
+            self.stats["cost_usd"] = self.store.sum_spending_for_digest(digest_id)
             self.store.update_digest_stats(digest_id, json.dumps(self.stats))
         logger.info("Digest complete in %s", self.stats["processing_time"])
         return self.stats
 
-    def _filter_by_age(
-        self, articles: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
+    def _filter_by_age(self, articles: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Drop articles whose published_at is older than max_article_age_hours.
 
         Items with no parseable published_at are kept so that website-watcher
@@ -515,12 +513,12 @@ class DigestPipeline:
         dropped = 0
 
         for art in articles:
-            raw = str(art.get('published_at') or '').strip()
+            raw = str(art.get("published_at") or "").strip()
             if not raw:
                 kept.append(art)
                 continue
             try:
-                pub = datetime.fromisoformat(raw.replace('Z', '+00:00'))
+                pub = datetime.fromisoformat(raw.replace("Z", "+00:00"))
                 if pub.tzinfo is None:
                     pub = pub.replace(tzinfo=UTC)
             except ValueError:
@@ -534,16 +532,14 @@ class DigestPipeline:
 
         if dropped:
             logger.info(
-                'Age filter (%dh cutoff): dropped %d old article(s), %d remaining',
+                "Age filter (%dh cutoff): dropped %d old article(s), %d remaining",
                 max_hours,
                 dropped,
                 len(kept),
             )
         return kept
 
-    def _filter_read(
-        self, articles: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
+    def _filter_read(self, articles: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Exclude articles the user has already marked as read.
 
         Three layers of matching (most to least strict):
@@ -623,9 +619,7 @@ class DigestPipeline:
         try:
             import langdetect
         except ImportError:
-            logger.warning(
-                "langdetect not installed; skipping language filter."
-            )
+            logger.warning("langdetect not installed; skipping language filter.")
             return articles
 
         preferred_set = {lang.lower() for lang in preferred}
@@ -634,9 +628,7 @@ class DigestPipeline:
 
         for art in articles:
             text = (
-                str(art.get("title") or "")
-                + " "
-                + str(art.get("content") or "")[:300]
+                str(art.get("title") or "") + " " + str(art.get("content") or "")[:300]
             ).strip()
             if not text:
                 kept.append(art)
@@ -683,11 +675,11 @@ class DigestPipeline:
         dropped = 0
 
         for art in articles:
-            title = str(art.get('title') or '').lower()
-            description = str(art.get('description') or art.get('content') or '')[
+            title = str(art.get("title") or "").lower()
+            description = str(art.get("description") or art.get("content") or "")[
                 :500
             ].lower()
-            combined = title + ' ' + description
+            combined = title + " " + description
 
             if any(phrase in combined for phrase in phrases):
                 dropped += 1
@@ -696,8 +688,8 @@ class DigestPipeline:
 
         if dropped:
             logger.info(
-                'Keyword exclusion filter: dropped %d article(s) matching'
-                ' %r, %d remaining',
+                "Keyword exclusion filter: dropped %d article(s) matching"
+                " %r, %d remaining",
                 dropped,
                 raw_phrases,
                 len(kept),
@@ -726,9 +718,6 @@ class DigestPipeline:
         if not articles:
             return articles
 
-        # ------------------------------------------------------------------
-        # Pass 1: Jaccard title dedup
-        # ------------------------------------------------------------------
         _jaccard_threshold = 0.35
 
         def _jaccard(a: frozenset[str], b: frozenset[str]) -> float:
@@ -740,7 +729,7 @@ class DigestPipeline:
         jaccard_dropped = 0
 
         for art in articles:
-            title = str(art.get('title') or '').lower().strip()
+            title = str(art.get("title") or "").lower().strip()
             words = frozenset(title.split())
             if len(words) >= 3 and any(
                 _jaccard(words, existing) >= _jaccard_threshold
@@ -754,16 +743,13 @@ class DigestPipeline:
 
         if jaccard_dropped:
             logger.info(
-                'Story dedup (Jaccard): removed %d near-duplicate(s)'
-                ' (threshold >= %.2f), %d remaining',
+                "Story dedup (Jaccard): removed %d near-duplicate(s)"
+                " (threshold >= %.2f), %d remaining",
                 jaccard_dropped,
                 _jaccard_threshold,
                 len(kept),
             )
 
-        # ------------------------------------------------------------------
-        # Pass 2: Semantic embedding dedup
-        # ------------------------------------------------------------------
         rel = self.config.relevance
         if (
             self._embed_provider is None
@@ -775,11 +761,11 @@ class DigestPipeline:
         sem_threshold = rel.semantic_dedup_threshold
 
         def _embed_article(art: dict[str, Any]):
-            url = str(art.get('url') or '')
-            content_hash = str(art.get('content_hash') or '')
-            title_text = str(art.get('title') or '')
-            body = str(art.get('content') or '')
-            text = (title_text + ' ' + body[:500]).strip()
+            url = str(art.get("url") or "")
+            content_hash = str(art.get("content_hash") or "")
+            title_text = str(art.get("title") or "")
+            body = str(art.get("content") or "")
+            text = (title_text + " " + body[:500]).strip()
             try:
                 vec = get_or_compute_embedding(
                     self._embed_provider,  # type: ignore[arg-type]
@@ -803,9 +789,7 @@ class DigestPipeline:
             if vec is None:
                 sem_kept.append(art)
                 continue
-            if any(
-                cosine_similarity(vec, kv) >= sem_threshold for kv in kept_vecs
-            ):
+            if any(cosine_similarity(vec, kv) >= sem_threshold for kv in kept_vecs):
                 sem_dropped += 1
                 continue
             sem_kept.append(art)
@@ -813,8 +797,8 @@ class DigestPipeline:
 
         if sem_dropped:
             logger.info(
-                'Story dedup (semantic): removed %d near-duplicate(s)'
-                ' (cosine >= %.2f), %d remaining',
+                "Story dedup (semantic): removed %d near-duplicate(s)"
+                " (cosine >= %.2f), %d remaining",
                 sem_dropped,
                 sem_threshold,
                 len(sem_kept),

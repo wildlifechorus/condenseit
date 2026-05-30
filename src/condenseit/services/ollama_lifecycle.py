@@ -1,14 +1,12 @@
 """Start and stop a local Ollama server around pipeline runs."""
 
-from __future__ import annotations
-
 import logging
 import os
 import shutil
 import signal
 import subprocess
 import time
-from typing import Any
+from typing import Any, Self
 
 import httpx
 
@@ -31,7 +29,7 @@ class OllamaLifecycle:
         self._process: subprocess.Popen[bytes] | None = None
         self._started_by_us = False
 
-    def __enter__(self) -> OllamaLifecycle:
+    def __enter__(self) -> Self:
         if not self.manage:
             self._wait_until_ready()
             return self

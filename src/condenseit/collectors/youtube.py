@@ -1,7 +1,5 @@
 """YouTube channel collection via RSS, transcripts, and description fallback."""
 
-from __future__ import annotations
-
 import base64
 import html
 import logging
@@ -11,7 +9,6 @@ import subprocess
 import tempfile
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +17,14 @@ import httpx
 import sqlite_utils.db
 from youtube_transcript_api import YouTubeTranscriptApi
 
+from condenseit.api_urls import (
+    OPENROUTER_TRANSCRIPTIONS_URL,
+    youtube_channel_feed_url,
+    youtube_thumbnail_url,
+    youtube_watch_url,
+)
+from condenseit.collectors.feed_dates import parse_feed_entry_date
+from condenseit.collectors.health import collect_with_health
 from condenseit.config import YouTubeChannelConfig, YouTubeTranscriptionConfig
 from condenseit.fetch_headers import digest_fetch_headers
 from condenseit.providers.budget import BudgetTracker
@@ -30,21 +35,6 @@ logger = logging.getLogger(__name__)
 _VIDEO_ID_RE = re.compile(r"(?:v=|/shorts/)([a-zA-Z0-9_-]{11})")
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
 _MAX_BODY_CHARS = 12000
-
-_OPENROUTER_TRANSCRIPTION_URL = "https://openrouter.ai/api/v1/audio/transcriptions"
-
-
-def _parse_entry_date(entry: Any) -> str:
-    """Return the video's actual publish date from the feed entry, or now() as fallback."""
-    if entry.get("published_parsed"):
-        t = entry.published_parsed
-        return datetime(*t[:6], tzinfo=UTC).isoformat()
-    if entry.get("published"):
-        try:
-            return parsedate_to_datetime(entry.published).isoformat()
-        except (TypeError, ValueError):
-            pass
-    return datetime.now(UTC).isoformat()
 
 
 @dataclass
@@ -115,20 +105,18 @@ class YouTubeCollector:
         for ch in self.channels:
             if not ch.channel_id:
                 continue
-            rss_url = (
-                f"https://www.youtube.com/feeds/videos.xml?channel_id={ch.channel_id}"
+            rss_url = youtube_channel_feed_url(ch.channel_id)
+            ch_videos, entry = collect_with_health(
+                rss_url,
+                lambda ch=ch: self._collect_channel(ch),
+                log_label=f"YouTube collect failed for {ch.channel_id}",
             )
-            try:
-                ch_videos = self._collect_channel(ch)
-                videos.extend(ch_videos)
-                health.append((rss_url, None, len(ch_videos)))
-            except Exception as exc:
-                logger.exception("YouTube collect failed for %s", ch.channel_id)
-                health.append((rss_url, str(exc), 0))
+            videos.extend(ch_videos)
+            health.append(entry)
         return videos, health
 
     def _collect_channel(self, ch: YouTubeChannelConfig) -> list[VideoItem]:
-        rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={ch.channel_id}"
+        rss_url = youtube_channel_feed_url(ch.channel_id)
         resp = self.client.get(rss_url)
         resp.raise_for_status()
         feed = feedparser.parse(resp.text)
@@ -164,7 +152,7 @@ class YouTubeCollector:
                     category=ch.category,
                     body=body[:_MAX_BODY_CHARS],
                     image_url=thumbnail,
-                    published_at=_parse_entry_date(entry),
+                    published_at=parse_feed_entry_date(entry),
                 ),
             )
             self._mark_processed(vid)
@@ -201,24 +189,29 @@ class YouTubeCollector:
         assert self._transcription is not None
 
         if self._budget and not self._budget.can_spend():
-            logger.info("Budget exhausted, skipping Whisper transcription for %s", video_id)
+            logger.info(
+                "Budget exhausted, skipping Whisper transcription for %s", video_id
+            )
             return ""
 
         tmp_dir = Path(tempfile.mkdtemp(prefix="condenseit_yt_"))
         audio_path = tmp_dir / "audio.m4a"
         try:
-            url = f"https://www.youtube.com/watch?v={video_id}"
+            url = youtube_watch_url(video_id)
             max_dur = self._transcription.max_duration_seconds
             result = subprocess.run(
                 [
                     "yt-dlp",
                     "--extract-audio",
-                    "--audio-format", "m4a",
-                    "--match-filter", f"duration<={max_dur}",
+                    "--audio-format",
+                    "m4a",
+                    "--match-filter",
+                    f"duration<={max_dur}",
                     "--no-playlist",
                     "--quiet",
                     "--no-warnings",
-                    "-o", str(audio_path),
+                    "-o",
+                    str(audio_path),
                     url,
                 ],
                 capture_output=True,
@@ -226,16 +219,14 @@ class YouTubeCollector:
                 timeout=120,
             )
             if result.returncode != 0 or not audio_path.exists():
-                logger.debug(
-                    "yt-dlp failed for %s: %s", video_id, result.stderr[:200]
-                )
+                logger.debug("yt-dlp failed for %s: %s", video_id, result.stderr[:200])
                 return ""
 
             audio_bytes = audio_path.read_bytes()
             audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
 
             resp = httpx.post(
-                _OPENROUTER_TRANSCRIPTION_URL,
+                OPENROUTER_TRANSCRIPTIONS_URL,
                 headers={
                     "Authorization": f"Bearer {self._or_key}",
                     "Content-Type": "application/json",
@@ -317,7 +308,7 @@ def _extract_video_thumbnail(entry: Any, video_id: str) -> str:
         url = thumbnails[0].get("url", "")
         if url:
             return url
-    return f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
+    return youtube_thumbnail_url(video_id)
 
 
 def _extract_video_id(url: str) -> str | None:

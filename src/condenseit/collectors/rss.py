@@ -1,12 +1,9 @@
 """RSS and Atom feed collection."""
 
-from __future__ import annotations
-
 import logging
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from email.utils import parsedate_to_datetime
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
@@ -14,6 +11,8 @@ import feedparser
 import httpx
 import trafilatura
 
+from condenseit.collectors.feed_dates import parse_feed_entry_date
+from condenseit.collectors.health import collect_with_health
 from condenseit.config import FeedConfig
 from condenseit.fetch_headers import digest_fetch_headers
 from condenseit.store.database import ContentStore
@@ -36,7 +35,6 @@ def _extract_og_image(html_text: str) -> str | None:
     match = _OG_IMAGE_RE.search(html_text)
     if not match:
         return None
-    # Return whichever capture group matched.
     for group in match.groups():
         if group:
             return group.strip()
@@ -84,12 +82,12 @@ class RSSCollector:
         """Per-feed collection; ``error`` is None on success."""
         out: list[tuple[FeedConfig, list[CollectedArticle], str | None]] = []
         for feed in self.feeds:
-            try:
-                items = self._collect_feed(feed)
-                out.append((feed, items, None))
-            except Exception as exc:
-                logger.exception("Failed to collect feed %s", feed.url)
-                out.append((feed, [], str(exc)))
+            items, (_url, error, _count) = collect_with_health(
+                feed.url,
+                lambda feed=feed: self._collect_feed(feed),
+                log_label=f"Failed to collect feed {feed.url}",
+            )
+            out.append((feed, items, error))
         return out
 
     def collect_all(self) -> list[CollectedArticle]:
@@ -161,6 +159,7 @@ class RSSCollector:
         ``image_url`` is the first ``og:image`` or ``twitter:image`` found on
         the page, or ``None`` when unavailable.
         """
+        image_url: str | None = None
         try:
             page = self.client.get(url)
             page.raise_for_status()
@@ -171,23 +170,15 @@ class RSSCollector:
             )
             if extracted:
                 return extracted, image_url
-        except Exception:
-            logger.debug("article fetch failed for %s", url, exc_info=True)
+        except Exception as exc:
+            logger.debug("article fetch failed for %s: %s", url, exc)
         summary = entry.get("summary", "")
         content = summary if isinstance(summary, str) else str(summary)
-        return content, None
+        return content, image_url
 
     @staticmethod
     def _parse_published(entry: feedparser.FeedParserDict) -> str:
-        if entry.get("published_parsed"):
-            t = entry.published_parsed
-            return datetime(*t[:6], tzinfo=UTC).isoformat()
-        if entry.get("published"):
-            try:
-                return parsedate_to_datetime(entry.published).isoformat()
-            except (TypeError, ValueError):
-                pass
-        return datetime.now(UTC).isoformat()
+        return parse_feed_entry_date(entry)
 
 
 def collect_rss_feeds(feeds: list[FeedConfig]) -> list[dict[str, str]]:

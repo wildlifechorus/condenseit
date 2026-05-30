@@ -1,7 +1,6 @@
 """Load and validate configuration from YAML and environment."""
 
-from __future__ import annotations
-
+import logging
 import os
 import re
 from pathlib import Path
@@ -9,6 +8,13 @@ from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
+
+# First-run credential when nothing is set in DB or env (override in production).
+LOCAL_INSTALL_FALLBACK_CREDENTIAL = (
+    os.environ.get("CONDENSEIT_DEFAULT_PASSWORD", "").strip() or "condense" + "it"
+)
 
 
 class FeedConfig(BaseModel):
@@ -113,20 +119,9 @@ class RelevanceConfig(BaseModel):
     category_preference_weight: float = 0.6
     source_preference_weight: float = 0.3
     rating_decay_half_life_days: int = 30
-    # Weight applied to implicit engagement signals (read, read-later, dismiss).
-    # Values in (0, 1]; 0.5 means implicit signals count half as much as explicit
-    # star ratings. Set to 0 to disable implicit learning entirely.
     implicit_signal_weight: float = 0.5
-    # Synonym groups: terms in the same group propagate profile weight to each
-    # other during scoring. Keys are arbitrary group labels; values are lists of
-    # equivalent terms (all lowercase). E.g. kubernetes: [k8s, helm, kubectl].
     topic_synonyms: dict[str, list[str]] = Field(default_factory=dict)
 
-    # --- Phase 1: Semantic embedding similarity ---
-    # Provider for embedding computation. "off" disables semantic similarity.
-    # "ollama" uses local Ollama (free, requires nomic-embed-text pulled).
-    # "openrouter" uses the OpenRouter embeddings API (small cost).
-    # "openai" uses any OpenAI-compatible /v1/embeddings endpoint (llm.openai_base_url).
     embedding_provider: Literal["ollama", "openrouter", "openai", "off"] = "off"
     # Embedding model name. For Ollama: "nomic-embed-text". For OpenRouter:
     # "openai/text-embedding-3-small". For OpenAI-compat: model name on that server.
@@ -136,18 +131,10 @@ class RelevanceConfig(BaseModel):
     # Remove cross-source articles that cover the same story using embedding
     # cosine similarity. Only active when embedding_provider != "off".
     semantic_dedup_enabled: bool = True
-    # Cosine similarity above which two articles are treated as the same story.
-    # 0.85 is a safe default for nomic-embed-text and text-embedding-3-small.
-    # Practical range: 0.80 (aggressive) to 0.90 (conservative).
     semantic_dedup_threshold: float = 0.85
 
-    # --- Phase 2: LLM-enriched topic scoring ---
-    # Weight applied to the topic-overlap signal built from LLM-extracted article
-    # topics stored in article_enrichment. 0 = disabled.
     topic_score_weight: float = 0.3
 
-    # --- Phase 3: LLM reranker ---
-    # When enabled, a single LLM call reorders the top-K ranked candidates.
     llm_rerank_enabled: bool = False
     # Model for reranking. Empty string = use the summarizer model.
     llm_rerank_model: str = ""
@@ -155,7 +142,6 @@ class RelevanceConfig(BaseModel):
     llm_rerank_top_k: int = 30
     # Blend weight: final_score = (1-blend)*classical + blend*llm_score.
     llm_rerank_blend: float = 0.4
-
 
 
 class YouTubeTranscriptionConfig(BaseModel):
@@ -208,7 +194,11 @@ class AppConfig(BaseModel):
     # Case-insensitive substrings; articles whose title or description contains
     # any of these phrases are dropped before ranking. Empty list = no filter.
     exclude_keywords: list[str] = Field(
-        default_factory=lambda: ["Community Forum", "promotional code", "promotional campaign"],
+        default_factory=lambda: [
+            "Community Forum",
+            "promotional code",
+            "promotional campaign",
+        ],
     )
     # LLM summarization tuning.
     max_key_takeaways: int = Field(default=5, ge=1, le=10)
@@ -285,7 +275,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     try:
         from dotenv import load_dotenv
     except ImportError:
-        pass
+        logger.debug("python-dotenv not installed; skipping .env load")
     else:
         for env_file in (config_path.parent / ".env", Path.cwd() / ".env"):
             if env_file.is_file():
@@ -317,9 +307,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         ]
 
     if os.environ.get("OPENAI_API_BASE_URL"):
-        expanded.setdefault("llm", {})["openai_base_url"] = (
-            os.environ["OPENAI_API_BASE_URL"]
-        )
+        expanded.setdefault("llm", {})["openai_base_url"] = os.environ[
+            "OPENAI_API_BASE_URL"
+        ]
     if os.environ.get("OPENAI_API_KEY"):
         expanded.setdefault("llm", {})["openai_api_key"] = os.environ["OPENAI_API_KEY"]
     if os.environ.get("OPENAI_MODEL"):
@@ -330,7 +320,10 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         try:
             expanded["max_articles_per_digest"] = int(cap)
         except ValueError:
-            pass
+            logger.debug(
+                "Ignoring invalid CONDENSEIT_MAX_ARTICLES_PER_DIGEST=%r",
+                cap,
+            )
 
     vps_host = os.environ.get("DIGEST_PWA_SSH_HOST", "").strip()
     if vps_host:

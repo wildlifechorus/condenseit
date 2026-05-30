@@ -1,7 +1,5 @@
 """Website change detection."""
 
-from __future__ import annotations
-
 import logging
 from difflib import unified_diff
 

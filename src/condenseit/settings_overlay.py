@@ -1,15 +1,18 @@
 """Apply admin DB settings onto AppConfig."""
 
-from __future__ import annotations
-
-import json
-
 from condenseit.config import AppConfig
+from condenseit.setting_parsers import (
+    parse_float_in_range,
+    parse_float_min,
+    parse_int_in_range,
+    parse_int_min,
+    parse_json_dict,
+    parse_json_list,
+)
 from condenseit.store.database import ContentStore
 
 
-def apply_db_settings(config: AppConfig, store: ContentStore) -> AppConfig:
-    # LLM settings
+def _apply_llm_settings(config: AppConfig, store: ContentStore) -> None:
     model = store.get_setting("model")
     if model:
         config.model = model
@@ -31,25 +34,32 @@ def apply_db_settings(config: AppConfig, store: ContentStore) -> AppConfig:
     elif pick == "0":
         config.llm.openrouter_pick_cheapest = False
 
-    # Schedule settings
-    schedule_raw = store.get_setting("schedule_times", "")
-    if schedule_raw:
-        try:
-            times = json.loads(schedule_raw)
-            if isinstance(times, list):
-                config.schedule["times"] = [str(t) for t in times]
-        except (json.JSONDecodeError, TypeError):
-            pass
+    daily_budget = store.get_setting("openrouter_daily_budget_usd", "")
+    if daily_budget:
+        val = parse_float_min(daily_budget, "openrouter_daily_budget_usd", 0.0)
+        if val is not None:
+            config.llm.openrouter_daily_budget_usd = val
 
-    # Digest pipeline settings
+    monthly_budget = store.get_setting("openrouter_monthly_budget_usd", "")
+    if monthly_budget:
+        val = parse_float_min(monthly_budget, "openrouter_monthly_budget_usd", 0.0)
+        if val is not None:
+            config.llm.openrouter_monthly_budget_usd = val
+
+
+def _apply_schedule_settings(config: AppConfig, store: ContentStore) -> None:
+    schedule_raw = store.get_setting("schedule_times", "")
+    times = parse_json_list(schedule_raw, "schedule_times")
+    if times is not None:
+        config.schedule["times"] = times
+
+
+def _apply_digest_settings(config: AppConfig, store: ContentStore) -> None:
     max_articles = store.get_setting("max_articles_per_digest", "")
     if max_articles:
-        try:
-            val = int(max_articles)
-            if 1 <= val <= 200:
-                config.max_articles_per_digest = val
-        except ValueError:
-            pass
+        val = parse_int_in_range(max_articles, "max_articles_per_digest", 1, 200)
+        if val is not None:
+            config.max_articles_per_digest = val
 
     balance = store.get_setting("balance_digest_categories", "")
     if balance == "1":
@@ -59,86 +69,44 @@ def apply_db_settings(config: AppConfig, store: ContentStore) -> AppConfig:
 
     max_per_cat = store.get_setting("max_articles_per_category", "")
     if max_per_cat:
-        try:
-            val = int(max_per_cat)
-            if 1 <= val <= 50:
-                config.max_articles_per_category = val
-        except ValueError:
-            pass
+        val = parse_int_in_range(max_per_cat, "max_articles_per_category", 1, 50)
+        if val is not None:
+            config.max_articles_per_category = val
 
     max_age = store.get_setting("max_article_age_hours", "")
     if max_age:
-        try:
-            val = int(max_age)
-            if val >= 0:
-                config.max_article_age_hours = val
-        except ValueError:
-            pass
+        val = parse_int_min(max_age, "max_article_age_hours", 0)
+        if val is not None:
+            config.max_article_age_hours = val
 
-    # Digest output language
     digest_lang = store.get_setting("digest_language", "")
     if digest_lang:
         config.digest_language = digest_lang
 
-    # Language preferences
     langs_raw = store.get_setting("preferred_languages", "")
-    if langs_raw:
-        try:
-            langs = json.loads(langs_raw)
-            if isinstance(langs, list):
-                config.preferred_languages = [str(language) for language in langs]
-        except (json.JSONDecodeError, TypeError):
-            pass
+    langs = parse_json_list(langs_raw, "preferred_languages")
+    if langs is not None:
+        config.preferred_languages = langs
 
-    # Keyword exclusions
     kw_raw = store.get_setting("exclude_keywords", "")
-    if kw_raw:
-        try:
-            kw_list = json.loads(kw_raw)
-            if isinstance(kw_list, list):
-                config.exclude_keywords = [str(k) for k in kw_list]
-        except (json.JSONDecodeError, TypeError):
-            pass
+    kw_list = parse_json_list(kw_raw, "exclude_keywords")
+    if kw_list is not None:
+        config.exclude_keywords = kw_list
 
-    # OpenRouter budget limits
-    daily_budget = store.get_setting("openrouter_daily_budget_usd", "")
-    if daily_budget:
-        try:
-            val = float(daily_budget)
-            if val >= 0:
-                config.llm.openrouter_daily_budget_usd = val
-        except ValueError:
-            pass
-
-    monthly_budget = store.get_setting("openrouter_monthly_budget_usd", "")
-    if monthly_budget:
-        try:
-            val = float(monthly_budget)
-            if val >= 0:
-                config.llm.openrouter_monthly_budget_usd = val
-        except ValueError:
-            pass
-
-    # LLM summarization tuning
     max_takeaways = store.get_setting("max_key_takeaways", "")
     if max_takeaways:
-        try:
-            val = int(max_takeaways)
-            if 1 <= val <= 10:
-                config.max_key_takeaways = val
-        except ValueError:
-            pass
+        val = parse_int_in_range(max_takeaways, "max_key_takeaways", 1, 10)
+        if val is not None:
+            config.max_key_takeaways = val
 
     max_paragraphs = store.get_setting("max_summary_paragraphs", "")
     if max_paragraphs:
-        try:
-            val = int(max_paragraphs)
-            if 1 <= val <= 10:
-                config.max_summary_paragraphs = val
-        except ValueError:
-            pass
+        val = parse_int_in_range(max_paragraphs, "max_summary_paragraphs", 1, 10)
+        if val is not None:
+            config.max_summary_paragraphs = val
 
-    # Ranking / preference engine weights
+
+def _apply_relevance_settings(config: AppConfig, store: ContentStore) -> None:
     for key, attr, lo, hi in [
         ("tfidf_preference_weight", "tfidf_preference_weight", 0.0, 5.0),
         ("category_preference_weight", "category_preference_weight", 0.0, 5.0),
@@ -151,12 +119,9 @@ def apply_db_settings(config: AppConfig, store: ContentStore) -> AppConfig:
     ]:
         raw = store.get_setting(key, "")
         if raw:
-            try:
-                val_f = float(raw)
-                if lo <= val_f <= hi:
-                    setattr(config.relevance, attr, val_f)
-            except ValueError:
-                pass
+            val_f = parse_float_in_range(raw, key, lo, hi)
+            if val_f is not None:
+                setattr(config.relevance, attr, val_f)
 
     for key, attr, lo, hi in [
         ("rating_decay_half_life_days", "rating_decay_half_life_days", 1, 3650),
@@ -165,14 +130,10 @@ def apply_db_settings(config: AppConfig, store: ContentStore) -> AppConfig:
     ]:
         raw = store.get_setting(key, "")
         if raw:
-            try:
-                val_i = int(raw)
-                if lo <= val_i <= hi:
-                    setattr(config.relevance, attr, val_i)
-            except ValueError:
-                pass
+            val_i = parse_int_in_range(raw, key, lo, hi)
+            if val_i is not None:
+                setattr(config.relevance, attr, val_i)
 
-    # Feature flag overrides stored as "1"/"0" strings.
     for key, attr in [
         ("llm_rerank_enabled", "llm_rerank_enabled"),
         ("semantic_dedup_enabled", "semantic_dedup_enabled"),
@@ -192,42 +153,29 @@ def apply_db_settings(config: AppConfig, store: ContentStore) -> AppConfig:
         if raw:
             setattr(config.relevance, attr, raw)
 
-    # Phase 5: Apply cold-start bootstrap keywords when no YAML keywords are set.
     bootstrap_raw = store.get_setting("bootstrap_initial_keywords", "")
-    if bootstrap_raw:
-        try:
-            bootstrap_kw = json.loads(bootstrap_raw)
-            if isinstance(bootstrap_kw, dict):
-                existing_high = config.relevance.initial_keywords.get("high", [])
-                existing_medium = config.relevance.initial_keywords.get("medium", [])
-                # Merge: YAML keywords take precedence; bootstrap fills gaps.
-                merged_high = list(
-                    {*existing_high, *bootstrap_kw.get("high", [])}
-                )
-                merged_medium = list(
-                    {*existing_medium, *bootstrap_kw.get("medium", [])}
-                )
-                config.relevance.initial_keywords = {
-                    "high": merged_high,
-                    "medium": merged_medium,
-                }
-        except (json.JSONDecodeError, TypeError):
-            pass
+    bootstrap_kw = parse_json_dict(bootstrap_raw, "bootstrap_initial_keywords")
+    if bootstrap_kw is not None:
+        existing_high = config.relevance.initial_keywords.get("high", [])
+        existing_medium = config.relevance.initial_keywords.get("medium", [])
+        merged_high = list({*existing_high, *bootstrap_kw.get("high", [])})
+        merged_medium = list({*existing_medium, *bootstrap_kw.get("medium", [])})
+        config.relevance.initial_keywords = {
+            "high": merged_high,
+            "medium": merged_medium,
+        }
 
     bootstrap_synonyms_raw = store.get_setting("bootstrap_synonyms", "")
-    if bootstrap_synonyms_raw:
-        try:
-            syn = json.loads(bootstrap_synonyms_raw)
-            if isinstance(syn, dict):
-                merged = dict(config.relevance.topic_synonyms)
-                for k, v in syn.items():
-                    if k not in merged:
-                        merged[k] = v
-                config.relevance.topic_synonyms = merged
-        except (json.JSONDecodeError, TypeError):
-            pass
+    syn = parse_json_dict(bootstrap_synonyms_raw, "bootstrap_synonyms")
+    if syn is not None:
+        merged = dict(config.relevance.topic_synonyms)
+        for k, v in syn.items():
+            if k not in merged:
+                merged[k] = v
+        config.relevance.topic_synonyms = merged
 
-    # YouTube transcription (audio-based via OpenRouter Whisper)
+
+def _apply_youtube_settings(config: AppConfig, store: ContentStore) -> None:
     yt_transcription_raw = store.get_setting("youtube_transcription_enabled", "")
     if yt_transcription_raw == "1":
         config.youtube_transcription.enabled = True
@@ -240,11 +188,17 @@ def apply_db_settings(config: AppConfig, store: ContentStore) -> AppConfig:
 
     yt_max_dur = store.get_setting("youtube_transcription_max_duration", "")
     if yt_max_dur:
-        try:
-            val = int(yt_max_dur)
-            if 60 <= val <= 7200:
-                config.youtube_transcription.max_duration_seconds = val
-        except ValueError:
-            pass
+        val = parse_int_in_range(
+            yt_max_dur, "youtube_transcription_max_duration", 60, 7200
+        )
+        if val is not None:
+            config.youtube_transcription.max_duration_seconds = val
 
+
+def apply_db_settings(config: AppConfig, store: ContentStore) -> AppConfig:
+    _apply_llm_settings(config, store)
+    _apply_schedule_settings(config, store)
+    _apply_digest_settings(config, store)
+    _apply_relevance_settings(config, store)
+    _apply_youtube_settings(config, store)
     return config

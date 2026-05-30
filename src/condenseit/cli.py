@@ -1,9 +1,6 @@
 """CondenseIt command-line interface."""
 
-from __future__ import annotations
-
 import logging
-from pathlib import Path
 
 import click
 from rich.console import Console

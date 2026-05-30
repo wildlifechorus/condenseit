@@ -27,7 +27,6 @@ export function getInitialTheme(): Theme {
   return DEFAULT_THEME;
 }
 
-/** Apply the theme to the root element used by Tailwind's dark variant. */
 export function applyTheme(theme: Theme): void {
   const root = document.documentElement;
 

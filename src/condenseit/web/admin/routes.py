@@ -1,7 +1,5 @@
 """Admin panel routes - Jinja2 HTML pages and JSON API endpoints."""
 
-from __future__ import annotations
-
 import json
 import os
 import re
@@ -17,6 +15,7 @@ from fastapi.responses import (
     RedirectResponse,
 )
 
+from condenseit.api_urls import youtube_channel_feed_url
 from condenseit.config import load_config
 from condenseit.providers.openrouter_models import pick_cheapest_text_model
 from condenseit.services.ollama_client import (
@@ -36,11 +35,10 @@ _TIME_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 _GNEWS_BASE = "https://news.google.com/rss/search"
 _HN_BASE = "https://hacker-news.firebaseio.com/v0"
 
-# Reddit's JSON/RSS endpoints are blocked on most VPS IPs. Any Reddit source
-# is transparently converted to an equivalent Lemmy.world RSS feed so it still
-# works without requiring Reddit API credentials.
 _LEMMY_INSTANCE = "https://lemmy.world"
-_REDDIT_HOST_RE = re.compile(r"(?:https?://)?(?:www\.|old\.)?reddit\.com/r/([^/?#\s]+)", re.IGNORECASE)
+_REDDIT_HOST_RE = re.compile(
+    r"(?:https?://)?(?:www\.|old\.)?reddit\.com/r/([^/?#\s]+)", re.IGNORECASE
+)
 
 
 def _reddit_subreddit_to_lemmy_url(subreddit: str) -> str:
@@ -116,9 +114,7 @@ def _build_source_extra(
 
     if source_type == "youtube" and channel_id:
         extra = {"channel_id": channel_id, "handle": name}
-        feed_url = (
-            f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
-        )
+        feed_url = youtube_channel_feed_url(channel_id)
 
     elif source_type == "google_news":
         lang = (language or "en").lower()
@@ -140,11 +136,6 @@ def _build_source_extra(
         feed_url = f"{_HN_BASE}/{feed}stories.json"
 
     elif source_type == "reddit":
-        # Reddit's API and RSS endpoints are blocked on datacenter IPs.
-        # Store the source as type="reddit" so the badge still shows "Reddit"
-        # in the UI, but point the URL at an equivalent Lemmy.world RSS feed.
-        # feeds_for_config() picks up reddit sources with a converted_from key
-        # and hands them to the RSS collector instead of the Reddit collector.
         sub = (subreddit or "").strip().lstrip("r/").lstrip("/")
         # Also try to extract subreddit from a pasted Reddit URL.
         if not sub and url:
@@ -297,12 +288,6 @@ def create_admin_router(
             ),
         )
 
-    # ==================================================================
-    # JSON API routes  (/api/...)
-    # ==================================================================
-
-    # --- Sources -------------------------------------------------------
-
     @router.get("/api/sources", response_model=None)
     async def api_list_sources() -> JSONResponse:
         return JSONResponse([dict(s) for s in sources.list_all()])
@@ -404,14 +389,10 @@ def create_admin_router(
         return JSONResponse({"ok": True})
 
     @router.patch("/api/sources/{source_id}/toggle", response_model=None)
-    async def api_toggle_source(
-        source_id: int, body: dict[str, Any]
-    ) -> JSONResponse:
+    async def api_toggle_source(source_id: int, body: dict[str, Any]) -> JSONResponse:
         """Enable or disable a source. Body: ``{"enabled": true|false}``."""
         if "enabled" not in body:
-            return JSONResponse(
-                {"error": "enabled field is required"}, status_code=422
-            )
+            return JSONResponse({"error": "enabled field is required"}, status_code=422)
         sources.toggle(source_id, bool(body["enabled"]))
         return JSONResponse({"ok": True})
 
@@ -445,8 +426,6 @@ def create_admin_router(
                 "Content-Disposition": 'attachment; filename="condenseit-sources.opml"',
             },
         )
-
-    # --- LLM config ----------------------------------------------------
 
     @router.get("/api/config/llm", response_model=None)
     async def api_get_llm() -> JSONResponse:
@@ -521,8 +500,6 @@ def create_admin_router(
         except Exception as exc:
             return JSONResponse({"message": f"Delete failed: {exc}"}, status_code=500)
 
-    # --- API keys ------------------------------------------------------
-
     @router.get("/api/config/keys", response_model=None)
     async def api_list_keys() -> JSONResponse:
         return JSONResponse(
@@ -548,8 +525,6 @@ def create_admin_router(
     async def api_delete_key(service: str) -> JSONResponse:
         keys.delete_key(service)
         return JSONResponse({"ok": True})
-
-    # --- Digest pipeline settings -------------------------------------
 
     @router.get("/api/config/digest", response_model=None)
     async def api_get_digest_config() -> JSONResponse:
@@ -578,7 +553,9 @@ def create_admin_router(
                 "digest_language": digest_lang,
                 "youtube_transcription_enabled": merged.youtube_transcription.enabled,
                 "youtube_transcription_model": merged.youtube_transcription.model,
-                "youtube_transcription_max_duration": merged.youtube_transcription.max_duration_seconds,
+                "youtube_transcription_max_duration": (
+                    merged.youtube_transcription.max_duration_seconds
+                ),
             }
         )
 
@@ -645,9 +622,7 @@ def create_admin_router(
                     status_code=422,
                 )
             cleaned_kw = [
-                str(phrase).strip()
-                for phrase in kw_list
-                if str(phrase).strip()
+                str(phrase).strip() for phrase in kw_list if str(phrase).strip()
             ]
             store.set_setting("exclude_keywords", json.dumps(cleaned_kw))
         if "max_key_takeaways" in body:
@@ -689,17 +664,13 @@ def create_admin_router(
             try:
                 val = int(body["youtube_transcription_max_duration"])
                 if 60 <= val <= 7200:
-                    store.set_setting(
-                        "youtube_transcription_max_duration", str(val)
-                    )
+                    store.set_setting("youtube_transcription_max_duration", str(val))
             except (ValueError, TypeError):
                 return JSONResponse(
                     {"error": "youtube_transcription_max_duration must be 60-7200"},
                     status_code=422,
                 )
         return JSONResponse({"ok": True})
-
-    # --- Budget limits -------------------------------------------------
 
     @router.get("/api/config/budget-limits", response_model=None)
     async def api_get_budget_limits() -> JSONResponse:
@@ -736,8 +707,6 @@ def create_admin_router(
                     status_code=422,
                 )
         return JSONResponse({"ok": True})
-
-    # --- Password management -------------------------------------------
 
     @router.get("/api/config/password-info", response_model=None)
     async def api_password_info() -> JSONResponse:
@@ -786,8 +755,6 @@ def create_admin_router(
         store.set_setting("auth_password", new_pw)
         return JSONResponse({"ok": True})
 
-    # --- Feed token ----------------------------------------------------
-
     def _feed_url(request: Request, token: str) -> str:
         base = str(request.base_url).rstrip("/")
         return f"{base}/api/feed/atom?token={token}"
@@ -814,8 +781,6 @@ def create_admin_router(
         store.set_setting("feed_token", "")
         return JSONResponse({"ok": True})
 
-    # --- Run logs ------------------------------------------------------
-
     @router.get("/api/logs", response_model=None)
     async def api_list_logs() -> JSONResponse:
         rows = store.list_run_logs(limit=30)
@@ -834,10 +799,6 @@ def create_admin_router(
         if not row:
             return JSONResponse(None, status_code=404)
         return JSONResponse(dict(row))
-
-    # ==================================================================
-    # Legacy Jinja2 HTML routes (/admin/...)
-    # ==================================================================
 
     @router.get("/admin/", response_model=None)
     async def admin_home() -> RedirectResponse:

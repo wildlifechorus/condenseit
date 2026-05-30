@@ -85,7 +85,6 @@ export const api = {
   getPreferenceProfile: () =>
     request<PreferenceProfile>('GET', '/api/preferences/profile'),
 
-  // Phase 5: Cold-start bootstrap
   bootstrapPreferences: (interests: string) =>
     request<{
       ok: boolean;
@@ -184,7 +183,6 @@ export const api = {
   revokeFeedToken: () =>
     request<void>('DELETE', '/api/config/feed-token'),
 
-  // Run logs
   listLogs: () => request<RunLogSummary[]>('GET', '/api/logs'),
   getLog: (id: number) => request<RunLog | null>('GET', `/api/logs/${id}`),
   getLatestLog: () => request<RunLog | null>('GET', '/api/logs/latest'),

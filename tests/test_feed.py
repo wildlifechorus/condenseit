@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from xml.etree import ElementTree as ET
 
-import pytest
 from fastapi.testclient import TestClient
 
 from condenseit.store.database import ContentStore

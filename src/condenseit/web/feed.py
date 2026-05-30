@@ -1,19 +1,16 @@
 """Atom feed output for the latest digest."""
 
-from __future__ import annotations
-
 import json
 from datetime import UTC, datetime
 from typing import Any
 from xml.etree.ElementTree import Element, SubElement, register_namespace, tostring
 
-register_namespace("", "http://www.w3.org/2005/Atom")
-
-from fastapi import APIRouter
-from starlette.requests import Request
-from starlette.responses import Response
+from fastapi import APIRouter, Request
+from fastapi.responses import Response
 
 from condenseit.store.database import ContentStore
+
+register_namespace("", "http://www.w3.org/2005/Atom")
 
 
 def _parse_stats(raw: str) -> dict[str, Any]:
@@ -152,10 +149,10 @@ def create_feed_router(store: ContentStore) -> APIRouter:
         """Return the latest digest as an Atom feed."""
         digest_row = store.latest_digest()
         token = request.query_params.get("token", "")
-        feed_url = str(request.url)
-        # Strip the token from the self-link to keep it clean
         base_url = str(request.base_url).rstrip("/")
-        self_url = f"{base_url}/api/feed/atom?token={token}" if token else str(request.url)
+        self_url = (
+            f"{base_url}/api/feed/atom?token={token}" if token else str(request.url)
+        )
 
         xml_bytes = _build_atom(digest_row, self_url)
         return Response(

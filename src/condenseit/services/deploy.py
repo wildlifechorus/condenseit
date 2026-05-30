@@ -1,7 +1,5 @@
 """Deploy digests to a VPS via rsync."""
 
-from __future__ import annotations
-
 import logging
 import subprocess
 from pathlib import Path

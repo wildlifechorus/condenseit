@@ -1,11 +1,10 @@
 """Source registry (RSS, YouTube, website, and extended types) in SQLite."""
 
-from __future__ import annotations
-
 import json
 from datetime import UTC, datetime
 from typing import Any
 
+from condenseit.api_urls import youtube_channel_feed_url
 from condenseit.config import (
     AppConfig,
     FeedConfig,
@@ -101,7 +100,7 @@ class SourceRegistry:
         for feed in config.feeds:
             _add_if_new("rss", feed.url, feed.category, feed.priority, feed.url)
         for ch in config.youtube_channels:
-            rss = f"https://www.youtube.com/feeds/videos.xml?channel_id={ch.channel_id}"
+            rss = youtube_channel_feed_url(ch.channel_id)
             _add_if_new(
                 "youtube",
                 ch.handle or ch.channel_id,
@@ -206,9 +205,6 @@ class SourceRegistry:
                     )
                 )
             elif r["type"] == "reddit":
-                # Reddit sources that were auto-converted to Lemmy RSS have a
-                # "converted_from" key in extra_json. Route them through the
-                # RSS collector using the stored Lemmy URL.
                 if extra.get("converted_from"):
                     out.append(
                         FeedConfig(

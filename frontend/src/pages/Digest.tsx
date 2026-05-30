@@ -66,11 +66,6 @@ export function DigestPage({ onDigestLoaded }: DigestPageProps) {
         ? api.getDigest(requestedId)
         : api.getLatestDigest();
 
-    // Fetch all in parallel so setLoading(false) only fires once every
-    // request has resolved. Previously getReadUrls / getReadLaterUrls were
-    // fired inside .then() without being awaited, causing a race where the
-    // page rendered with an empty readUrls set (showing all items) before
-    // the read state arrived, making dismissed/read items flash back on refresh.
     Promise.all([
       load,
       api.getReadUrls().catch((): { urls: string[] } => ({ urls: [] })),

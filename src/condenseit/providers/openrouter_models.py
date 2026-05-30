@@ -1,16 +1,15 @@
 """Pick a low-cost OpenRouter model from the public catalog."""
 
-from __future__ import annotations
-
 import logging
 import time
 from typing import Any
 
 import httpx
 
+from condenseit.api_urls import OPENROUTER_MODELS_URL
+
 logger = logging.getLogger(__name__)
 
-_MODELS_URL = "https://openrouter.ai/api/v1/models"
 _CACHE: dict[str, Any] = {"at": 0.0, "model": ""}
 _TTL_SEC = 3600
 
@@ -31,7 +30,7 @@ def pick_cheapest_text_model(
 
     try:
         with httpx.Client(timeout=60.0) as client:
-            resp = client.get(_MODELS_URL)
+            resp = client.get(OPENROUTER_MODELS_URL)
             resp.raise_for_status()
             payload = resp.json()
     except httpx.HTTPError as exc:

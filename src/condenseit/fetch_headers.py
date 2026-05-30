@@ -1,7 +1,5 @@
 """Shared browser-like HTTP headers for public digest fetches (RSS, HTML)."""
 
-from __future__ import annotations
-
 import os
 
 CONDENSEIT_USER_AGENT_ENV = "CONDENSEIT_USER_AGENT"

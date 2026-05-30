@@ -9,6 +9,7 @@ import { EmptyState } from '../../components/EmptyState';
 import { Spinner } from '../../components/Spinner';
 import { CategoryCombobox } from '../../components/CategoryCombobox';
 import { formatDigestLabel } from '../../lib/dates';
+import { itunesPodcastSearchUrl } from '../../lib/externalUrls';
 
 /** Shared Tailwind class string for text inputs and selects. */
 const inputCls =
@@ -72,8 +73,7 @@ function extraNumber(
 }
 
 async function searchITunesPodcasts(query: string): Promise<ITunesResult[]> {
-  const url = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=podcast&entity=podcast&limit=10`;
-  const res = await fetch(url);
+  const res = await fetch(itunesPodcastSearchUrl(query));
   const data = (await res.json()) as { results?: unknown[] };
   return (data.results ?? []) as ITunesResult[];
 }

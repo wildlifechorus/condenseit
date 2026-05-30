@@ -1,7 +1,5 @@
 """Encrypted API key storage."""
 
-from __future__ import annotations
-
 import os
 from datetime import UTC, datetime
 from pathlib import Path

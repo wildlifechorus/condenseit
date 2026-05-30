@@ -9,14 +9,14 @@ Embeddings are cached in the ``article_embeddings`` table keyed by
 content changes.
 """
 
-from __future__ import annotations
-
 import logging
 import struct
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 import numpy as np
+
+from condenseit.api_urls import OPENROUTER_EMBEDDINGS_URL
 
 if TYPE_CHECKING:
     from condenseit.providers.budget import BudgetTracker
@@ -65,8 +65,8 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
             embeddings = data.get("embeddings") or []
             if embeddings and isinstance(embeddings[0], list):
                 return embeddings[0]
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Ollama /api/embed failed, trying legacy endpoint: %s", exc)
         # Fallback: older Ollama REST endpoint
         try:
             import httpx
@@ -83,13 +83,13 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
                 return emb
         except Exception as exc:
             logger.warning("Ollama embedding failed: %s", exc)
-        return None
+        return None  # Recovery: ranking falls back without embedding signal.
 
 
 class OpenRouterEmbeddingProvider(EmbeddingProvider):
     """Embedding via OpenRouter's embeddings endpoint."""
 
-    _ENDPOINT = "https://openrouter.ai/api/v1/embeddings"
+    _ENDPOINT = OPENROUTER_EMBEDDINGS_URL
     # Fallback price for text-embedding-3-small when OpenRouter does not
     # return a cost field: $0.02 / 1M tokens.
     _PRICE_PER_TOKEN = 2e-8
@@ -139,7 +139,7 @@ class OpenRouterEmbeddingProvider(EmbeddingProvider):
                 return items[0]["embedding"]
         except Exception as exc:
             logger.warning("OpenRouter embedding failed: %s", exc)
-        return None
+        return None  # Recovery: ranking falls back without embedding signal.
 
 
 class OpenAIEmbeddingProvider(EmbeddingProvider):
@@ -184,12 +184,7 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
                 return items[0]["embedding"]
         except Exception as exc:
             logger.warning("OpenAI-compat embedding failed: %s", exc)
-        return None
-
-
-# ---------------------------------------------------------------------------
-# Vector storage utilities
-# ---------------------------------------------------------------------------
+        return None  # Recovery: ranking falls back without embedding signal.
 
 
 def vec_to_blob(vec: list[float] | np.ndarray) -> bytes:
@@ -212,11 +207,6 @@ def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     if an < 1e-9 or bn < 1e-9:
         return 0.0
     return float(np.dot(a, b) / (an * bn))
-
-
-# ---------------------------------------------------------------------------
-# Cache-aware embedding lookup
-# ---------------------------------------------------------------------------
 
 
 def get_or_compute_embedding(
@@ -242,11 +232,6 @@ def get_or_compute_embedding(
     arr = np.array(vec, dtype=np.float32)
     store.save_embedding(url, provider.model_name, content_hash, vec_to_blob(arr))
     return arr
-
-
-# ---------------------------------------------------------------------------
-# Factory
-# ---------------------------------------------------------------------------
 
 
 def build_embedding_provider(

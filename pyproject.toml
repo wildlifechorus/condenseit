@@ -26,6 +26,7 @@ dependencies = [
   "langdetect>=1.0.9",
   "rich>=13.0",
   "sqlite-utils>=3.37",
+  "starlette>=0.38",
   "trafilatura>=1.12",
   "uvicorn>=0.32",
   "yt-dlp>=2024.1",

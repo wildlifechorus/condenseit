@@ -11,6 +11,29 @@
 
   let pollTimer = null;
 
+  function renderActions(job) {
+    actionsEl.replaceChildren();
+    if (job.state !== 'completed' && job.state !== 'failed') {
+      return;
+    }
+
+    const dismissBtn = document.createElement('button');
+    dismissBtn.type = 'button';
+    dismissBtn.id = 'digest-job-dismiss';
+    dismissBtn.className = 'btn btn-ghost btn-sm';
+    dismissBtn.textContent = 'Dismiss';
+    dismissBtn.addEventListener('click', dismissJob);
+    actionsEl.appendChild(dismissBtn);
+
+    if (job.state === 'completed' && job.digest_id) {
+      const link = document.createElement('a');
+      link.href = '/?id=' + String(job.digest_id);
+      link.className = 'btn btn-sm';
+      link.textContent = 'View digest';
+      actionsEl.appendChild(link);
+    }
+  }
+
   function setBanner(job) {
     banner.dataset.state = job.state;
     messageEl.textContent = job.message || '';
@@ -31,24 +54,9 @@
     btn.textContent = job.state === 'running' ? 'Running…' : 'Run digest';
 
     if (job.state === 'completed' || job.state === 'failed') {
-      let html = '';
-      if (job.state === 'completed' || job.state === 'failed') {
-        html +=
-          '<button type="button" id="digest-job-dismiss" class="btn btn-ghost btn-sm">Dismiss</button>';
-      }
-      if (job.state === 'completed' && job.digest_id) {
-        html +=
-          '<a href="/?id=' +
-          job.digest_id +
-          '" class="btn btn-sm">View digest</a>';
-      }
-      actionsEl.innerHTML = html;
-      const dismiss = document.getElementById('digest-job-dismiss');
-      if (dismiss) {
-        dismiss.addEventListener('click', dismissJob);
-      }
+      renderActions(job);
     } else {
-      actionsEl.innerHTML = '';
+      actionsEl.replaceChildren();
     }
   }
 

@@ -1,7 +1,5 @@
 """Deterministic digest markdown with links to every source."""
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from typing import Any
 

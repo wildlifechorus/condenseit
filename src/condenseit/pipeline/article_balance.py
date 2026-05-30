@@ -1,7 +1,5 @@
 """Pick digest articles with at least one slot per category when possible."""
 
-from __future__ import annotations
-
 from collections import defaultdict, deque
 from typing import Any
 
@@ -54,7 +52,6 @@ def select_balanced_digest_articles(
             return candidate
         return None
 
-    # Phase 1: guarantee one slot per category (up to max_n).
     for cat in category_order:
         if len(selected) >= max_n:
             break
@@ -63,7 +60,6 @@ def select_balanced_digest_articles(
             selected.append(taken)
             per_category_count[cat] += 1
 
-    # Phase 2: fill remaining slots by global rank, respecting per-category cap.
     for art in ranked:
         if len(selected) >= max_n:
             break

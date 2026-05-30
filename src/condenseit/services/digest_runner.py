@@ -1,7 +1,5 @@
 """Run the digest pipeline once (shared by CLI and web UI)."""
 
-from __future__ import annotations
-
 import logging
 from typing import Any
 

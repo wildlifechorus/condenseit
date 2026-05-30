@@ -1,13 +1,12 @@
 """OpenRouter cloud LLM provider."""
 
-from __future__ import annotations
-
 import logging
 import time
 from typing import Any
 
 import httpx
 
+from condenseit.api_urls import OPENROUTER_CHAT_URL
 from condenseit.digest.format import build_digest_markdown
 from condenseit.providers.base import (
     ArticleSummary,
@@ -21,7 +20,7 @@ from condenseit.providers.budget import BudgetTracker
 
 logger = logging.getLogger(__name__)
 
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+_RETRY_WAITS = [5, 15, 30]
 
 
 class OpenRouterSummarizer(SummarizerProvider):
@@ -64,11 +63,14 @@ class OpenRouterSummarizer(SummarizerProvider):
             "HTTP-Referer": "https://github.com/condenseit/condenseit",
             "X-Title": "CondenseIt",
         }
-        _RETRY_WAITS = [5, 15, 30]
         resp: httpx.Response | None = None
         with httpx.Client(timeout=120.0) as client:
             for attempt in range(len(_RETRY_WAITS) + 1):
-                resp = client.post(OPENROUTER_URL, json=payload, headers=headers)
+                resp = client.post(
+                    OPENROUTER_CHAT_URL,
+                    json=payload,
+                    headers=headers,
+                )
                 if resp.status_code != 429:
                     resp.raise_for_status()
                     break
@@ -84,8 +86,9 @@ class OpenRouterSummarizer(SummarizerProvider):
                 time.sleep(wait)
         data = resp.json()  # type: ignore[union-attr]
 
-        usage = data.get("usage", {})
-        cost = float(data.get("usage", {}).get("cost", 0) or 0)
+        usage_raw = data.get("usage")
+        usage = usage_raw if isinstance(usage_raw, dict) else {}
+        cost = float(usage.get("cost") or 0)
         if self.budget and cost > 0:
             self.budget.record_spend(
                 cost,

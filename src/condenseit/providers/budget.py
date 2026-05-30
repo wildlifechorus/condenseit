@@ -1,11 +1,13 @@
 """OpenRouter spend tracking."""
 
-from __future__ import annotations
-
 import threading
 from datetime import UTC, date, datetime
 
 from condenseit.store.database import ContentStore
+
+_SPEND_SUM_SQL = (
+    "SELECT COALESCE(SUM(amount_usd), 0) FROM spending WHERE recorded_at >= ?"
+)
 
 
 class BudgetTracker:
@@ -29,7 +31,7 @@ class BudgetTracker:
         today = date.today().isoformat()
         with self._lock:
             row = self.store.db.execute(
-                "SELECT COALESCE(SUM(amount_usd), 0) FROM spending WHERE recorded_at >= ?",
+                _SPEND_SUM_SQL,
                 [today],
             ).fetchone()
         return float(row[0])
@@ -39,7 +41,7 @@ class BudgetTracker:
         month_start = date.today().replace(day=1).isoformat()
         with self._lock:
             row = self.store.db.execute(
-                "SELECT COALESCE(SUM(amount_usd), 0) FROM spending WHERE recorded_at >= ?",
+                _SPEND_SUM_SQL,
                 [month_start],
             ).fetchone()
         return float(row[0])

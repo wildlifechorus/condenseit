@@ -8,9 +8,8 @@ Usage:
 If no video is provided, a short 90-second TED-Ed clip is used as the default.
 """
 
-from __future__ import annotations
-
 import base64
+import logging
 import shutil
 import subprocess
 import sys
@@ -19,6 +18,10 @@ import time
 from pathlib import Path
 
 import httpx
+
+from condenseit.api_urls import OPENROUTER_TRANSCRIPTIONS_URL, youtube_watch_url
+
+logger = logging.getLogger(__name__)
 
 # --- resolve video ---
 DEFAULT_VIDEO = "jNQXAC9IVRw"  # "Me at the zoo" - first ever YouTube video, 19 seconds
@@ -33,7 +36,7 @@ else:
     video_id = arg[:11]
 
 print(f"Video ID : {video_id}")
-print(f"Watch URL: https://www.youtube.com/watch?v={video_id}")
+print(f"Watch URL: {youtube_watch_url(video_id)}")
 print()
 
 # --- check prerequisites ---
@@ -52,12 +55,15 @@ try:
     keys = SecureKeyStore(store)
     or_key = keys.get_key("openrouter") or cfg.llm.openrouter_api_key or ""
     store.close()
-except Exception as e:
-    print(f"ERROR: could not load config: {e}")
+except Exception:
+    logger.exception("Could not load CondenseIt config")
     sys.exit(1)
 
 if not or_key:
-    print("ERROR: No OpenRouter API key found. Set OPENROUTER_API_KEY or add it in Admin > API Keys.")
+    print(
+        "ERROR: No OpenRouter API key found. "
+        "Set OPENROUTER_API_KEY or add it in Admin > API Keys."
+    )
     sys.exit(1)
 
 print(f"OpenRouter key : {or_key[:8]}...")
@@ -68,19 +74,30 @@ print()
 print("Step 1: Trying youtube-transcript-api (free captions)...")
 try:
     from youtube_transcript_api import YouTubeTranscriptApi
+
     chunks = YouTubeTranscriptApi.get_transcript(video_id)
     text = " ".join(c["text"] for c in chunks)
-    print(f"  ✓ Captions found ({len(text)} chars). Transcription not needed for this video.")
+    print(
+        f"  ✓ Captions found ({len(text)} chars). "
+        "Transcription not needed for this video."
+    )
     print(f"  Preview: {text[:200]}...")
     print()
     print("NOTE: Whisper transcription only fires when captions are unavailable.")
-    print("To test Whisper, re-run with a video that has no captions, or pass --force-whisper.")
+    print(
+        "To test Whisper, re-run with a video that has no captions, "
+        "or pass --force-whisper."
+    )
     force_whisper = "--force-whisper" in sys.argv
     if not force_whisper:
         sys.exit(0)
     print("  --force-whisper passed, continuing anyway...")
-except Exception as e:
-    print(f"  No captions: {e.__class__.__name__} — proceeding to Whisper.")
+except Exception as exc:
+    logger.info(
+        "Captions unavailable for %s (%s); proceeding to Whisper",
+        video_id,
+        exc.__class__.__name__,
+    )
 
 print()
 
@@ -88,19 +105,22 @@ print()
 print("Step 2: Downloading audio with yt-dlp (audio-only, m4a)...")
 tmp_dir = Path(tempfile.mkdtemp(prefix="condenseit_whisper_test_"))
 audio_path = tmp_dir / "audio.m4a"
-url = f"https://www.youtube.com/watch?v={video_id}"
+url = youtube_watch_url(video_id)
 
 t0 = time.time()
 result = subprocess.run(
     [
         "yt-dlp",
         "--extract-audio",
-        "--audio-format", "m4a",
-        "--match-filter", "duration<=1800",
+        "--audio-format",
+        "m4a",
+        "--match-filter",
+        "duration<=1800",
         "--no-playlist",
         "--quiet",
         "--no-warnings",
-        "-o", str(audio_path),
+        "-o",
+        str(audio_path),
         url,
     ],
     capture_output=True,
@@ -133,7 +153,7 @@ print(f"Step 4: Sending to OpenRouter ({model})...")
 t0 = time.time()
 try:
     resp = httpx.post(
-        "https://openrouter.ai/api/v1/audio/transcriptions",
+        OPENROUTER_TRANSCRIPTIONS_URL,
         headers={
             "Authorization": f"Bearer {or_key}",
             "Content-Type": "application/json",
