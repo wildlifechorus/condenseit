@@ -2,6 +2,7 @@
 # Shared ./data volume so native `condenseit run` appears in the UI.
 services:
   app:
+    image: ${CONDENSEIT_IMAGE:-ghcr.io/wildlifechorus/condenseit:${CONDENSEIT_IMAGE_TAG:-latest}}
     build: .
     ports:
       - "8899:8899"

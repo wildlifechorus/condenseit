@@ -60,10 +60,14 @@ Requires `FIREBASE_PROJECT_ID` in `.env` and local `gcloud`, `firebase`, and
 
 ### `scripts/docker-up.sh` / `scripts/docker-down.sh`
 
-Start or stop the Docker web UI container.
+Start or stop the Docker web UI container. By default, `docker-up.sh` runs
+`docker compose pull` (best effort) then `docker compose up -d`, so a
+published image from [docker-image.md](docker-image.md) is used when available.
+Set `CONDENSEIT_DOCKER_BUILD=1` to build from source instead.
 
 ```bash
 ./scripts/docker-up.sh
+CONDENSEIT_DOCKER_BUILD=1 ./scripts/docker-up.sh   # build locally
 ./scripts/docker-down.sh
 ```
 

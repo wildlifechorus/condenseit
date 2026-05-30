@@ -134,6 +134,27 @@ Then configure run times in **Admin > Schedule** (or set a default in
 `config.schedule.times` in `config.yaml`). Changes made in the admin UI take
 effect immediately without a restart.
 
+### Docker (pre-built image)
+
+Run the web UI from a published image (no local Node.js or Python build).
+Digest runs and Ollama stay on the host.
+
+```bash
+git clone https://github.com/wildlifechorus/condenseit
+cd condenseit
+cp config.example.yaml config.yaml
+cp .env.example .env
+docker compose pull
+docker compose up -d
+# Open http://localhost:8899
+```
+
+Images are published on each release to
+[GHCR](https://ghcr.io/wildlifechorus/condenseit) and
+[Docker Hub](https://hub.docker.com/r/wildlifechorus/condenseit). See
+[docs/docker-image.md](docs/docker-image.md) for version pins, registry
+overrides, and maintainer setup.
+
 ---
 
 ## Remote mode (VPS + OpenRouter)

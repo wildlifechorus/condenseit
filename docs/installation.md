@@ -5,6 +5,7 @@ This guide covers a **native** install with [uv](https://docs.astral.sh/uv/)
 [`pyproject.toml`](../pyproject.toml) (`>=3.11`).
 
 Docker runs the web UI only; digests with a local LLM still use the host. For a
+pre-built image (no local build), see [docker-image.md](docker-image.md). For a
 full map of `scripts/*.sh` and Make targets, see [scripts.md](scripts.md).
 
 ## Prerequisites

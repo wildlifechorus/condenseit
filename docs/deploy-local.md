@@ -144,9 +144,23 @@ cp .env.example .env
 
 ### 2. Start the container
 
+**Pre-built image (recommended for trying CondenseIt):**
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+No local Node.js or Python build is required. Images are published on each
+release to [GHCR and Docker Hub](docker-image.md). To pin a version or use
+Docker Hub, see [docker-image.md](docker-image.md#compose-environment-variables).
+
+**Build from source (contributors):**
+
 ```bash
 make docker-up
 # or: ./scripts/docker-up.sh
+# or: docker compose up -d --build
 ```
 
 Open [http://localhost:8899](http://localhost:8899).
