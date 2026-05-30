@@ -9,6 +9,8 @@ Cost: ~1 call per digest run, ~5K tokens in / ~500 out.
 Recommended model: qwen/qwen3.5-flash-02-23 (~$0.001/digest run on OpenRouter).
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import re

@@ -9,6 +9,8 @@ Embeddings are cached in the ``article_embeddings`` table keyed by
 content changes.
 """
 
+from __future__ import annotations
+
 import logging
 import struct
 from abc import ABC, abstractmethod

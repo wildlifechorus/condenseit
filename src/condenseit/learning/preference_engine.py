@@ -24,6 +24,8 @@ Implicit signals use the same decay but are scaled by `implicit_signal_weight`
 (default 0.5) so explicit star ratings always dominate.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import math
