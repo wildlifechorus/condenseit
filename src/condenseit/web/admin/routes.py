@@ -548,6 +548,7 @@ def create_admin_router(
                 "max_article_age_hours": merged.max_article_age_hours,
                 "preferred_languages": langs,
                 "exclude_keywords": excl_kw,
+                "disliked_keywords": merged.relevance.disliked_keywords,
                 "max_key_takeaways": merged.max_key_takeaways,
                 "max_summary_paragraphs": merged.max_summary_paragraphs,
                 "digest_language": digest_lang,
@@ -625,6 +626,19 @@ def create_admin_router(
                 str(phrase).strip() for phrase in kw_list if str(phrase).strip()
             ]
             store.set_setting("exclude_keywords", json.dumps(cleaned_kw))
+        if "disliked_keywords" in body:
+            dk_list = body["disliked_keywords"]
+            if not isinstance(dk_list, list):
+                return JSONResponse(
+                    {"error": "disliked_keywords must be a list"},
+                    status_code=422,
+                )
+            # Persisted under the onboarding key the ranking engine already
+            # consumes (settings_overlay merges it into relevance.disliked_keywords).
+            cleaned_dk = [
+                str(phrase).strip() for phrase in dk_list if str(phrase).strip()
+            ]
+            store.set_setting("bootstrap_dislikes", json.dumps(cleaned_dk))
         if "max_key_takeaways" in body:
             try:
                 val = int(body["max_key_takeaways"])

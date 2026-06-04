@@ -328,6 +328,18 @@ class DigestPipeline:
             articles,
             keyword_high={k.lower() for k in keywords.get("high", [])},
             keyword_medium={k.lower() for k in keywords.get("medium", [])},
+            keyword_negative=(
+                # Explicit user list (bootstrap_dislikes / Admin UI)
+                {
+                    k.lower()
+                    for k in self.config.relevance.disliked_keywords
+                    if k.strip()
+                }
+                # High-frequency terms learned from 1-2 star ratings so the
+                # profile's disliked vocabulary automatically strengthens the
+                # keyword penalty without requiring manual list maintenance.
+                | self.preferences.learned_disliked_keywords()
+            ),
         )
         # Apply per-source highlight boost before dedup so highlighted articles
         # are more likely to win their story cluster.
@@ -341,7 +353,14 @@ class DigestPipeline:
         ranked = self._deduplicate_stories(ranked)
 
         if self.config.relevance.llm_rerank_enabled and not dry_run:
-            profile_narrative = build_profile_narrative(self.preferences)
+            profile_narrative = build_profile_narrative(
+                self.preferences,
+                profile_summary=self.config.relevance.profile_summary,
+                extra_dislikes=list(
+                    {k for k in self.config.relevance.disliked_keywords if k.strip()}
+                    | self.preferences.learned_disliked_keywords()
+                ),
+            )
             if profile_narrative:
                 _rerank_model = (
                     self.config.relevance.llm_rerank_model or self.summarizer.model_name
@@ -379,8 +398,27 @@ class DigestPipeline:
 
         max_n = self.config.max_articles_per_digest
         if self.config.balance_digest_categories:
+            rel = self.config.relevance
+            # Learned per-category preference (explicit + implicit) so the
+            # balancer stops force-feeding categories the reader dislikes. Only
+            # categories with enough rating evidence are eligible for gating, so
+            # a stated-interest category with a couple of early bad ratings is
+            # not permanently buried before it can be re-rated.
+            all_scores = self.preferences.combined_category_scores()
+            rating_counts = self.preferences.category_rating_counts()
+            category_scores = {
+                cat: score
+                for cat, score in all_scores.items()
+                if rating_counts.get(cat, 0) >= rel.category_min_ratings
+            }
             ranked = select_balanced_digest_articles(
-                ranked, max_n, self.config.max_articles_per_category
+                ranked,
+                max_n,
+                self.config.max_articles_per_category,
+                category_scores=category_scores,
+                exclude_threshold=rel.category_exclude_threshold,
+                demote_threshold=rel.category_demote_threshold,
+                demote_cap=rel.category_demote_cap,
             )
         else:
             ranked = ranked[:max_n]

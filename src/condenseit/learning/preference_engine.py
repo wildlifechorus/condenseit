@@ -311,6 +311,10 @@ class PreferenceEngine:
         self._liked_topics: Counter[str] = Counter()
         self._disliked_topics: Counter[str] = Counter()
 
+        # Explicit-rating counts per category, used as evidence so the digest
+        # balancer only gates categories the reader has rated enough times.
+        self._category_rating_counts: dict[str, int] = {}
+
     def learn_from_ratings(self) -> None:
         """Rebuild all internal preference state from the ratings table."""
         self._clear_profiles()
@@ -332,6 +336,7 @@ class PreferenceEngine:
 
         cat_sum: dict[str, float] = {}
         cat_weight_sum: dict[str, float] = {}
+        cat_count: dict[str, int] = {}
         src_sum: dict[str, float] = {}
         src_weight_sum: dict[str, float] = {}
 
@@ -363,6 +368,7 @@ class PreferenceEngine:
             if cat:
                 cat_sum[cat] = cat_sum.get(cat, 0.0) + rating * decay
                 cat_weight_sum[cat] = cat_weight_sum.get(cat, 0.0) + decay
+                cat_count[cat] = cat_count.get(cat, 0) + 1
 
             src = str(row.get("source") or "").strip()
             if src:
@@ -379,6 +385,7 @@ class PreferenceEngine:
             for src in src_sum
             if src_weight_sum.get(src, 0) > 0
         }
+        self._category_rating_counts = cat_count
 
         # Apply implicit signals on top of explicit profile.
         if self.implicit_signal_weight > 0:
@@ -395,16 +402,22 @@ class PreferenceEngine:
         articles: list[dict[str, Any]],
         keyword_high: set[str] | None = None,
         keyword_medium: set[str] | None = None,
+        keyword_negative: set[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Return ``articles`` sorted by preference score (highest first).
 
         Each article dict is augmented with:
           - ``preference_score``: total additive score (float)
           - ``score_breakdown``: per-signal contributions (dict)
+
+        ``keyword_negative`` holds phrases the reader explicitly does not want
+        to read about (e.g. onboarding dislikes). Matching articles are
+        penalised so disliked topics sink regardless of learned signals.
         """
         self.learn_from_ratings()
         high = keyword_high or set()
         medium = keyword_medium or set()
+        negative = keyword_negative or set()
         prof_norm = _counter_norm(self._profile_vec)
         implicit_prof_norm = _counter_norm(self._implicit_profile_vec)
 
@@ -419,6 +432,7 @@ class PreferenceEngine:
             breakdown: dict[str, float] = {
                 "keyword_high": 0.0,
                 "keyword_medium": 0.0,
+                "keyword_negative": 0.0,
                 "term_overlap": 0.0,
                 "bigram_overlap": 0.0,
                 "tfidf_cosine": 0.0,
@@ -440,6 +454,19 @@ class PreferenceEngine:
             for kw in medium:
                 if kw in text_lower:
                     breakdown["keyword_medium"] += 1.0
+
+            # 1b. Negative keyword penalty for explicitly disliked topics.
+            # Multi-word phrases match when every word appears (cheap, order-
+            # independent), so "celebrity news" penalises an article only when
+            # both words are present; single words use a plain substring match.
+            for kw in negative:
+                if not kw:
+                    continue
+                if " " in kw:
+                    if all(part in text_lower for part in kw.split()):
+                        breakdown["keyword_negative"] -= 2.0
+                elif kw in text_lower:
+                    breakdown["keyword_negative"] -= 2.0
 
             # 2. Synonym expansion: expand article tokens to include synonyms
             # so profile weight learned on one term applies to related terms.
@@ -620,6 +647,38 @@ class PreferenceEngine:
         scored.sort(key=lambda x: x[0], reverse=True)
         return [a for _, a in scored]
 
+    def combined_category_scores(self) -> dict[str, float]:
+        """Return the learned preference score per category.
+
+        Combines the explicit-rating category score with the implicit-signal
+        category score (scaled by ``implicit_signal_weight``), in the same
+        mean-rating-minus-3 units used internally (positive = liked, negative =
+        disliked). The digest balancer uses these values to stop force-feeding
+        categories the reader consistently dislikes.
+
+        Call after ``learn_from_ratings`` / ``rank_articles`` so the internal
+        profiles are populated. Returns an empty dict when learning is inactive
+        (both profiles are empty), which disables the balancer's gate.
+        """
+        combined: dict[str, float] = dict(self._category_scores)
+        if self.implicit_signal_weight > 0:
+            for cat, score in self._implicit_category_scores.items():
+                combined[cat] = (
+                    combined.get(cat, 0.0) + self.implicit_signal_weight * score
+                )
+        return combined
+
+    def category_rating_counts(self) -> dict[str, int]:
+        """Return the number of explicit ratings the reader has given per
+        category.
+
+        Used as evidence by the digest balancer so a category is only gated
+        (excluded or demoted) once it has been rated enough times. This stops a
+        stated-interest category with very few ratings (e.g. a couple of early
+        1-star ratings) from being buried before it has a fair chance.
+        """
+        return dict(self._category_rating_counts)
+
     def profile_summary(self) -> dict[str, Any]:
         """Return a human-readable snapshot of the learned preference profile.
 
@@ -740,6 +799,33 @@ class PreferenceEngine:
             ],
         }
 
+    def learned_disliked_keywords(
+        self,
+        *,
+        min_count: float = 2.0,
+        n_terms: int = 25,
+        n_bigrams: int = 15,
+    ) -> frozenset[str]:
+        """Return high-frequency terms and bigrams from negatively-rated articles.
+
+        These supplement the explicit ``disliked_keywords`` list so that
+        vocabulary the engine learned from 1-2 star ratings automatically
+        contributes to the keyword_negative ranking signal without the user
+        having to maintain a separate manual list.
+
+        Only terms whose accumulated decay-weight exceeds ``min_count`` are
+        included, which means they appeared in several disliked articles rather
+        than just one.
+        """
+        hints: set[str] = set()
+        for term, count in self._disliked_terms.most_common(n_terms):
+            if count >= min_count:
+                hints.add(term)
+        for bg, count in self._disliked_bigrams.most_common(n_bigrams):
+            if count >= min_count * 0.6:  # bigrams are rarer; lower bar
+                hints.add(bg)
+        return frozenset(hints)
+
     def _clear_profiles(self) -> None:
         """Reset all in-memory profile state."""
         self._liked_terms.clear()
@@ -758,6 +844,7 @@ class PreferenceEngine:
         self._disliked_centroid = None
         self._liked_topics.clear()
         self._disliked_topics.clear()
+        self._category_rating_counts = {}
 
     def _learn_implicit_signals(self, now: datetime, lam: float) -> None:
         """Augment the profile with implicit engagement signals.

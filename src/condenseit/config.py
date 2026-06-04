@@ -114,6 +114,13 @@ class RelevanceConfig(BaseModel):
     initial_keywords: dict[str, list[str]] = Field(
         default_factory=lambda: {"high": [], "medium": []},
     )
+    # Phrases the reader explicitly does not want to read about (from onboarding
+    # or the Preferences page). Used as a soft negative keyword signal during
+    # ranking and surfaced to the LLM reranker so disliked topics sink.
+    disliked_keywords: list[str] = Field(default_factory=list)
+    # Free-text reader profile narrative from onboarding. Injected into the LLM
+    # reranker prompt so the model understands who it is ranking for.
+    profile_summary: str = ""
     min_ratings_for_learning: int = 5
     tfidf_preference_weight: float = 0.35
     category_preference_weight: float = 0.6
@@ -121,6 +128,19 @@ class RelevanceConfig(BaseModel):
     rating_decay_half_life_days: int = 30
     implicit_signal_weight: float = 0.5
     topic_synonyms: dict[str, list[str]] = Field(default_factory=dict)
+
+    # Digest category balancing gate. Scores are learned per category in
+    # mean-rating-minus-3 units (positive = liked, negative = disliked).
+    # Categories at or below ``category_exclude_threshold`` are dropped from the
+    # digest entirely; categories at or below ``category_demote_threshold`` keep
+    # at most ``category_demote_cap`` slots and lose their guaranteed slot.
+    category_exclude_threshold: float = -5.0
+    category_demote_threshold: float = -5.0
+    category_demote_cap: int = 1
+    # Minimum number of explicit ratings a category needs before the gate may
+    # exclude or demote it. Protects stated-interest categories with only a few
+    # early ratings from being buried before they have a fair chance.
+    category_min_ratings: int = 8
 
     embedding_provider: Literal["ollama", "openrouter", "openai", "off"] = "off"
     # Embedding model name. For Ollama: "nomic-embed-text". For OpenRouter:

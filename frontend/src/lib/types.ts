@@ -202,6 +202,18 @@ export interface RankingWeights {
   semantic_dedup_enabled: boolean;
   /** Cosine similarity threshold above which two articles are treated as the same story (0.5-1.0). */
   semantic_dedup_threshold: number;
+  /** Free-text reader profile narrative fed to the LLM reranker. */
+  profile_summary: string;
+  /** Preset label for the UI selector. Does not affect the engine directly. */
+  personalization_mode: 'off' | 'balanced' | 'aggressive' | 'custom';
+  /** Category gate: learned score at/below which a category is dropped entirely (-5 to 0). */
+  category_exclude_threshold: number;
+  /** Category gate: learned score at/below which a category is demoted (-5 to 0). */
+  category_demote_threshold: number;
+  /** Category gate: max articles kept from a demoted category (0-50). */
+  category_demote_cap: number;
+  /** Category gate: minimum ratings a category needs before it can be gated (1-1000). */
+  category_min_ratings: number;
 }
 
 export interface OpenRouterUsage {
@@ -264,6 +276,8 @@ export interface DigestConfig {
   max_article_age_hours: number;
   preferred_languages: string[];
   exclude_keywords: string[];
+  /** Topics the reader never wants to read about (soft negative ranking signal). */
+  disliked_keywords: string[];
   max_key_takeaways: number;
   max_summary_paragraphs: number;
   /** ISO 639-1 code for the digest output language, or "source" to match

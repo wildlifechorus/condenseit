@@ -3,10 +3,12 @@
 import base64
 import html
 import logging
+import os
 import re
 import shutil
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -35,6 +37,17 @@ logger = logging.getLogger(__name__)
 _VIDEO_ID_RE = re.compile(r"(?:v=|/shorts/)([a-zA-Z0-9_-]{11})")
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
 _MAX_BODY_CHARS = 12000
+
+# Optional proxy for YouTube feed requests only. YouTube frequently returns
+# 404/500 for datacenter (VPS) IPs even on valid channel feeds; routing just
+# these requests through a proxy restores collection without affecting other
+# sources. Standard HTTP_PROXY/HTTPS_PROXY env vars are also honoured via
+# httpx's trust_env. Example: CONDENSEIT_YOUTUBE_PROXY=http://user:pass@host:port
+_YOUTUBE_PROXY_ENV = "CONDENSEIT_YOUTUBE_PROXY"
+# HTTP statuses worth retrying (transient server/rate-limit errors). A 404/403
+# is treated as permanent (blocked IP or removed channel) and is not retried.
+_RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
+_RETRY_BACKOFF_SECONDS = 1.5
 
 
 @dataclass
@@ -77,11 +90,16 @@ class YouTubeCollector:
         self._transcription = transcription_config
         self._or_key = openrouter_api_key
         self._budget = budget
-        self.client = httpx.Client(
-            timeout=30.0,
-            follow_redirects=True,
-            headers=digest_fetch_headers(),
-        )
+        client_kwargs: dict[str, Any] = {
+            "timeout": 30.0,
+            "follow_redirects": True,
+            "headers": digest_fetch_headers(),
+        }
+        proxy = os.environ.get(_YOUTUBE_PROXY_ENV, "").strip()
+        if proxy:
+            client_kwargs["proxy"] = proxy
+            logger.info("YouTube collector using proxy from %s", _YOUTUBE_PROXY_ENV)
+        self.client = httpx.Client(**client_kwargs)
 
     @property
     def _whisper_enabled(self) -> bool:
@@ -115,10 +133,44 @@ class YouTubeCollector:
             health.append(entry)
         return videos, health
 
+    def _get_feed_with_retry(self, url: str, *, attempts: int = 3) -> httpx.Response:
+        """GET a channel feed, retrying transient network and 5xx failures.
+
+        A persistent 404/403 (YouTube blocking a datacenter IP, or a removed
+        channel) is not retried and propagates so it is recorded in source
+        health. Set ``CONDENSEIT_YOUTUBE_PROXY`` to route these requests
+        through a proxy when YouTube blocks the host's IP.
+        """
+        last_exc: Exception | None = None
+        for attempt in range(1, attempts + 1):
+            try:
+                resp = self.client.get(url)
+            except (httpx.TransportError, httpx.TimeoutException) as exc:
+                last_exc = exc
+                if attempt >= attempts:
+                    raise
+                time.sleep(_RETRY_BACKOFF_SECONDS * attempt)
+                continue
+            if resp.status_code in _RETRYABLE_STATUS and attempt < attempts:
+                logger.warning(
+                    "YouTube feed %s returned %d (attempt %d/%d); retrying",
+                    url,
+                    resp.status_code,
+                    attempt,
+                    attempts,
+                )
+                time.sleep(_RETRY_BACKOFF_SECONDS * attempt)
+                continue
+            resp.raise_for_status()
+            return resp
+        # Unreachable in practice: the loop always returns or raises above.
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError(f"Failed to fetch YouTube feed: {url}")
+
     def _collect_channel(self, ch: YouTubeChannelConfig) -> list[VideoItem]:
         rss_url = youtube_channel_feed_url(ch.channel_id)
-        resp = self.client.get(rss_url)
-        resp.raise_for_status()
+        resp = self._get_feed_with_retry(rss_url)
         feed = feedparser.parse(resp.text)
         label = ch.handle or ch.channel_id
         items: list[VideoItem] = []

@@ -116,6 +116,8 @@ def _apply_relevance_settings(config: AppConfig, store: ContentStore) -> None:
         ("topic_score_weight", "topic_score_weight", 0.0, 5.0),
         ("llm_rerank_blend", "llm_rerank_blend", 0.0, 1.0),
         ("semantic_dedup_threshold", "semantic_dedup_threshold", 0.5, 1.0),
+        ("category_exclude_threshold", "category_exclude_threshold", -5.0, 0.0),
+        ("category_demote_threshold", "category_demote_threshold", -5.0, 0.0),
     ]:
         raw = store.get_setting(key, "")
         if raw:
@@ -126,7 +128,9 @@ def _apply_relevance_settings(config: AppConfig, store: ContentStore) -> None:
     for key, attr, lo, hi in [
         ("rating_decay_half_life_days", "rating_decay_half_life_days", 1, 3650),
         ("min_ratings_for_learning", "min_ratings_for_learning", 1, 1000),
-        ("llm_rerank_top_k", "llm_rerank_top_k", 5, 100),
+        ("llm_rerank_top_k", "llm_rerank_top_k", 1, 200),
+        ("category_demote_cap", "category_demote_cap", 0, 50),
+        ("category_min_ratings", "category_min_ratings", 1, 1000),
     ]:
         raw = store.get_setting(key, "")
         if raw:
@@ -173,6 +177,21 @@ def _apply_relevance_settings(config: AppConfig, store: ContentStore) -> None:
             if k not in merged:
                 merged[k] = v
         config.relevance.topic_synonyms = merged
+
+    bootstrap_dislikes_raw = store.get_setting("bootstrap_dislikes", "")
+    dislikes = parse_json_list(bootstrap_dislikes_raw, "bootstrap_dislikes")
+    if dislikes is not None:
+        # Preserve order while de-duplicating against any config-provided values.
+        merged_dislikes = list(
+            dict.fromkeys(
+                [*config.relevance.disliked_keywords, *(str(d) for d in dislikes)]
+            )
+        )
+        config.relevance.disliked_keywords = merged_dislikes
+
+    profile_summary = store.get_setting("bootstrap_profile_summary", "")
+    if profile_summary:
+        config.relevance.profile_summary = profile_summary
 
 
 def _apply_youtube_settings(config: AppConfig, store: ContentStore) -> None:

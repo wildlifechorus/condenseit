@@ -120,6 +120,29 @@ relevance:
   # All six relevance weights can also be overridden live in Admin > Settings.
   implicit_signal_weight: 0.5
 
+  # Category balancing gate.
+  # Category balancing normally guarantees a slot to every category so the
+  # digest stays varied. These settings can stop categories you consistently
+  # rate poorly from being force-fed. Scores are learned per category in
+  # mean-rating-minus-3 units (positive = liked, negative = disliked).
+  #   - A category at/below category_exclude_threshold is dropped entirely.
+  #   - A category at/below category_demote_threshold keeps at most
+  #     category_demote_cap slots and loses its guaranteed slot.
+  #   - A category is only gated once it has at least category_min_ratings
+  #     explicit ratings, so a stated-interest category with a couple of early
+  #     bad ratings is not buried before it can be re-rated.
+  # Defaults of -5.0 effectively disable both gates (scores never go that low),
+  # so per-article ranking handles everything. Raise toward 0 to activate.
+  # category_exclude_threshold: -5.0
+  # category_demote_threshold: -5.0
+  # category_demote_cap: 1
+  # category_min_ratings: 8
+
+  # Topics you never want to read about. Used as a soft negative ranking signal
+  # and surfaced to the LLM reranker. Onboarding writes these to the database
+  # (bootstrap_dislikes); listing them here is optional and additive.
+  # disliked_keywords: ["crypto", "sports", "celebrity news"]
+
   # Semantic (embedding-based) duplicate detection.
   # Requires embedding_provider to be set to "ollama", "openrouter", or "openai".
   # When enabled, articles covering the same story across different sources are

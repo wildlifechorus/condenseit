@@ -1069,3 +1069,53 @@ def test_digest_detail_includes_ratings(
     assert resp.status_code == 200
     items = resp.json()["items"]
     assert items[0]["rating"] == 4
+
+
+# ---------------------------------------------------------------------------
+# Negative keyword penalty + category gate evidence
+# ---------------------------------------------------------------------------
+
+
+def test_negative_keyword_single_word_penalty(store: ContentStore) -> None:
+    """A single disliked word penalises only the matching article."""
+    eng = _engine(store)
+    arts = [
+        {"url": "a", "title": "Bitcoin crypto rally surges", "content": ""},
+        {"url": "b", "title": "New Rust language release", "content": ""},
+    ]
+    ranked = eng.rank_articles(arts, keyword_negative={"crypto"})
+    by_url = {a["url"]: a for a in ranked}
+    assert by_url["a"]["score_breakdown"]["keyword_negative"] == -2.0
+    assert by_url["b"]["score_breakdown"]["keyword_negative"] == 0.0
+    # The penalised article sinks below the neutral one.
+    assert [a["url"] for a in ranked] == ["b", "a"]
+
+
+def test_negative_keyword_multiword_requires_all_words(store: ContentStore) -> None:
+    """A multi-word disliked phrase only matches when every word is present."""
+    eng = _engine(store)
+    arts = [
+        {"url": "a", "title": "Celebrity gossip news today", "content": ""},
+        {"url": "b", "title": "Celebrity chef opens restaurant", "content": ""},
+    ]
+    ranked = eng.rank_articles(arts, keyword_negative={"celebrity news"})
+    by_url = {a["url"]: a for a in ranked}
+    assert by_url["a"]["score_breakdown"]["keyword_negative"] == -2.0
+    assert by_url["b"]["score_breakdown"]["keyword_negative"] == 0.0
+
+
+def test_category_rating_counts_and_combined_scores(store: ContentStore) -> None:
+    """Counts track evidence per category; combined scores reflect sentiment."""
+    for i in range(4):
+        _save_article(store, f"n{i}", f"news story {i}", "body", "News", "src")
+        _rate(store, f"n{i}", 1)
+    for i in range(2):
+        _save_article(store, f"t{i}", f"tech story {i}", "body", "Tech", "src")
+        _rate(store, f"t{i}", 5)
+
+    eng = _engine(store)
+    eng.learn_from_ratings()
+
+    assert eng.category_rating_counts() == {"News": 4, "Tech": 2}
+    scores = eng.combined_category_scores()
+    assert scores["News"] < 0 < scores["Tech"]

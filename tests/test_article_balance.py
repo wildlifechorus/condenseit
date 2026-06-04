@@ -57,3 +57,69 @@ def test_skips_blank_urls_and_deduplicates() -> None:
 
 def test_empty_ranked() -> None:
     assert select_balanced_digest_articles([], max_n=5) == []
+
+
+def test_gate_excludes_strongly_disliked_category() -> None:
+    """A category at or below the exclude threshold gets no slots at all."""
+    ranked = [
+        _art("g1", "General News", 5.0),
+        _art("g2", "General News", 4.0),
+        _art("u1", "Ukraine", 1.0),
+        _art("a1", "AI News", 0.5),
+    ]
+    out = select_balanced_digest_articles(
+        ranked,
+        max_n=10,
+        category_scores={"General News": -1.8, "Ukraine": 0.7, "AI News": 0.4},
+    )
+    cats = [a["category"] for a in out]
+    assert "General News" not in cats
+    assert set(cats) == {"Ukraine", "AI News"}
+
+
+def test_gate_demotes_mildly_disliked_category() -> None:
+    """A demoted category keeps at most ``demote_cap`` articles and no
+    guaranteed slot."""
+    ranked = [
+        _art("t1", "General Tech", 5.0),
+        _art("t2", "General Tech", 4.0),
+        _art("t3", "General Tech", 3.0),
+        _art("u1", "Ukraine", 2.0),
+    ]
+    out = select_balanced_digest_articles(
+        ranked,
+        max_n=10,
+        category_scores={"General Tech": -0.7, "Ukraine": 0.5},
+        demote_cap=1,
+    )
+    tech = [a for a in out if a["category"] == "General Tech"]
+    assert len(tech) == 1
+    assert tech[0]["url"] == "t1"  # highest-ranked survivor
+
+
+def test_gate_unknown_category_is_normal() -> None:
+    """Categories absent from ``category_scores`` keep classic behaviour."""
+    ranked = [
+        _art("f1", "FPV News", 5.0),
+        _art("f2", "FPV News", 4.0),
+        _art("g1", "General News", 1.0),
+    ]
+    out = select_balanced_digest_articles(
+        ranked,
+        max_n=10,
+        category_scores={"General News": -1.8},  # FPV not gated
+    )
+    cats = [a["category"] for a in out]
+    assert "FPV News" in cats
+    assert "General News" not in cats
+
+
+def test_gate_safety_net_never_empties_digest() -> None:
+    """If every category is excluded, fall back to the top global articles."""
+    ranked = [_art("a", "A", 3.0), _art("b", "B", 2.0)]
+    out = select_balanced_digest_articles(
+        ranked,
+        max_n=5,
+        category_scores={"A": -3.0, "B": -3.0},
+    )
+    assert [a["url"] for a in out] == ["a", "b"]

@@ -481,7 +481,7 @@ export function PreferencesPage() {
             <Card>
               <CardHeader
                 title="Content terms"
-                description="Keywords and terms extracted from articles you rated. Badge size reflects strength of preference."
+                description="Keywords and terms extracted from articles you rated. Badge size reflects strength of preference. High-frequency disliked terms are automatically added to the ranking penalty — you can also manage them manually under Digest settings › Show me less of this."
               />
               <div class="space-y-4">
                 {profile.top_liked_terms.length > 0 && (
@@ -537,7 +537,7 @@ export function PreferencesPage() {
             <Card>
               <CardHeader
                 title="Keyword phrases"
-                description="Two-word phrases from article titles that most influenced ranking."
+                description="Two-word phrases from article titles that most influenced ranking. Disliked phrases above a certain frequency are automatically used as a hard ranking penalty alongside your explicit list in Digest settings."
               />
               <div class="space-y-4">
                 {profile.top_liked_bigrams?.length > 0 && (

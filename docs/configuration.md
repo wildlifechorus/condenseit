@@ -80,6 +80,16 @@ youtube_channels:
     category: "Tech"
 ```
 
+Transient `5xx`/`429` responses from the channel feed are retried automatically.
+
+> **YouTube returning 404/500 on a VPS?** YouTube frequently blocks the channel
+> feed (`/feeds/videos.xml`) for datacenter IP ranges, so the same `channel_id`
+> that works from your laptop can 404 from a server. Route only the YouTube
+> requests through a proxy with the `CONDENSEIT_YOUTUBE_PROXY` environment
+> variable (e.g. `CONDENSEIT_YOUTUBE_PROXY=http://user:pass@host:port`). Standard
+> `HTTP_PROXY` / `HTTPS_PROXY` variables are also honoured. Other collectors are
+> unaffected.
+
 #### YouTube transcription
 
 Audio-based transcription dramatically improves summary quality for videos that
@@ -283,6 +293,7 @@ to `0` to disable a specific signal entirely.
 |--------|----------------------|---------------|
 | Keyword high | `keyword_high` | Matches `relevance.initial_keywords.high` terms |
 | Keyword medium | `keyword_medium` | Matches `relevance.initial_keywords.medium` terms |
+| Keyword negative | `keyword_negative` | Penalty for `relevance.disliked_keywords` topics you never want |
 | Term overlap | `term_overlap` | Bag-of-words overlap with your liked terms |
 | Bigram overlap | `bigram_overlap` | Two-word phrase overlap with your liked bigrams |
 | TF-IDF cosine | `tfidf_cosine` | Cosine similarity between article and liked-article TF-IDF vectors |
@@ -316,6 +327,42 @@ Implicit actions are treated as virtual ratings:
 | Mark as read | 3.8 stars (mild positive) |
 | Save for later | 4.5 stars (strong positive) |
 | Dismiss | 1.5 stars (mild negative) |
+
+### Disliked topics
+
+Topics you never want to read about are penalised during scoring and surfaced to
+the LLM reranker so they sink. Onboarding writes these to the database
+(`bootstrap_dislikes`); you can also list them in `config.yaml`:
+
+```yaml
+relevance:
+  disliked_keywords: ["crypto", "sports", "celebrity news"]
+```
+
+Single words use a substring match; multi-word phrases match only when every
+word is present in the title or content (so `celebrity news` penalises an article
+containing both words, not just `news`).
+
+### Category balancing gate
+
+Category balancing normally guarantees every category at least one slot to keep
+the digest varied. Once you have rated a category enough times, the gate stops
+force-feeding categories you consistently dislike. Scores are learned per
+category (explicit ratings plus implicit signals) in mean-rating-minus-3 units,
+so positive means liked and negative means disliked.
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `relevance.category_exclude_threshold` | `-5.0` | Categories at/below this score are dropped from the digest entirely. Default of −5.0 effectively disables exclusion; raise toward 0 to activate |
+| `relevance.category_demote_threshold` | `-5.0` | Categories at/below this score lose their guaranteed slot and are capped at `category_demote_cap`. Default of −5.0 effectively disables demotion; raise toward 0 to activate |
+| `relevance.category_demote_cap` | `1` | Max articles a demoted category may keep |
+| `relevance.category_min_ratings` | `8` | Minimum explicit ratings a category needs before it can be gated |
+
+The `category_min_ratings` guard means a stated-interest category with only a few
+early bad ratings (for example, a couple of 1-star FPV videos) is never buried
+before it has a fair chance, it keeps normal behaviour until enough evidence
+accumulates. As a safety net, if the gate would remove every article, the top
+articles by score are returned so a digest is never silently emptied.
 
 ### Time decay
 

@@ -802,11 +802,15 @@ def create_app(config_path: str | None = None) -> FastAPI:
         "topic_score_weight": (0.0, 5.0),
         "llm_rerank_blend": (0.0, 1.0),
         "semantic_dedup_threshold": (0.5, 1.0),
+        "category_exclude_threshold": (-5.0, 0.0),
+        "category_demote_threshold": (-5.0, 0.0),
     }
     _WEIGHT_INT_KEYS = {  # noqa: N806
         "rating_decay_half_life_days": (1, 3650),
         "min_ratings_for_learning": (1, 1000),
         "llm_rerank_top_k": (1, 200),
+        "category_demote_cap": (0, 50),
+        "category_min_ratings": (1, 1000),
     }
     _WEIGHT_BOOL_KEYS = ["llm_rerank_enabled", "semantic_dedup_enabled"]  # noqa: N806
     _WEIGHT_STRING_KEYS = {  # noqa: N806
@@ -838,6 +842,18 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 "llm_rerank_blend": rel.llm_rerank_blend,
                 "semantic_dedup_enabled": rel.semantic_dedup_enabled,
                 "semantic_dedup_threshold": rel.semantic_dedup_threshold,
+                "category_exclude_threshold": rel.category_exclude_threshold,
+                "category_demote_threshold": rel.category_demote_threshold,
+                "category_demote_cap": rel.category_demote_cap,
+                "category_min_ratings": rel.category_min_ratings,
+                # Reader profile narrative used by the LLM reranker.
+                "profile_summary": rel.profile_summary,
+                # Persisted label for the frontend preset selector
+                # (off / balanced / aggressive / custom). Does not affect
+                # engine behaviour directly — the actual weights do.
+                "personalization_mode": store.get_setting(
+                    "personalization_mode", "balanced"
+                ),
             }
         )
 
@@ -875,6 +891,22 @@ def create_app(config_path: str | None = None) -> FastAPI:
                     errors.append(f"{key} must be one of {allowed}, got {val!r}")
                 else:
                     store.set_setting(key, val)
+        # Reader profile narrative for the LLM reranker (free text).
+        if "profile_summary" in body:
+            store.set_setting(
+                "bootstrap_profile_summary", str(body["profile_summary"])
+            )
+        # Preset label (off / balanced / aggressive / custom) — persisted for
+        # UI state only; the actual numeric weights are what the engine uses.
+        if "personalization_mode" in body:
+            mode = str(body["personalization_mode"]).strip()
+            if mode in ("off", "balanced", "aggressive", "custom"):
+                store.set_setting("personalization_mode", mode)
+            else:
+                errors.append(
+                    "personalization_mode must be one of"
+                    " off, balanced, aggressive, custom"
+                )
         if errors:
             return JSONResponse({"errors": errors}, status_code=422)
         return JSONResponse({"ok": True})

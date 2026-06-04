@@ -32,11 +32,21 @@ _BRACKET_RE = re.compile(r"\[.*\]", re.DOTALL)
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 
 
-def build_profile_narrative(engine: PreferenceEngine) -> str:
+def build_profile_narrative(
+    engine: PreferenceEngine,
+    *,
+    profile_summary: str = "",
+    extra_dislikes: list[str] | None = None,
+) -> str:
     """Build a compact plain-text reader profile from learned preferences.
 
-    Keeps output under ~300 tokens so it fits cheaply in every prompt.
-    Returns an empty string when the profile is not yet active.
+    ``profile_summary`` is the reader's free-text onboarding description; when
+    present it is placed first so the model has high-level intent even before
+    enough ratings exist. ``extra_dislikes`` are explicit "never show me this"
+    topics surfaced as an avoid list.
+
+    Keeps output under ~300 tokens so it fits cheaply in every prompt. Returns
+    an empty string only when there is nothing at all to say about the reader.
     """
     engine.learn_from_ratings()
 
@@ -62,10 +72,15 @@ def build_profile_narrative(engine: PreferenceEngine) -> str:
     )[:3]
 
     parts: list[str] = []
+    if profile_summary.strip():
+        parts.append(f"Reader summary: {profile_summary.strip()}")
     if liked_terms:
         parts.append(f"Likes: {', '.join(liked_terms)}")
     if disliked_terms:
         parts.append(f"Dislikes: {', '.join(disliked_terms)}")
+    avoid_topics = [d.strip() for d in (extra_dislikes or []) if d.strip()]
+    if avoid_topics:
+        parts.append(f"Never show topics: {', '.join(avoid_topics)}")
     if liked_cats:
         cats_str = ", ".join(f"{c} (+{s:.1f})" for c, s in liked_cats)
         parts.append(f"Preferred categories: {cats_str}")
