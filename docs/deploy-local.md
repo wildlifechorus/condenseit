@@ -89,6 +89,12 @@ uv run condenseit serve
 
 Open [http://localhost:8899](http://localhost:8899).
 
+If `CONDENSEIT_AUTH_PASSWORD` is empty, the first start generates a random
+admin password, stores it, and prints it once in the server log. Run
+`condenseit reset-admin-password` to replace a lost password. Set
+`CONDENSEIT_AUTH_PASSWORD` before upgrading an install that still signs in
+with the old public password.
+
 The mobile layout keeps the same digest actions available for narrow screens.
 This screenshot uses generated demo data.
 
@@ -164,6 +170,10 @@ CONDENSEIT_DOCKER_BUILD=1 ./scripts/docker-up.sh
 ```
 
 Open [http://localhost:8899](http://localhost:8899).
+
+Compose passes `CONDENSEIT_AUTH_PASSWORD` and `DIGEST_PWA_SESSION_SECRET`
+from the project environment into the container. When the password is blank,
+the first start prints a random admin password once in `docker compose logs`.
 
 The container shares `./data/` with the host so digests run natively appear
 in the UI immediately.

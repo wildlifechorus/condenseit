@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from condenseit.store.database import ContentStore
 from condenseit.web.app import _digest_cost_usd, create_app
 
-# All API routes now require auth. Use the built-in default password via Bearer token.
+# All API routes require auth. Tests pin this password in conftest.py.
 _AUTH = {"Authorization": "Bearer condenseit"}
 
 

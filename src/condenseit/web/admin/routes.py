@@ -1,7 +1,6 @@
 """Admin panel routes - Jinja2 HTML pages and JSON API endpoints."""
 
 import json
-import os
 import re
 import secrets
 from typing import Any
@@ -16,6 +15,11 @@ from fastapi.responses import (
 )
 
 from condenseit.api_urls import youtube_channel_feed_url
+from condenseit.auth_password import (
+    clear_generated_password_flag,
+    ensure_auth_password,
+    password_info,
+)
 from condenseit.config import load_config
 from condenseit.providers.openrouter_models import pick_cheapest_text_model
 from condenseit.services.ollama_client import (
@@ -725,16 +729,7 @@ def create_admin_router(
     @router.get("/api/config/password-info", response_model=None)
     async def api_password_info() -> JSONResponse:
         """Return the current password source so the UI can show a warning."""
-        db_pw = store.get_setting("auth_password", "")
-        if db_pw:
-            source = "db"
-        else:
-            env_pw = (
-                os.environ.get("CONDENSEIT_AUTH_PASSWORD", "").strip()
-                or os.environ.get("DIGEST_PWA_AUTH_PASSWORD", "").strip()
-            )
-            source = "env" if env_pw else "default"
-        return JSONResponse({"source": source, "using_default": source == "default"})
+        return JSONResponse(password_info(store))
 
     @router.put("/api/config/password", response_model=None)
     async def api_change_password(body: dict[str, Any]) -> JSONResponse:
@@ -753,13 +748,7 @@ def create_admin_router(
                 status_code=422,
             )
 
-        db_pw = store.get_setting("auth_password", "")
-        env_pw = (
-            os.environ.get("CONDENSEIT_AUTH_PASSWORD", "").strip()
-            or os.environ.get("DIGEST_PWA_AUTH_PASSWORD", "").strip()
-        )
-        effective = db_pw or env_pw or "condenseit"
-
+        effective = ensure_auth_password(store)
         if not secrets.compare_digest(current, effective):
             return JSONResponse(
                 {"error": "Current password is incorrect."},
@@ -767,6 +756,7 @@ def create_admin_router(
             )
 
         store.set_setting("auth_password", new_pw)
+        clear_generated_password_flag(store)
         return JSONResponse({"ok": True})
 
     def _feed_url(request: Request, token: str) -> str:

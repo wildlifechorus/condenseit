@@ -76,7 +76,7 @@ here?" breakdown so you can see exactly what drove its position.
 | **Schedule** | Enable/disable automatic digest runs, set daily run times, and view the next scheduled run |
 | **Settings** | Article limits, category balance, article age cutoff, language filter, summary format, and **ranking weights** |
 | **Preferences** | Learning profile: rating distribution, liked/disliked terms and phrases, category and source scores, implicit signal counts, and time-decay info |
-| **Security** | Change the admin password and warn when the default password is still active |
+| **Security** | Change the admin password. Warns while a generated first-run password is still in use |
 | **Budget** | OpenRouter account usage, local pipeline cost tracking, and daily/monthly budget limits |
 | **Logs** | Full output captured from recent digest runs |
 
@@ -117,6 +117,8 @@ cp .env.example .env
 # Start the web UI
 condenseit serve --port 8899
 # Open http://localhost:8899
+# If CONDENSEIT_AUTH_PASSWORD is empty, the first start prints a random
+# admin password once. `condenseit reset-admin-password` prints a new one.
 
 # Run a digest (in a separate terminal, or from the web UI)
 condenseit run
@@ -147,6 +149,8 @@ cp .env.example .env
 docker compose pull
 docker compose up -d
 # Open http://localhost:8899
+# A blank CONDENSEIT_AUTH_PASSWORD is forwarded into the container.
+# The first start prints a random admin password once (`docker compose logs`).
 ```
 
 Images are published on each release to

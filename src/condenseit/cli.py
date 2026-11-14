@@ -6,6 +6,12 @@ import click
 from rich.console import Console
 from rich.panel import Panel
 
+from condenseit.auth_password import (
+    INSECURE_PUBLIC_PASSWORD,
+    InsecureBindError,
+    assert_bind_allowed,
+    reset_admin_password,
+)
 from condenseit.config import get_config_path, load_config
 from condenseit.services.digest_runner import execute_digest
 from condenseit.services.post_run_format import format_post_run_lines
@@ -83,9 +89,37 @@ def serve(port: int, host: str, config: str | None) -> None:
     from condenseit.web.app import create_app
 
     app = create_app(config)
+    password = str(getattr(app.state, "auth_password", ""))
+    try:
+        assert_bind_allowed(host, password)
+    except InsecureBindError as exc:
+        raise click.ClickException(str(exc)) from exc
+    if password == INSECURE_PUBLIC_PASSWORD:
+        console.print(
+            "[yellow]Warning:[/] the admin password is the public default. "
+            "Set CONDENSEIT_AUTH_PASSWORD before exposing this service."
+        )
     console.print(f"[bold]CondenseIt[/] http://{host}:{port}/")
     console.print(f"  Admin: http://{host}:{port}/admin/")
     uvicorn.run(app, host=host, port=port, log_level="info")
+
+
+@cli.command("reset-admin-password")
+@click.option("--config", "-c", default=None, help="Path to config.yaml.")
+def reset_admin_password_cmd(config: str | None) -> None:
+    """Replace the admin password and print the new value once."""
+    load_config(config)
+    store = ContentStore()
+    try:
+        password = reset_admin_password(store)
+    finally:
+        store.close()
+    console.print(
+        "[yellow]Admin password reset.[/] Stored in the database. "
+        "This value will not be printed again.\n"
+        f"{password}\n"
+        "Sign-in uses it immediately. Change it in Admin > Security."
+    )
 
 
 @cli.command()

@@ -8,8 +8,10 @@ We aim to support the latest tagged release. Older versions may not receive fixe
 
 Please **do not** open a public GitHub issue for security-sensitive reports.
 
-Instead, contact the repository maintainers through a private channel (for example
-GitHub Security Advisories for this repository, if enabled).
+Use **GitHub private vulnerability reporting** for this repository (Security →
+Advisories → Report a vulnerability). That opens a private advisory and is the
+preferred channel. If reporting is unavailable, contact the maintainers
+through another private channel.
 
 Include:
 

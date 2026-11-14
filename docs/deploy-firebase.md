@@ -73,7 +73,8 @@ Add your secrets to `.env` (see `.env.example` for the full list):
 # Required for cloud LLM (skip if you only want a UI + local Ollama sync)
 OPENROUTER_API_KEY=sk-or-...
 
-# Strongly recommended for any public-facing deployment
+# Required for a public Cloud Run service. A blank value generates a random
+# password on first start and prints it once in the Cloud Run logs.
 CONDENSEIT_AUTH_PASSWORD=your-strong-password
 
 # Auto-generated on first deploy if not set; set it to avoid session resets

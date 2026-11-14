@@ -31,7 +31,8 @@ from condenseit.api_urls import (
     youtube_channel_feed_url,
     youtube_handle_page_url,
 )
-from condenseit.config import LOCAL_INSTALL_FALLBACK_CREDENTIAL, load_config
+from condenseit.auth_password import ensure_auth_password, warn_if_public_password
+from condenseit.config import load_config
 from condenseit.learning.preference_engine import PreferenceEngine
 from condenseit.providers.base import parse_summary_response
 from condenseit.setting_parsers import parse_json_list
@@ -181,11 +182,9 @@ def create_app(config_path: str | None = None) -> FastAPI:
     app.state.job_manager = job_manager
     templates.env.globals["digest_job"] = job_manager.snapshot
 
-    default_auth_password = LOCAL_INSTALL_FALLBACK_CREDENTIAL
-    _env_auth_password = (
-        os.environ.get("CONDENSEIT_AUTH_PASSWORD", "").strip()
-        or os.environ.get("DIGEST_PWA_AUTH_PASSWORD", "").strip()
-    )
+    auth_password = ensure_auth_password(store)
+    app.state.auth_password = auth_password
+    warn_if_public_password(auth_password)
     _session_secret = os.environ.get("DIGEST_PWA_SESSION_SECRET", "").strip()
 
     if not _session_secret:
@@ -198,11 +197,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
         _session_secret = secrets.token_hex(32)
 
     def _get_auth_password() -> str:
-        """Effective password: DB > env var > built-in default."""
-        db_pw = store.get_setting("auth_password", "")
-        if db_pw:
-            return db_pw
-        return _env_auth_password if _env_auth_password else default_auth_password
+        """Effective password: DB, else env, else a generated install password."""
+        return ensure_auth_password(store)
 
     @app.get("/api/auth/check", response_model=None)
     async def api_auth_check(request: Request) -> JSONResponse:

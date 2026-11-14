@@ -11,11 +11,6 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-# First-run credential when nothing is set in DB or env (override in production).
-LOCAL_INSTALL_FALLBACK_CREDENTIAL = (
-    os.environ.get("CONDENSEIT_DEFAULT_PASSWORD", "").strip() or "condense" + "it"
-)
-
 
 class FeedConfig(BaseModel):
     url: str

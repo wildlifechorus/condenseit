@@ -22,6 +22,11 @@ docker compose up -d
 
 Open [http://localhost:8899](http://localhost:8899).
 
+`docker-compose.yml` forwards `CONDENSEIT_AUTH_PASSWORD` and
+`DIGEST_PWA_SESSION_SECRET` from the project environment. When the password
+is blank, the first start prints a random admin password once in
+`docker compose logs`.
+
 Run a digest on the host (uses Metal GPU when Ollama is local):
 
 ```bash

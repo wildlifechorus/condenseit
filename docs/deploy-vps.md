@@ -99,7 +99,9 @@ CONDENSEIT_AUTH_PASSWORD=strong-password
 ```
 
 `DIGEST_PWA_AUTH_PASSWORD` is still accepted for older deployments, but new
-installs should use `CONDENSEIT_AUTH_PASSWORD`.
+installs should use `CONDENSEIT_AUTH_PASSWORD`. A blank password no longer
+falls back to a shared default: the server generates a random password and
+prints it once at startup.
 
 Optional:
 

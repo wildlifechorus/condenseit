@@ -42,11 +42,11 @@ export function AppLayout({
       {usingDefaultPassword && (
         <div class="flex items-center justify-between gap-3 px-4 py-2 bg-amber-500 dark:bg-amber-600 text-white text-xs font-medium">
           <span>
-            You are using the default password. Change it in{' '}
+            This install is using a generated password. Change it in{' '}
             <Link href="/admin/security" class="underline underline-offset-2 hover:no-underline">
               Security
             </Link>{' '}
-            before exposing this to the internet.
+            before exposing this service.
           </span>
           <button
             type="button"

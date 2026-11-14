@@ -152,9 +152,11 @@ export function SecurityPage() {
             />
           </svg>
           <div>
-            <p class="font-semibold">You are using the default password.</p>
+            <p class="font-semibold">
+              This install is using a generated password.
+            </p>
             <p class="mt-0.5 text-xs opacity-80">
-              Change it below before exposing this instance to the internet.
+              Change it below. The old public default no longer works.
             </p>
           </div>
         </div>
@@ -242,7 +244,7 @@ export function SecurityPage() {
                 ? 'set via admin panel'
                 : info.source === 'env'
                   ? 'CONDENSEIT_AUTH_PASSWORD env var'
-                  : 'built-in default'}
+                  : 'generated for this install'}
             </code>
             {'. '}
             Passwords set via admin panel take priority over the env var.
